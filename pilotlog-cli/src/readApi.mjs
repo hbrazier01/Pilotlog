@@ -1,7 +1,9 @@
+
 import fs from "node:fs";
 import path from "node:path";
 import express from "express";
-import crypto from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { buildIntegrityResult } from "../../src/services/build-integrity-result.mjs";
 
 const PORT = Number(process.env.PORT || 8788);
 const DATA_DIR = process.env.PILOTLOG_HOME || process.env.PILOTLOG_DIR || "/data";
@@ -51,8 +53,11 @@ if (!fs.existsSync(VERIFICATION_PATH)) {
         anchored: false,
         anchorHash: null,
         anchorTime: null,
-        anchorNetwork: null,
-        anchorTx: null
+        anchorNetwork: "midnight-preview",
+        anchorTx: null,
+        entries: 0,
+        aircraftIdent: null,
+        airframeId: null
       },
       null,
       2
@@ -260,8 +265,8 @@ function hashLogbook(entries, profile, aircraft) {
     aircraft
   };
 
-  const json = JSON.stringify(payload);
-  return crypto.createHash("sha256").update(json).digest("hex");
+  const json = JSON.stringify(payload, Object.keys(payload).sort());
+  return createHash("sha256").update(json).digest("hex");
 }
 
 function scoreClass(score) {
@@ -281,7 +286,7 @@ app.get("/", (_req, res) => {
   const profile = readProfile();
   const verification = readVerification();
   const aircraftRecords = readAircraft();
-  const logHash = hashLogbook(entries, profile, aircraftRecords);
+  const logHash = verification?.anchorHash || hashLogbook(entries, profile, aircraftRecords);
 
   const last90 = entries.filter((e) => withinDays(e.date, asOf, 90));
   const land90 = sumLandings(last90);
@@ -684,7 +689,7 @@ app.get("/", (_req, res) => {
       ${
         verification?.anchored
           ? '<span class="ok">Anchored</span>'
-          : '<span class="warn">Local only</span>'
+          : '<span class="warn">Ready to anchor</span>'
       }
 
       ${verification?.anchorNetwork ? `<br />Network: ${verification.anchorNetwork}` : ""}
@@ -1026,17 +1031,24 @@ app.get("/export/summary/download", (_req, res) => {
 
 app.post("/verify/anchor", (_req, res) => {
   const entries = readEntries();
-  const profile = readProfile();
-  const aircraft = readAircraft();
+  const aircraftList = readAircraft();
+  const aircraft = aircraftList[0];
 
-  const hash = hashLogbook(entries, profile, aircraft);
+  if (!aircraft) {
+    return res.status(400).json({
+      message: "No aircraft found to anchor",
+    });
+  }
 
   const verification = {
+    ...buildIntegrityResult({
+      aircraft,
+      entries,
+      network: "midnight-preview",
+    }),
     anchored: true,
-    anchorHash: hash,
     anchorTime: new Date().toISOString(),
-    anchorNetwork: "midnight-preview",
-    anchorTx: crypto.randomBytes(16).toString("hex")
+    anchorTx: null
   };
 
   fs.writeFileSync(VERIFICATION_PATH, JSON.stringify(verification, null, 2));

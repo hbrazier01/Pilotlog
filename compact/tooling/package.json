@@ -1,0 +1,20 @@
+{
+  "name": "@midnight-ntwrk/compact",
+  "version": "0.19.0",
+  "description": "Compact fetcher",
+  "author": "IOG",
+  "license": "GPL-3.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "run-compactc": "src/run-compactc.cjs"
+  },
+  "devDependencies": {
+    "eslint": "^9.28.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "midnight-contracts": "git+https://riusricardo@github.com/riusricardo/midnight-contracts"
+  }
+}

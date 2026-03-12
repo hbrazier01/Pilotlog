@@ -1,0 +1,13 @@
+{
+  "aircraft": [
+    {
+      "ident": "N123AB",
+      "type": "SR20",
+      "annualDue": "2026-05-15",
+      "transponderDue": "2027-03-31",
+      "pitotStaticDue": "2027-03-31",
+      "eltBatteryDue": "2026-07-31",
+      "notes": ""
+    }
+  ]
+}
