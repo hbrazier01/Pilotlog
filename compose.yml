@@ -1,16 +1,22 @@
 services:
-  pilotlog-api:
-    build: .
-    container_name: pilotlog-api
+  pilotlog-read-api:
+    image: node:20-alpine
+    container_name: pilotlog-read-api
     working_dir: /app
     volumes:
-      - ./:/app
-      - ./data:/data
+      # code (bind mount)
+      - ../../:/app
+      # data (named volume, survives restarts)
+      - pilotlog_data:/data
     ports:
       - "8788:8788"
     environment:
       PORT: "8788"
       PILOTLOG_HOME: "/data"
+      PILOTLOG_DIR: "/data"
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
-    command: sh -lc "cd /app && node pilotlog-cli/src/readApi.mjs"
+    command: sh -lc "cd /app && node packages/cli/pilotlog/src/readApi.mjs"
     restart: unless-stopped
+
+volumes:
+  pilotlog_data:

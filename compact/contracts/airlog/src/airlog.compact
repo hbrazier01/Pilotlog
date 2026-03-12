@@ -1,0 +1,149 @@
+/**
+ * AirLog v1 – Issuer-signed maintenance logbook
+ * - Airframe identified by airframeId: Bytes<32> (hash of manufacturer|model|serial)
+ * - Owner registers airframe and authorizes issuers (A&P/IA/shop wallets)
+ * - Authorized issuers append entries
+ * - docRef is optional (Bytes<32>); use 0x00..00 when absent
+ */
+
+pragma language_version >= 0.16.0;
+
+import CompactStandardLibrary;
+
+// ---------------------
+// Types
+// ---------------------
+
+export enum EntryType {
+  ANNUAL,
+  HUNDRED_HOUR,
+  AD_COMPLIANCE,
+  REPAIR,
+  MOD_STC,
+  OVERHAUL,
+  OTHER
+}
+
+export struct Entry {
+  entryType: EntryType,
+  dateUtc: Uint<64>,
+  tachOrTT: Uint<64>,
+  issuer: ZswapCoinPublicKey,
+  docHash: Bytes<32>,
+  docRef: Bytes<32> // optional: all-zero means “none”
+}
+
+
+// ---------------------
+// Ledger state
+// ---------------------
+
+// airframeId -> owner
+export ledger owners: Map<Bytes<32>, ZswapCoinPublicKey>;
+
+// issuerAuthKey (hash(airframeId || issuerPk)) -> isAuthorized
+export ledger issuerAuth: Map<Field, Boolean>;
+
+// entryKey (hash(airframeID || entryId)) -> Entry
+export ledger entryStore: Map<Field, Entry>;
+
+// airframeId -> next entryId (starts at 1)
+export ledger nextEntryId: Map<Bytes<32>, Uint<64>>;
+
+// ---------------------
+// Helpers
+// ---------------------
+  
+circuit issuerKey(airframeId: Bytes<32>, issuerPk: ZswapCoinPublicKey): Field {
+  const payload = [airframeId, issuerPk.bytes];
+  return transientHash<[Bytes<32>, Bytes<32>]>(payload);
+}
+
+circuit entryKey(airframeId: Bytes<32>, entryId: Uint<64>): Field {
+  const payload = [airframeId, entryId];
+  return transientHash<[Bytes<32>, Uint<64>]>(payload);
+}
+
+circuit requireOwner(airframeId: Bytes<32>): ZswapCoinPublicKey {
+  const sender = ownPublicKey();
+  const owner = owners.lookup(disclose(airframeId));
+  assert(owner.bytes == sender.bytes, "Not owner");
+  return sender;
+}
+
+circuit isIssuerAuthorized(airframeId: Bytes<32>, issuerPk: ZswapCoinPublicKey): Boolean {
+  const k = issuerKey(airframeId, issuerPk);
+  return issuerAuth.member(disclose(k)) && issuerAuth.lookup(disclose(k));
+}
+
+// ---------------------
+// Public circuits
+// ---------------------
+
+export circuit registerAirframe(airframeId: Bytes<32>): [] {
+  const sender = ownPublicKey();
+
+  const already = owners.member(disclose(airframeId));
+  assert(!already, "Airframe already registered");
+
+  owners.insert(disclose(airframeId), disclose(sender));
+  nextEntryId.insert(disclose(airframeId), disclose(1 as Uint<64>));
+    
+}
+
+export circuit authorizeIssuer(airframeId: Bytes<32>, issuerPk: ZswapCoinPublicKey): [] {
+  requireOwner(airframeId);
+  issuerAuth.insert(disclose(issuerKey(airframeId, issuerPk)), disclose(true));
+}
+
+export circuit revokeIssuer(airframeId: Bytes<32>, issuerPk: ZswapCoinPublicKey): [] {
+  requireOwner(airframeId);
+  issuerAuth.insert(disclose(issuerKey(airframeId, issuerPk)), disclose(false));
+}
+
+export circuit addEntry(
+  airframeId: Bytes<32>,
+  entryType: EntryType,
+  dateUtc: Uint<64>,
+  tachOrTT: Uint<64>,
+  docHash: Bytes<32>,
+  docRef: Bytes<32>
+): [] {
+  const sender = ownPublicKey();
+
+  assert(owners.member(disclose(airframeId)), "Airframe not registered");
+  assert(isIssuerAuthorized(airframeId, sender), "Issuer not authorized");
+
+  const id = nextEntryId.lookup(disclose(airframeId));
+
+  const e = Entry{
+    entryType: entryType,
+    dateUtc: dateUtc,
+    tachOrTT: tachOrTT,
+    issuer: sender,
+    docHash: docHash,
+    docRef: docRef
+  };
+
+  const k = entryKey(airframeId, id);
+  entryStore.insert(disclose(k), disclose(e));
+
+  nextEntryId.insert(disclose(airframeId), disclose((id + 1) as Uint<64>));
+}
+
+export circuit transferAirframe(airframeId: Bytes<32>, newOwner: ZswapCoinPublicKey): [] {
+  requireOwner(airframeId);
+  owners.insert(disclose(airframeId), disclose(newOwner));
+}
+
+export circuit getNextEntryId(airframeId: Bytes<32>): Uint<64> {
+  assert(owners.member(disclose(airframeId)), "Airframe not registered");
+  return nextEntryId.lookup(disclose(airframeId));
+}
+
+export circuit getEntry(airframeId: Bytes<32>, entryId: Uint<64>): Entry {
+  assert(owners.member(disclose(airframeId)), "Airframe not registered");
+  const k = entryKey(airframeId, entryId);
+  return entryStore.lookup(disclose(k));
+}
+
