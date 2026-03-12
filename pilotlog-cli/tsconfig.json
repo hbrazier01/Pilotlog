@@ -1,17 +1,19 @@
 {
   "include": [
     "src/**/*.ts",
-    "src/**/*.d.ts",
-    "../../api/kitties/src/node/logger-utils.ts"
+    "src/**/*.d.ts"
   ],
   "compilerOptions": {
-    // "rootDir": "src",
     "outDir": "dist",
     "declaration": true,
+
+    "types": ["node"],
     "lib": ["ESNext"],
     "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
+
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+
     "allowJs": true,
     "forceConsistentCasingInFileNames": true,
     "noImplicitAny": true,
@@ -20,10 +22,6 @@
     "sourceMap": true,
     "resolveJsonModule": true,
     "esModuleInterop": true,
-    "skipLibCheck": true,
-    "baseUrl": ".",
-    "paths": {
-      "@contract/*": ["../../contract/src/*"]
-    }
+    "skipLibCheck": true
   }
 }

@@ -1,0 +1,24 @@
+{
+  "name": "pilotlog",
+  "version": "1.0.0",
+  "description": "Standalone GA pilot logbook (CLI + read API).",
+  "type": "module",
+  "bin": {
+    "pilotlog": "./bin/pilotlog.mjs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build:cli": "tsc -p pilotlog-cli/tsconfig.build.json",
+    "cli": "node ./bin/pilotlog.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.3",
+    "typescript": "^5.9.3"
+  }
+}

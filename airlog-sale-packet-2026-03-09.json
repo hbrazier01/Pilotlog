@@ -1,0 +1,37 @@
+{
+  "generated": "2026-03-09T02:51:17.175Z",
+  "packetType": "airlog-sale-packet",
+  "verification": {
+    "anchored": true,
+    "anchorHash": "89ded4b47bd3a3959087ec40247aea229b2a49c01f9331e6ed29a6c81c8cfd57",
+    "anchorTime": "2026-03-09T02:14:15.635Z",
+    "anchorNetwork": "midnight-preview",
+    "anchorTx": "fd78848e9ebd64c4a43ebcb18d10a103",
+    "currentHash": "89ded4b47bd3a3959087ec40247aea229b2a49c01f9331e6ed29a6c81c8cfd57"
+  },
+  "aircraftSummary": [
+    {
+      "ident": "N123AB",
+      "type": "SR20",
+      "annualDue": "2026-04-30",
+      "transponderDue": "2027-03-31",
+      "pitotStaticDue": "2027-03-31",
+      "eltBatteryDue": "2026-07-31",
+      "notes": ""
+    }
+  ],
+  "logbookSummary": {
+    "entries": 4,
+    "totalHours": 3.5,
+    "picHours": 3.5,
+    "landings": 4,
+    "instrumentTime": 0
+  },
+  "pilotSummary": {
+    "fullName": "H B",
+    "medicalKind": "Medical",
+    "medicalClass": "3",
+    "flightReviewDate": "2026-02-10",
+    "endorsements": 2
+  }
+}
