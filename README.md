@@ -1,77 +1,126 @@
-PilotLog (AirLog Prototype)
+# PilotLog
 
-Architecture Overview
-...
-        CLI Ingestion
-             │
-             ▼
-        Flight Entries
-        (data/entries.json)
-             │
-             ▼
-      PilotLog Engine
-      - currency calculations
-      - compliance checks
-      - maintenance alerts
-             │
-             ▼
-      Record Integrity Hash
-             │
-             ▼
-      Verification Output
-      - verification.json
-      - sale packet
-             │
-             ▼
-      Read API + Dashboard
-      http://localhost:8788
-...
+PilotLog is a lightweight General Aviation flight logbook engine that converts flight records into structured, verifiable compliance summaries and resale-ready aircraft record packets.
 
-PilotLog is a lightweight General Aviation flight logbook engine designed to convert flight records into structured, verifiable compliance summaries and resale-ready aircraft record packets. The project currently serves as a prototype foundation for AirLog, a system focused on digitizing, organizing, and verifying legacy aircraft and pilot records.
+PilotLog currently serves as the prototype foundation for AirLog, a broader system focused on digitizing, organizing, and verifying legacy aircraft and pilot records.
 
-The system allows pilots or operators to ingest flight entries, track currency and regulatory compliance, and generate structured output that can be used for aircraft record verification or resale documentation. PilotLog also demonstrates a record-integrity model where log entries can be hashed and anchored for verification, forming the conceptual basis for future blockchain anchoring using Midnight.
+## PilotLog Dashboard
 
-The project currently includes a command line ingestion tool, a read API, a local dashboard interface, persistent runtime storage, and generation of verification artifacts such as compliance summaries and sale-packet style output files.
+<img width="640" height="632" alt="Dashboard_github" src="https://github.com/user-attachments/assets/6a9c8a21-0dd1-44f4-9c98-ef6974a6a3c3" />
 
-When running, the system ingests flight data, stores it in persistent runtime storage, calculates pilot currency and compliance information, generates record integrity hashes, and serves a dashboard that displays flight totals, landing counts, compliance alerts, and maintenance reminders.
+The dashboard displays flight totals, regulatory currency status, aircraft maintenance alerts, record integrity verification, and structured logbook entries.
 
-The application is containerized using Docker so that the entire environment can be run locally with minimal setup. Runtime data is stored outside the application code to keep user data separate from source code and version control.
+```
+CLI Ingestion
+      │
+      ▼
+Flight Entries
+(data/entries.json)
+      │
+      ▼
+PilotLog Engine
+  • currency calculations
+  • compliance checks
+  • maintenance alerts
+      │
+      ▼
+Record Integrity Hash
+      │
+      ▼
+Verification Output
+  • verification.json
+  • sale packet artifacts
+      │
+      ▼
+Read API + Dashboard
+http://localhost:8788
+```
 
-To run locally, clone the repository and start the service using Docker Compose:
+## Current Capabilities
 
+
+PilotLog currently includes:
+
+- Command line ingestion tools for flight entries
+- Persistent runtime storage for aircraft records
+- Pilot currency tracking and compliance checks
+- Maintenance reminder alerts
+- Record integrity hashing for verification
+- Verification artifact generation
+- Local dashboard interface
+- Read API for structured record access
+
+## Example Outputs
+
+The system generates structured verification artifacts such as:
+```
+verification.json
+airlog-sale-packet-YYYY-MM-DD.json
+```
+These files demonstrate how aviation records can be converted into structured digital verification artifacts that may later be used for:
+
+• aircraft resale documentation
+• record audits
+• compliance review
+• record authenticity verification
+
+## Running PilotLog Locally
+
+Clone the repository:
+```
 git clone https://github.com/hbrazier01/Pilotlog.git
 cd Pilotlog
 docker compose up
-
-Once running, open a browser and navigate to:
+```
+Once running, open your browser:
 
 http://localhost:8788
 
-The dashboard will display total flight hours, currency status, compliance indicators, aircraft information, and a list of logged flights. Entries can be added through the CLI utilities included in the repository.
+The dashboard will display:
 
-Flight entries are stored in runtime storage at:
+• total flight hours
+• landing counts
+• currency status
+• compliance indicators
+• aircraft information
+• logged flight entries
+
+## Data Storage
+
+Flight entries are stored in runtime storage:
 
 data/entries.json
 
-The repository includes example flight entries so the dashboard loads with demonstration data when the project is run locally.
+Example flight entries are included so the dashboard loads with demonstration data when the project runs locally.
 
-Example outputs generated by the system include verification summaries and sale-packet style artifacts such as:
+Runtime data is stored outside the application code to keep user data separate from source control.
 
-verification.json
-airlog-sale-packet-YYYY-MM-DD.json
+## Technology Stack
 
-These files demonstrate how structured records can be generated from flight data and later verified for authenticity or completeness.
+• Node.js
+• JavaScript / TypeScript
+• Docker container environment
+• CLI utilities for ingestion
+• Local API and dashboard interface
 
-The long-term goal of AirLog is to extend this prototype into a full aircraft record verification platform capable of ingesting legacy aircraft maintenance logs, generating structured digital records, producing resale-ready documentation, and anchoring verification proofs to privacy-preserving blockchain infrastructure such as Midnight.
+## Relationship to AirLog
 
-PilotLog represents the foundational ingestion and verification layer that powers that future system.
+PilotLog is the foundational engine for the larger AirLog system.
 
-Run locally:
+AirLog expands this concept to include:
 
-```bash
-docker compose up
-```
+• aircraft maintenance log ingestion
+• legacy aircraft record digitization
+• structured aircraft history verification
+• resale-ready aircraft documentation
+• privacy-preserving verification anchored to Midnight
 
-Then open:
+PilotLog demonstrates the core ingestion, structuring, and verification model that powers that future platform.
 
-http://localhost:8788
+## About
+
+A lightweight General Aviation pilot logbook engine focused on currency tracking, compliance awareness, and verifiable record generation.
+
+## Development Status
+
+PilotLog is currently an active prototype and part of ongoing development toward the broader AirLog platform.
