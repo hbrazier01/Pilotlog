@@ -4,6 +4,7 @@ import path from "node:path";
 import express from "express";
 import { createHash, randomBytes } from "node:crypto";
 import { buildIntegrityResult } from "../../src/services/build-integrity-result.mjs";
+import { simulateAirlogAnchor } from "../../src/services/airlog-contract-local.mjs";
 
 const PORT = Number(process.env.PORT || 8788);
 const DATA_DIR = process.env.PILOTLOG_HOME || process.env.PILOTLOG_DIR || "/data";
@@ -1040,24 +1041,30 @@ app.post("/verify/anchor", (_req, res) => {
     });
   }
 
+  const contractResult = simulateAirlogAnchor({
+    aircraft,
+    entries,
+  });
+
   const verification = {
-    ...buildIntegrityResult({
-      aircraft,
-      entries,
-      network: "midnight-preview",
-    }),
+    ...contractResult.integrity,
     anchored: true,
     anchorTime: new Date().toISOString(),
-    anchorTx: null
+    anchorTx: null,
+    contract: {
+      registerAirframe: !!contractResult.registerResult,
+      authorizeIssuer: !!contractResult.authorizeResult,
+      addEntry: !!contractResult.addEntryResult,
+    },
   };
 
   fs.writeFileSync(VERIFICATION_PATH, JSON.stringify(verification, null, 2));
 
   res.json({
-    message: "Logbook anchored",
-    verification
+    message: "Logbook anchored via local AirLog contract execution",
+    verification,
   });
-});
+});  
 
 app.get("/export/sale-packet", (_req, res) => {
   const entries = readEntries();
