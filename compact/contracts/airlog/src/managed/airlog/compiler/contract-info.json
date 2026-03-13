@@ -1,0 +1,293 @@
+{
+  "circuits": [
+    {
+      "name": "registerAirframe",
+      "pure": false,
+      "arguments": [
+        {
+          "name": "airframeId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "authorizeIssuer",
+      "pure": false,
+      "arguments": [
+        {
+          "name": "airframeId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "issuerPk",
+          "type": {
+            "type-name": "Struct",
+            "name": "ZswapCoinPublicKey",
+            "elements": [
+              {
+                "name": "bytes",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 32
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "revokeIssuer",
+      "pure": false,
+      "arguments": [
+        {
+          "name": "airframeId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "issuerPk",
+          "type": {
+            "type-name": "Struct",
+            "name": "ZswapCoinPublicKey",
+            "elements": [
+              {
+                "name": "bytes",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 32
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "addEntry",
+      "pure": false,
+      "arguments": [
+        {
+          "name": "airframeId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "entryType",
+          "type": {
+            "type-name": "Enum",
+            "name": "EntryType",
+            "elements": [
+              "ANNUAL",
+              "HUNDRED_HOUR",
+              "AD_COMPLIANCE",
+              "REPAIR",
+              "MOD_STC",
+              "OVERHAUL",
+              "OTHER"
+            ]
+          }
+        },
+        {
+          "name": "dateUtc",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          }
+        },
+        {
+          "name": "tachOrTT",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          }
+        },
+        {
+          "name": "docHash",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "docRef",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "transferAirframe",
+      "pure": false,
+      "arguments": [
+        {
+          "name": "airframeId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "newOwner",
+          "type": {
+            "type-name": "Struct",
+            "name": "ZswapCoinPublicKey",
+            "elements": [
+              {
+                "name": "bytes",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 32
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "getNextEntryId",
+      "pure": false,
+      "arguments": [
+        {
+          "name": "airframeId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Uint",
+        "maxval": 18446744073709551615
+      }
+    },
+    {
+      "name": "getEntry",
+      "pure": false,
+      "arguments": [
+        {
+          "name": "airframeId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "entryId",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "Entry",
+        "elements": [
+          {
+            "name": "entryType",
+            "type": {
+              "type-name": "Enum",
+              "name": "EntryType",
+              "elements": [
+                "ANNUAL",
+                "HUNDRED_HOUR",
+                "AD_COMPLIANCE",
+                "REPAIR",
+                "MOD_STC",
+                "OVERHAUL",
+                "OTHER"
+              ]
+            }
+          },
+          {
+            "name": "dateUtc",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 18446744073709551615
+            }
+          },
+          {
+            "name": "tachOrTT",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 18446744073709551615
+            }
+          },
+          {
+            "name": "issuer",
+            "type": {
+              "type-name": "Struct",
+              "name": "ZswapCoinPublicKey",
+              "elements": [
+                {
+                  "name": "bytes",
+                  "type": {
+                    "type-name": "Bytes",
+                    "length": 32
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "docHash",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          },
+          {
+            "name": "docRef",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ]
+}
