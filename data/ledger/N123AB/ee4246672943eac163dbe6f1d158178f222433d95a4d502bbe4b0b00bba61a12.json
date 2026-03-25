@@ -1,0 +1,13 @@
+{
+  "hash": "ee4246672943eac163dbe6f1d158178f222433d95a4d502bbe4b0b00bba61a12",
+  "aircraft_ident": "N123AB",
+  "date": null,
+  "action": "Completed",
+  "component": null,
+  "description": "Annual inspection completed. Airworthy.",
+  "tach_time": null,
+  "hobbs_time": null,
+  "signer": "Karen Davis #KD7755",
+  "source_line": "Annual inspection completed. Airworthy. IA Karen Davis #KD7755",
+  "ingested_at": "2026-03-25T15:15:53.612Z"
+}

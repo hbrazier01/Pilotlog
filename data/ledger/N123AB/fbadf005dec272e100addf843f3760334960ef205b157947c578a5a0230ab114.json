@@ -1,0 +1,13 @@
+{
+  "hash": "fbadf005dec272e100addf843f3760334960ef205b157947c578a5a0230ab114",
+  "aircraft_ident": "N123AB",
+  "date": "2026-03-20",
+  "action": "Replaced",
+  "component": "left brake pads",
+  "description": "Replaced left brake pads, tested braking.",
+  "tach_time": 1312.7,
+  "hobbs_time": null,
+  "signer": "Mike Torres #MT0011",
+  "source_line": "2026-03-20 Tach 1312.7 Replaced left brake pads, tested braking. Signed Mike Torres #MT0011",
+  "ingested_at": "2026-03-25T15:15:53.555Z"
+}

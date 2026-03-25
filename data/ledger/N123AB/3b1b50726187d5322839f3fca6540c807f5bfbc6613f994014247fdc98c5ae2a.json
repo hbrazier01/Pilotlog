@@ -1,0 +1,13 @@
+{
+  "hash": "3b1b50726187d5322839f3fca6540c807f5bfbc6613f994014247fdc98c5ae2a",
+  "aircraft_ident": "N123AB",
+  "date": "2026-03-15",
+  "action": "Performed",
+  "component": "100-hour inspection per FAR 91",
+  "description": "Performed 100-hour inspection per FAR 91.409. &P #BW4321",
+  "tach_time": null,
+  "hobbs_time": 2102,
+  "signer": "Bob Williams A",
+  "source_line": "03/15/2026 Hobbs: 2102.0 Performed 100-hour inspection per FAR 91.409. Certified by Bob Williams A&P #BW4321",
+  "ingested_at": "2026-03-25T15:15:53.498Z"
+}

@@ -1,0 +1,13 @@
+{
+  "hash": "970ea748d33630ae0a80055577a62751c0ef673f3da2f3b817e15ef02a02cfc1",
+  "aircraft_ident": "N123AB",
+  "date": "2026-02-14",
+  "action": "Inspected",
+  "component": "left magneto timing",
+  "description": "Inspected left magneto timing, adjusted to 25 deg BTDC.",
+  "tach_time": 1278.2,
+  "hobbs_time": null,
+  "signer": "Mary Johnson #IA9876",
+  "source_line": "2026-02-14 Tach: 1278.2 Inspected left magneto timing, adjusted to 25 deg BTDC. IA: Mary Johnson #IA9876",
+  "ingested_at": "2026-03-25T15:15:53.442Z"
+}

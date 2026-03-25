@@ -1,0 +1,13 @@
+{
+  "hash": "431d0a3e6bcbb731767e3bdbf889b1a8958c8e4e168e04194c48fdf406e8e1a2",
+  "aircraft_ident": "N123AB",
+  "date": "2026-01-10",
+  "action": "Replaced",
+  "component": "oil filter and engine oil (6 qt AeroShell 15W-50)",
+  "description": "Replaced oil filter and engine oil (6 qt AeroShell 15W-50). Signed",
+  "tach_time": 1234.5,
+  "hobbs_time": null,
+  "signer": "John Smith #A12345",
+  "source_line": "2026-01-10 Tach: 1234.5 Replaced oil filter and engine oil (6 qt AeroShell 15W-50). Signed A&P John Smith #A12345",
+  "ingested_at": "2026-03-25T15:15:45.818Z"
+}
