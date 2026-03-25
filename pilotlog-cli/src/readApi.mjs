@@ -480,6 +480,40 @@ app.get("/", (_req, res) => {
     gaps.push("No integrity hash");
   }     
 
+  // ── Aircraft Record Value Layer ───────────────────────────────────────────────
+  const resaleScore = qualityScore; // out of 110
+  const resaleReadiness =
+    resaleScore >= 85 ? "High" : resaleScore >= 55 ? "Medium" : "Low";
+
+  const resaleExplanation =
+    resaleReadiness === "High"
+      ? [
+          "This aircraft's records are complete and verifiable.",
+          "→ Likely to pass pre-buy without delays",
+          "→ Reduces buyer uncertainty",
+          "→ Supports stronger resale pricing",
+        ]
+      : resaleReadiness === "Medium"
+        ? [
+            "This aircraft has solid records with some gaps.",
+            "→ May require additional documentation at pre-buy",
+            "→ Minor delays possible during buyer review",
+            "→ Closing gaps will improve resale pricing",
+          ]
+        : [
+            "This aircraft's records have significant gaps.",
+            "→ Pre-buy may surface documentation issues",
+            "→ Buyer may request a price discount",
+            "→ Strengthening records will improve resale value",
+          ];
+
+  const resaleColor =
+    resaleReadiness === "High"
+      ? "#6ee7b7"
+      : resaleReadiness === "Medium"
+        ? "#fbbf24"
+        : "#f87171";
+
   const fmt = (n) => Number(n || 0).toFixed(1);
   const landings =
     Number(totals.dayLandings || 0) + Number(totals.nightLandings || 0);
@@ -747,6 +781,25 @@ app.get("/", (_req, res) => {
     </div>
   </div>
 </div>
+
+  <div class="card" style="margin-top:18px; border-color:#2a3060;">
+    <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+      <div>
+        <div class="label">Aircraft Record Value</div>
+        <div style="display:flex; align-items:baseline; gap:10px; margin-top:6px;">
+          <span style="font-size:28px; font-weight:800; color:${resaleColor};">${resaleReadiness}</span>
+          <span class="muted" style="font-size:13px;">Resale Readiness</span>
+        </div>
+      </div>
+      <div style="margin-left:auto; text-align:right;">
+        <div class="label">Record Quality Score</div>
+        <div style="font-size:22px; font-weight:700; margin-top:4px; color:${resaleColor};">${qualityScore} / 110</div>
+      </div>
+    </div>
+    <div class="small" style="margin-top:12px; line-height:1.8; color:#d1d5db;">
+      ${resaleExplanation.map((line, i) => i === 0 ? `<span style="color:#fff; font-weight:600;">${line}</span>` : `<span class="muted">${line}</span>`).join("<br />")}
+    </div>
+  </div>
 
     <div class="table">
       <table>
