@@ -554,6 +554,10 @@ app.get("/", (_req, res) => {
             Download Sale Packet
           </a>
           ·
+          <a href="/export/sale-packet/html" style="color:#9aa3ff;text-decoration:none;">
+            View Sale Packet (HTML)
+          </a>
+          ·
           <a href="/verify/hash/${logHash}" style="color:#9aa3ff;text-decoration:none;">
             Verify Current Hash
           </a>
@@ -1197,6 +1201,396 @@ app.get("/export/sale-packet", (_req, res) => {
     `attachment; filename="airlog-sale-packet-${new Date().toISOString().slice(0,10)}.json"`
   );
   res.send(JSON.stringify(packet, null, 2));
+});
+
+app.get("/export/sale-packet/html", (_req, res) => {
+  const entries = readEntries();
+  const profile = readProfile();
+  const aircraft = readAircraft();
+  const verification = readVerification();
+  const maintenance = readMaintenance();
+
+  const hash = hashLogbook(entries, profile, aircraft);
+  const totals = computeTotals(entries);
+  const generatedDate = new Date().toISOString();
+  const generatedFormatted = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+
+  const primaryAircraft = aircraft[0] || {};
+  const anchored = verification?.anchored || false;
+  const currentHash = hash;
+  const anchorHash = verification?.anchorHash || null;
+  const hashMatch = anchorHash && anchorHash === currentHash;
+
+  // Record quality score
+  const qualityFactors = [];
+  let qualityScore = 0;
+  if (maintenance.length > 0) { qualityScore += 25; qualityFactors.push({ label: "Maintenance records present", points: 25, pass: true }); }
+  else { qualityFactors.push({ label: "Maintenance records present", points: 0, pass: false }); }
+  if (aircraft.length > 0 && primaryAircraft.annualDue) { qualityScore += 20; qualityFactors.push({ label: "Annual inspection date on file", points: 20, pass: true }); }
+  else { qualityFactors.push({ label: "Annual inspection date on file", points: 0, pass: false }); }
+  if (entries.length > 0) { qualityScore += 20; qualityFactors.push({ label: "Flight log entries present", points: 20, pass: true }); }
+  else { qualityFactors.push({ label: "Flight log entries present", points: 0, pass: false }); }
+  if (anchored) { qualityScore += 25; qualityFactors.push({ label: "Records anchored on-chain", points: 25, pass: true }); }
+  else { qualityFactors.push({ label: "Records anchored on-chain", points: 0, pass: false }); }
+  if (profile?.pilot?.fullName) { qualityScore += 10; qualityFactors.push({ label: "Pilot profile complete", points: 10, pass: true }); }
+  else { qualityFactors.push({ label: "Pilot profile complete", points: 0, pass: false }); }
+
+  const totalLandings = Number(totals.dayLandings || 0) + Number(totals.nightLandings || 0);
+  const instrumentTime = Number(totals.actualInstrument || 0) + Number(totals.simulatedInstrument || 0);
+
+  function fmt(val) { return val ? String(val).slice(0, 10) : "—"; }
+  function fmtNum(val) { return Number(val || 0).toFixed(1); }
+
+  const maintenanceRows = maintenance.map((m) => {
+    const date = m.date ? String(m.date).slice(0, 10) : "—";
+    const cat = (m.category || "").replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    const rts = m.returnToService ? "✓" : "—";
+    return `<tr>
+      <td>${date}</td>
+      <td><span class="badge">${cat}</span></td>
+      <td>${m.description || "—"}</td>
+      <td>${m.mechanic || m.performedBy || "—"}</td>
+      <td>${m.totalAirframeHours != null ? fmtNum(m.totalAirframeHours) + " hrs" : "—"}</td>
+      <td class="rts ${m.returnToService ? "rts-yes" : "rts-no"}">${rts}</td>
+    </tr>`;
+  }).join("\n");
+
+  const qualityRows = qualityFactors.map((f) =>
+    `<tr>
+      <td>${f.pass ? "✓" : "✗"}</td>
+      <td>${f.label}</td>
+      <td>${f.pass ? f.points : 0} / ${f.points > 0 ? f.points : "25"}</td>
+    </tr>`
+  ).join("\n");
+
+  const aircraftRows = aircraft.map((a) => `
+    <tr><td>Registration</td><td>${a.ident || "—"}</td></tr>
+    <tr><td>Type</td><td>${a.type || "—"}</td></tr>
+    <tr><td>Annual Due</td><td>${fmt(a.annualDue)}</td></tr>
+    <tr><td>Transponder Due</td><td>${fmt(a.transponderDue)}</td></tr>
+    <tr><td>Pitot-Static Due</td><td>${fmt(a.pitotStaticDue)}</td></tr>
+    <tr><td>ELT Battery Due</td><td>${fmt(a.eltBatteryDue)}</td></tr>
+  `).join("\n");
+
+  const integrityStatus = anchored
+    ? `<span class="badge badge-green">Anchored — ${verification.anchorNetwork || "network"}</span>`
+    : `<span class="badge badge-yellow">Not Yet Anchored</span>`;
+
+  const hashMatchBadge = hashMatch
+    ? `<span class="badge badge-green">Hash Match ✓</span>`
+    : `<span class="badge badge-yellow">Hash Drift Detected</span>`;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AirLog Sale Packet — ${primaryAircraft.ident || "Aircraft"}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: 13px;
+      color: #1a1a2e;
+      background: #f5f7fa;
+      line-height: 1.5;
+    }
+    @media print {
+      body { background: #fff; font-size: 11px; }
+      .no-print { display: none !important; }
+      section { break-inside: avoid; }
+      .page-break { page-break-after: always; }
+    }
+    .container { max-width: 960px; margin: 0 auto; padding: 24px 20px 48px; }
+
+    /* HEADER */
+    .header {
+      background: linear-gradient(135deg, #0d1b4b 0%, #1a3a8f 100%);
+      color: #fff;
+      padding: 32px 36px;
+      border-radius: 8px;
+      margin-bottom: 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .header-brand { font-size: 22px; font-weight: 700; letter-spacing: 0.04em; }
+    .header-brand span { color: #7aa7ff; }
+    .header-sub { font-size: 12px; color: #b0c4ff; margin-top: 4px; }
+    .header-ident { text-align: right; }
+    .header-ident .ident { font-size: 36px; font-weight: 800; letter-spacing: 0.06em; color: #fff; }
+    .header-ident .type { font-size: 14px; color: #b0c4ff; margin-top: 2px; }
+    .header-ident .gendate { font-size: 11px; color: #8099cc; margin-top: 6px; }
+
+    /* SECTION */
+    section {
+      background: #fff;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .section-title {
+      background: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 12px 20px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #4a5568;
+    }
+    .section-body { padding: 20px; }
+
+    /* GRID */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .stat-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 14px 16px;
+    }
+    .stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: #718096; font-weight: 600; }
+    .stat-value { font-size: 22px; font-weight: 700; color: #1a1a2e; margin-top: 4px; }
+    .stat-unit { font-size: 11px; color: #a0aec0; font-weight: 400; }
+
+    /* KV TABLE */
+    .kv-table { width: 100%; border-collapse: collapse; }
+    .kv-table tr { border-bottom: 1px solid #f0f4f8; }
+    .kv-table tr:last-child { border-bottom: none; }
+    .kv-table td { padding: 8px 0; vertical-align: top; }
+    .kv-table td:first-child { color: #718096; font-weight: 500; width: 42%; font-size: 12px; }
+    .kv-table td:last-child { color: #1a1a2e; font-weight: 600; }
+
+    /* DATA TABLE */
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table th {
+      background: #f8fafc;
+      text-align: left;
+      padding: 9px 12px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #4a5568;
+      border-bottom: 2px solid #e2e8f0;
+    }
+    .data-table td {
+      padding: 9px 12px;
+      border-bottom: 1px solid #f0f4f8;
+      vertical-align: top;
+      color: #2d3748;
+      font-size: 12px;
+    }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table tr:hover td { background: #fafbff; }
+
+    /* BADGES */
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      background: #e8edf8;
+      color: #3a5199;
+    }
+    .badge-green { background: #d4edda; color: #1a6630; }
+    .badge-yellow { background: #fff3cd; color: #856404; }
+    .badge-red { background: #f8d7da; color: #721c24; }
+
+    .rts-yes { color: #1a6630; font-weight: 700; }
+    .rts-no { color: #a0aec0; }
+
+    /* INTEGRITY BLOCK */
+    .integrity-block {
+      background: #f0f4ff;
+      border: 1px solid #c3d0f5;
+      border-radius: 6px;
+      padding: 16px 20px;
+    }
+    .hash-display {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 11px;
+      color: #2d3748;
+      word-break: break-all;
+      background: #fff;
+      border: 1px solid #d6e0f5;
+      border-radius: 4px;
+      padding: 8px 12px;
+      margin-top: 8px;
+    }
+
+    /* QUALITY SCORE */
+    .score-display { font-size: 48px; font-weight: 800; color: #1a3a8f; line-height: 1; }
+    .score-label { font-size: 12px; color: #718096; margin-top: 4px; }
+    .score-bar { height: 8px; background: #e2e8f0; border-radius: 4px; margin: 12px 0; overflow: hidden; }
+    .score-fill { height: 100%; background: linear-gradient(90deg, #1a3a8f, #4a7adf); border-radius: 4px; transition: width 0.3s; }
+
+    /* FOOTER */
+    .footer {
+      text-align: center;
+      margin-top: 32px;
+      padding-top: 20px;
+      border-top: 1px solid #e2e8f0;
+      font-size: 11px;
+      color: #a0aec0;
+    }
+    .footer strong { color: #4a5568; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div>
+      <div class="header-brand">Air<span>Log</span></div>
+      <div class="header-sub">Aircraft Records &amp; Sale Packet</div>
+      <div style="margin-top:12px;">${integrityStatus}</div>
+    </div>
+    <div class="header-ident">
+      <div class="ident">${primaryAircraft.ident || "—"}</div>
+      <div class="type">${primaryAircraft.type || "—"}</div>
+      <div class="gendate">Generated ${generatedFormatted}</div>
+    </div>
+  </div>
+
+  <!-- LOGBOOK SUMMARY -->
+  <section>
+    <div class="section-title">Logbook Summary</div>
+    <div class="section-body">
+      <div class="grid-3">
+        <div class="stat-card">
+          <div class="stat-label">Total Hours</div>
+          <div class="stat-value">${fmtNum(totals.total)} <span class="stat-unit">hrs</span></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">PIC Hours</div>
+          <div class="stat-value">${fmtNum(totals.pic)} <span class="stat-unit">hrs</span></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Landings</div>
+          <div class="stat-value">${totalLandings}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Instrument Time</div>
+          <div class="stat-value">${fmtNum(instrumentTime)} <span class="stat-unit">hrs</span></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Night Hours</div>
+          <div class="stat-value">${fmtNum(totals.night)} <span class="stat-unit">hrs</span></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Log Entries</div>
+          <div class="stat-value">${entries.length}</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- AIRCRAFT + PILOT GRID -->
+  <div class="grid-2">
+    <section>
+      <div class="section-title">Aircraft Summary</div>
+      <div class="section-body">
+        <table class="kv-table">
+          ${aircraftRows}
+        </table>
+      </div>
+    </section>
+    <section>
+      <div class="section-title">Pilot / Owner Summary</div>
+      <div class="section-body">
+        <table class="kv-table">
+          <tr><td>Full Name</td><td>${profile?.pilot?.fullName || "—"}</td></tr>
+          <tr><td>Medical</td><td>${profile?.medical?.kind || "None"}${profile?.medical?.class ? " Class " + profile.medical.class : ""}</td></tr>
+          <tr><td>Medical Expires</td><td>${fmt(profile?.medical?.expires)}</td></tr>
+          <tr><td>Flight Review</td><td>${fmt(profile?.proficiency?.flightReviewDate)}</td></tr>
+          <tr><td>IPC Date</td><td>${fmt(profile?.proficiency?.ipcDate)}</td></tr>
+          <tr><td>Endorsements</td><td>${profile?.endorsements?.length || 0}</td></tr>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- MAINTENANCE HISTORY -->
+  <section>
+    <div class="section-title">Maintenance History (${maintenance.length} records)</div>
+    <div class="section-body" style="padding:0;">
+      ${maintenance.length === 0
+        ? '<div style="padding:20px;color:#a0aec0;text-align:center;">No maintenance records on file.</div>'
+        : `<table class="data-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Category</th>
+              <th>Description</th>
+              <th>Mechanic</th>
+              <th>Airframe Hrs</th>
+              <th>RTS</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${maintenanceRows}
+          </tbody>
+        </table>`}
+    </div>
+  </section>
+
+  <!-- INTEGRITY + QUALITY GRID -->
+  <div class="grid-2">
+    <section>
+      <div class="section-title">Record Integrity</div>
+      <div class="section-body">
+        <div class="integrity-block">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <span style="font-weight:600;font-size:12px;">Status</span>
+            ${integrityStatus}
+          </div>
+          ${anchorHash ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <span style="font-weight:600;font-size:12px;">Hash Match</span>
+            ${hashMatchBadge}
+          </div>` : ""}
+          ${verification?.anchorTime ? `<div style="font-size:11px;color:#718096;margin-bottom:6px;">Anchored: ${String(verification.anchorTime).slice(0,10)}</div>` : ""}
+          ${verification?.anchorNetwork ? `<div style="font-size:11px;color:#718096;margin-bottom:6px;">Network: ${verification.anchorNetwork}</div>` : ""}
+          <div style="font-size:11px;color:#718096;margin-top:8px;font-weight:600;">Current Record Hash</div>
+          <div class="hash-display">${currentHash}</div>
+          ${anchorHash && anchorHash !== currentHash ? `<div style="font-size:11px;color:#718096;margin-top:8px;font-weight:600;">Anchored Hash</div><div class="hash-display">${anchorHash}</div>` : ""}
+        </div>
+      </div>
+    </section>
+    <section>
+      <div class="section-title">Record Quality Score</div>
+      <div class="section-body">
+        <div class="score-display">${qualityScore}<span style="font-size:20px;color:#a0aec0;">/100</span></div>
+        <div class="score-label">${qualityScore >= 80 ? "Excellent" : qualityScore >= 60 ? "Good" : qualityScore >= 40 ? "Fair" : "Incomplete"}</div>
+        <div class="score-bar"><div class="score-fill" style="width:${qualityScore}%;"></div></div>
+        <table class="data-table" style="margin-top:8px;">
+          <thead><tr><th></th><th>Factor</th><th>Points</th></tr></thead>
+          <tbody>${qualityRows}</tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+</div>
+
+<!-- FOOTER -->
+<div class="footer">
+  <strong>Verified by AirLog</strong> &mdash;
+  Record Hash: <code style="font-size:10px;">${currentHash.slice(0, 16)}…</code> &mdash;
+  Generated ${generatedFormatted}
+</div>
+
+</body>
+</html>`;
+
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(html);
 });
 
 app.get("/verify/hash/:hash", (_req, res) => {
