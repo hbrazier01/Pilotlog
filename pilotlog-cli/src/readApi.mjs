@@ -12,6 +12,7 @@ const ENTRIES_PATH = path.join(DATA_DIR, "entries.json");
 const PROFILE_PATH = path.join(DATA_DIR, "profile.json");
 const AIRCRAFT_PATH = path.join(DATA_DIR, "aircraft.json");
 const VERIFICATION_PATH = path.join(DATA_DIR, "verification.json");
+const MAINTENANCE_PATH = path.join(DATA_DIR, "maintenance.json");
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(ENTRIES_PATH)) fs.writeFileSync(ENTRIES_PATH, "[]");
@@ -103,6 +104,16 @@ function readVerification() {
     return parsed && typeof parsed === "object" ? parsed : null;
   } catch {
     return null;
+  }
+}
+
+function readMaintenance() {
+  try {
+    const raw = fs.readFileSync(MAINTENANCE_PATH, "utf-8");
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
   }
 }
 
@@ -287,6 +298,7 @@ app.get("/", (_req, res) => {
   const profile = readProfile();
   const verification = readVerification();
   const aircraftRecords = readAircraft();
+  const maintenanceRecords = readMaintenance().sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const logHash = verification?.anchorHash || hashLogbook(entries, profile, aircraftRecords);
 
   const last90 = entries.filter((e) => withinDays(e.date, asOf, 90));
@@ -448,6 +460,13 @@ app.get("/", (_req, res) => {
     strengths.push("Maintenance due dates recorded");
   } else {
     gaps.push("Maintenance dates missing");
+  }
+
+  if (maintenanceRecords.length > 0) {
+    qualityScore += 10;
+    strengths.push("Maintenance history recorded");
+  } else {
+    gaps.push("No maintenance history");
   }
 
   if (verification?.anchored) {
@@ -700,7 +719,7 @@ app.get("/", (_req, res) => {
 
   <div class="card">
     <div class="label">Record Quality</div>
-    <div class="val ${scoreClass(qualityScore)}">${qualityScore} / 100</div>
+    <div class="val ${scoreClass(qualityScore)}">${qualityScore} / 110</div>
 
     <div class="small">
       <div class="muted" style="margin-top:6px;">Strengths</div>
@@ -742,9 +761,44 @@ app.get("/", (_req, res) => {
         </tbody>
       </table>
     </div>
+
+    ${maintenanceRecords.length > 0 ? `
+    <div class="table" style="margin-top:24px;">
+      <div class="label" style="padding:12px 0 8px;">Maintenance History</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Category</th>
+            <th>Description</th>
+            <th>Performed By</th>
+            <th>Airframe Hrs</th>
+            <th class="muted">RTS</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${maintenanceRecords.map(m => `
+            <tr>
+              <td>${String(m.date || "").slice(0, 10)}</td>
+              <td>${(m.category || "").replace(/-/g, " ")}</td>
+              <td>${(m.description || "").replaceAll("<","&lt;").replaceAll(">","&gt;")}</td>
+              <td>${(m.performedBy || "").replaceAll("<","&lt;").replaceAll(">","&gt;")}</td>
+              <td>${m.totalAirframeHours ?? ""}</td>
+              <td>${m.returnToService ? '<span class="ok">Yes</span>' : '<span class="warn">No</span>'}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+    ` : ""}
   </div>
 </body>
 </html>`);
+});
+
+app.get("/maintenance", (_req, res) => {
+  const records = readMaintenance();
+  res.json(records);
 });
 
 app.get("/health", (_req, res) => {
@@ -1071,6 +1125,7 @@ app.get("/export/sale-packet", (_req, res) => {
   const profile = readProfile();
   const aircraft = readAircraft();
   const verification = readVerification();
+  const maintenance = readMaintenance();
 
   const hash = hashLogbook(entries, profile, aircraft);
 
@@ -1086,6 +1141,25 @@ app.get("/export/sale-packet", (_req, res) => {
 
   const totals = computeTotals(entries);
 
+  const maintenanceSummary = maintenance.map((m) => ({
+    id: m.id,
+    date: m.date,
+    category: m.category,
+    description: m.description,
+    performedBy: m.performedBy,
+    mechanic: m.mechanic,
+    totalAirframeHours: m.totalAirframeHours || null,
+    returnToService: m.returnToService || false,
+    components: (m.components || []).map((c) => ({
+      name: c.name,
+      partNumber: c.partNumber || null,
+      action: c.action,
+      condition: c.condition
+    })),
+    adCompliance: m.adCompliance || [],
+    documents: m.documents || []
+  }));
+
   const packet = {
     generated: new Date().toISOString(),
     packetType: "airlog-sale-packet",
@@ -1098,6 +1172,7 @@ app.get("/export/sale-packet", (_req, res) => {
       currentHash: hash
     },
     aircraftSummary,
+    maintenanceSummary,
     logbookSummary: {
       entries: entries.length,
       totalHours: totals.total,
