@@ -1,5 +1,5 @@
 {
-  "generated": "2026-03-25T15:53:56.114Z",
+  "generated": "2026-03-25T18:22:58.671Z",
   "packetType": "airlog-sale-packet",
   "verification": {
     "anchored": true,
@@ -13,10 +13,18 @@
     {
       "ident": "N123AB",
       "type": "SR20",
+      "make": null,
+      "model": null,
+      "year": null,
+      "serialNumber": "1533",
+      "engineType": "IO-360-ES",
+      "avionics": [],
+      "totalTimeInService": 2046.1,
       "annualDue": "2026-05-15",
       "transponderDue": "2027-03-31",
       "pitotStaticDue": "2027-03-31",
       "eltBatteryDue": "2026-07-31",
+      "complianceCalendar": [],
       "notes": ""
     }
   ],
@@ -135,7 +143,7 @@
   ],
   "logbookSummary": {
     "entries": 4,
-    "totalHours": 0,
+    "totalHours": 3.5,
     "picHours": 3.5,
     "landings": 4,
     "instrumentTime": 0
