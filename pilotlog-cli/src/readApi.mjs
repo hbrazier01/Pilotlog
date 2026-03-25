@@ -1245,6 +1245,25 @@ app.get("/export/sale-packet/html", (_req, res) => {
     const date = m.date ? String(m.date).slice(0, 10) : "—";
     const cat = (m.category || "").replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
     const rts = m.returnToService ? "✓" : "—";
+    const components = m.components || [];
+    const compDetail = components.length > 0
+      ? `<tr class="comp-row"><td colspan="6"><div class="comp-detail"><strong>Components Serviced:</strong> ` +
+        components.map(c => {
+          const parts = [c.name];
+          if (c.partNumber) parts.push(`P/N: ${c.partNumber}`);
+          if (c.serialNumber) parts.push(`S/N: ${c.serialNumber}`);
+          if (c.action) parts.push(`Action: ${c.action}`);
+          return parts.join(" · ");
+        }).join(" &nbsp;|&nbsp; ") + `</div></td></tr>`
+      : "";
+    const extraDetail = (m.remarks || m.tach != null || m.hobbs != null)
+      ? `<tr class="comp-row"><td colspan="6"><div class="comp-detail">` +
+        [m.tach != null ? `Tach: ${m.tach}` : null,
+         m.hobbs != null ? `Hobbs: ${m.hobbs}` : null,
+         m.remarks ? `Remarks: ${m.remarks}` : null
+        ].filter(Boolean).join(" &nbsp;·&nbsp; ") +
+        `</div></td></tr>`
+      : "";
     return `<tr>
       <td>${date}</td>
       <td><span class="badge">${cat}</span></td>
@@ -1252,7 +1271,7 @@ app.get("/export/sale-packet/html", (_req, res) => {
       <td>${m.mechanic || m.performedBy || "—"}</td>
       <td>${m.totalAirframeHours != null ? fmtNum(m.totalAirframeHours) + " hrs" : "—"}</td>
       <td class="rts ${m.returnToService ? "rts-yes" : "rts-no"}">${rts}</td>
-    </tr>`;
+    </tr>${compDetail}${extraDetail}`;
   }).join("\n");
 
   const qualityRows = qualityFactors.map((f) =>
@@ -1266,11 +1285,70 @@ app.get("/export/sale-packet/html", (_req, res) => {
   const aircraftRows = aircraft.map((a) => `
     <tr><td>Registration</td><td>${a.ident || "—"}</td></tr>
     <tr><td>Type</td><td>${a.type || "—"}</td></tr>
+    <tr><td>Serial Number</td><td>${a.serialNumber || "—"}</td></tr>
+    <tr><td>Manufacture Year</td><td>${a.manufactureYear || "—"}</td></tr>
+    <tr><td>Total Time in Service</td><td>${a.totalTimeInService != null ? fmtNum(a.totalTimeInService) + " hrs" : "—"}</td></tr>
+    <tr><td>Registration Date</td><td>${fmt(a.registrationDate)}</td></tr>
+    <tr><td>Engine Type</td><td>${a.engineType || "—"}</td></tr>
+    <tr><td>Engine Serial</td><td>${a.engineSerial || "—"}</td></tr>
+    <tr><td>Propeller Type</td><td>${a.propType || "—"}</td></tr>
+    <tr><td>Propeller Serial</td><td>${a.propSerial || "—"}</td></tr>
     <tr><td>Annual Due</td><td>${fmt(a.annualDue)}</td></tr>
     <tr><td>Transponder Due</td><td>${fmt(a.transponderDue)}</td></tr>
     <tr><td>Pitot-Static Due</td><td>${fmt(a.pitotStaticDue)}</td></tr>
     <tr><td>ELT Battery Due</td><td>${fmt(a.eltBatteryDue)}</td></tr>
   `).join("\n");
+
+  // Compliance calendar: pull due dates from aircraft + recurring AD nextDue from maintenance
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  function daysUntil(dateStr) {
+    if (!dateStr) return null;
+    const d = new Date(String(dateStr).slice(0, 10));
+    if (isNaN(d)) return null;
+    return Math.round((d - today) / 86400000);
+  }
+  function complianceColor(days) {
+    if (days === null) return "";
+    if (days < 0) return "badge-red";
+    if (days <= 30) return "badge-red";
+    if (days <= 90) return "badge-yellow";
+    return "badge-green";
+  }
+  function complianceStatus(days) {
+    if (days === null) return "Unknown";
+    if (days < 0) return "OVERDUE";
+    if (days <= 30) return "Due Soon";
+    if (days <= 90) return "Upcoming";
+    return "Current";
+  }
+
+  const complianceItems = [];
+  if (primaryAircraft.annualDue) complianceItems.push({ item: "Annual Inspection", due: primaryAircraft.annualDue });
+  if (primaryAircraft.transponderDue) complianceItems.push({ item: "Transponder Check", due: primaryAircraft.transponderDue });
+  if (primaryAircraft.pitotStaticDue) complianceItems.push({ item: "Pitot-Static Check", due: primaryAircraft.pitotStaticDue });
+  if (primaryAircraft.eltBatteryDue) complianceItems.push({ item: "ELT Battery", due: primaryAircraft.eltBatteryDue });
+
+  // Pull AD nextDue from maintenance records
+  for (const m of maintenance) {
+    for (const ad of (m.adCompliance || [])) {
+      if (ad.nextDue) {
+        complianceItems.push({ item: `AD ${ad.adNumber || ""}${ad.title ? " — " + ad.title : ""}`, due: ad.nextDue });
+      }
+    }
+  }
+
+  const complianceRows = complianceItems.map((ci) => {
+    const days = daysUntil(ci.due);
+    const colorClass = complianceColor(days);
+    const status = complianceStatus(days);
+    return `<tr>
+      <td>${ci.item}</td>
+      <td>${fmt(ci.due)}</td>
+      <td>${days !== null ? (days < 0 ? `${Math.abs(days)} days ago` : `${days} days`) : "—"}</td>
+      <td><span class="badge ${colorClass}">${status}</span></td>
+    </tr>`;
+  }).join("\n");
 
   const integrityStatus = anchored
     ? `<span class="badge badge-green">Anchored — ${verification.anchorNetwork || "network"}</span>`
@@ -1405,6 +1483,10 @@ app.get("/export/sale-packet/html", (_req, res) => {
     .rts-yes { color: #1a6630; font-weight: 700; }
     .rts-no { color: #a0aec0; }
 
+    /* COMPONENT DETAIL ROW */
+    .comp-row td { padding: 0 12px 8px; border-bottom: none; background: #fafbff; }
+    .comp-detail { font-size: 11px; color: #4a5568; background: #f0f4ff; border-radius: 4px; padding: 6px 10px; border-left: 3px solid #b0c4ff; }
+
     /* INTEGRITY BLOCK */
     .integrity-block {
       background: #f0f4ff;
@@ -1516,6 +1598,28 @@ app.get("/export/sale-packet/html", (_req, res) => {
       </div>
     </section>
   </div>
+
+  <!-- COMPLIANCE CALENDAR -->
+  <section>
+    <div class="section-title">Upcoming Compliance &amp; Inspections</div>
+    <div class="section-body" style="padding:0;">
+      ${complianceItems.length === 0
+        ? '<div style="padding:20px;color:#a0aec0;text-align:center;">No compliance dates on file.</div>'
+        : `<table class="data-table">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Due Date</th>
+              <th>Days Until Due</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${complianceRows}
+          </tbody>
+        </table>`}
+    </div>
+  </section>
 
   <!-- MAINTENANCE HISTORY -->
   <section>
