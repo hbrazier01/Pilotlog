@@ -1,30 +1,28 @@
 {
-  "generated": "2026-03-25T18:22:58.671Z",
+  "generated": "2026-03-25T18:46:10.117Z",
   "packetType": "airlog-sale-packet",
   "verification": {
     "anchored": true,
     "anchorHash": "f6c5ca8963179a052633ff689d2793c05d0d81729ed8324a8fe23cf1cc0f721f",
     "anchorTime": "2026-03-13T03:03:43.247Z",
     "anchorNetwork": "midnight-preview",
-    "anchorTx": null,
-    "currentHash": "45a6d5aa45ff4af28f569b12eb7dce1fc41efb764b781cb0620c0196ffacd3df"
+    "anchorTx": null
   },
   "aircraftSummary": [
     {
       "ident": "N123AB",
+      "make": "Cirrus",
+      "model": "SR20",
+      "year": 2018,
       "type": "SR20",
-      "make": null,
-      "model": null,
-      "year": null,
-      "serialNumber": "1533",
-      "engineType": "IO-360-ES",
-      "avionics": [],
-      "totalTimeInService": 2046.1,
+      "engineTimeSMOH": 412.3,
+      "avionics": [
+        "Garmin GTX 345"
+      ],
       "annualDue": "2026-05-15",
       "transponderDue": "2027-03-31",
       "pitotStaticDue": "2027-03-31",
       "eltBatteryDue": "2026-07-31",
-      "complianceCalendar": [],
       "notes": ""
     }
   ],

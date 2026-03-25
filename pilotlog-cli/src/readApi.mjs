@@ -1144,7 +1144,12 @@ app.get("/export/sale-packet", (_req, res) => {
 
   const aircraftSummary = aircraft.map((a) => ({
     ident: a.ident,
+    make: a.make || null,
+    model: a.model || null,
+    year: a.year || a.manufactureYear || null,
     type: a.type,
+    engineTimeSMOH: a.engineTimeSMOH || null,
+    avionics: a.avionics || [],
     annualDue: a.annualDue || null,
     transponderDue: a.transponderDue || null,
     pitotStaticDue: a.pitotStaticDue || null,
