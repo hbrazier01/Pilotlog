@@ -1,0 +1,49 @@
+{
+  "_instructions": "Fill out this form after reviewing the AirLog demo. Return to Harrison or paste into the shared channel. Delete fields that don't apply.",
+  "partner": {
+    "name": "",
+    "role": "",
+    "organization": "",
+    "email": "",
+    "date": ""
+  },
+  "context": {
+    "typicalAircraftDeals": "",
+    "currentRecordProcess": "",
+    "buyerSellerSide": ""
+  },
+  "trustReport": {
+    "wouldUseInRealSale": null,
+    "mostUsefulSection": "",
+    "missingFields": [],
+    "trustScoreUseful": null,
+    "trustScoreComments": "",
+    "riskFlagsUseful": null,
+    "riskFlagsComments": ""
+  },
+  "salePacket": {
+    "wouldShareWithBuyer": null,
+    "missingFields": [],
+    "formatPreference": "",
+    "comments": ""
+  },
+  "workflow": {
+    "whereWouldYouIntegrateThis": "",
+    "currentToolsYouUse": [],
+    "replaces": "",
+    "complements": ""
+  },
+  "credibility": {
+    "whatMakesItCredibleToday": "",
+    "biggestCredibilityGap": "",
+    "wouldPayFor": null,
+    "willingness_to_pay_comments": ""
+  },
+  "overall": {
+    "rating": null,
+    "topThreeThingsToFix": [],
+    "biggestValueProp": "",
+    "wouldReferToColleague": null,
+    "openFeedback": ""
+  }
+}
