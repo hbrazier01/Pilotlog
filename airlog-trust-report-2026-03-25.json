@@ -1,0 +1,139 @@
+{
+  "generated": "2026-03-25T18:27:14.894Z",
+  "reportType": "airlog-trust-report",
+  "trustScore": 70,
+  "riskLevel": "medium",
+  "riskFlags": [
+    {
+      "severity": "critical",
+      "code": "HASH_MISMATCH",
+      "detail": "Current record hash does not match the anchored hash — records may have been modified after anchoring."
+    }
+  ],
+  "provenance": {
+    "ident": "N123AB",
+    "type": "SR20",
+    "serialNumber": "1533",
+    "manufactureYear": 2018,
+    "registrationDate": "2018-04-12",
+    "totalTimeInService": 2046.1,
+    "engineType": "IO-360-ES",
+    "engineSerial": "E-42891",
+    "propType": "Hartzell HC-C2YK-1BF",
+    "propSerial": "BF-39012"
+  },
+  "complianceCalendar": [
+    {
+      "label": "Annual Inspection",
+      "dueDate": "2026-05-15",
+      "daysUntilDue": 50,
+      "status": "upcoming",
+      "color": "yellow"
+    },
+    {
+      "label": "Transponder Check",
+      "dueDate": "2027-03-31",
+      "daysUntilDue": 370,
+      "status": "current",
+      "color": "green"
+    },
+    {
+      "label": "Pitot-Static Check",
+      "dueDate": "2027-03-31",
+      "daysUntilDue": 370,
+      "status": "current",
+      "color": "green"
+    },
+    {
+      "label": "ELT Battery",
+      "dueDate": "2026-07-31",
+      "daysUntilDue": 127,
+      "status": "current",
+      "color": "green"
+    }
+  ],
+  "maintenanceChronology": [
+    {
+      "id": "mx-005",
+      "date": "2024-11-20",
+      "category": "ad-compliance",
+      "description": "Complied with AD 2024-15-06 (Cirrus fuel selector valve inspection).",
+      "performedBy": "Mountain Aviation Maintenance",
+      "mechanic": "James Carter, A&P/IA #4821937",
+      "totalAirframeHours": 1920.4,
+      "returnToService": true,
+      "documents": [
+        "ad-2024-15-06-compliance.pdf"
+      ],
+      "gapDaysFromPrevious": null
+    },
+    {
+      "id": "mx-002",
+      "date": "2025-03-28",
+      "category": "transponder-check",
+      "description": "Transponder and ADS-B certification per 14 CFR 91.413.",
+      "performedBy": "Front Range Avionics",
+      "mechanic": "Lisa Montoya, A&P #3290184",
+      "totalAirframeHours": 1968.2,
+      "returnToService": true,
+      "documents": [
+        "transponder-cert-2025.pdf"
+      ],
+      "gapDaysFromPrevious": 128
+    },
+    {
+      "id": "mx-003",
+      "date": "2025-03-28",
+      "category": "pitot-static-check",
+      "description": "Pitot-static system certification per 14 CFR 91.411.",
+      "performedBy": "Front Range Avionics",
+      "mechanic": "Lisa Montoya, A&P #3290184",
+      "totalAirframeHours": 1968.2,
+      "returnToService": true,
+      "documents": [
+        "pitot-static-cert-2025.pdf"
+      ],
+      "gapDaysFromPrevious": 0
+    },
+    {
+      "id": "mx-001",
+      "date": "2025-05-15",
+      "category": "annual-inspection",
+      "description": "Annual inspection completed per 14 CFR 43.11. No discrepancies found.",
+      "performedBy": "Mountain Aviation Maintenance",
+      "mechanic": "James Carter, A&P/IA #4821937",
+      "totalAirframeHours": 2015.7,
+      "returnToService": true,
+      "documents": [
+        "annual-inspection-2025.pdf"
+      ],
+      "gapDaysFromPrevious": 48
+    },
+    {
+      "id": "mx-004",
+      "date": "2025-08-10",
+      "category": "oil-change",
+      "description": "Engine oil and filter change. Oil analysis sent to Blackstone Labs.",
+      "performedBy": "Mountain Aviation Maintenance",
+      "mechanic": "James Carter, A&P/IA #4821937",
+      "totalAirframeHours": 2046.1,
+      "returnToService": true,
+      "documents": [
+        "oil-analysis-2025-08.pdf"
+      ],
+      "gapDaysFromPrevious": 87
+    }
+  ],
+  "integrityVerification": {
+    "anchored": true,
+    "anchorHash": "f6c5ca8963179a052633ff689d2793c05d0d81729ed8324a8fe23cf1cc0f721f",
+    "anchorTime": "2026-03-13T03:03:43.247Z",
+    "anchorNetwork": "midnight-preview",
+    "currentHash": "0a7263f45ac2cdea04c646f27bc7fdb8567273165d9f5174860e3ca5f9c3b8d0",
+    "hashMatch": false
+  },
+  "logbookSnapshot": {
+    "totalEntries": 4,
+    "totalHours": 3.5
+  }
+}

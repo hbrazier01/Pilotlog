@@ -5,6 +5,7 @@ import express from "express";
 import { createHash, randomBytes } from "node:crypto";
 import { buildIntegrityResult } from "../../src/services/build-integrity-result.mjs";
 import { simulateAirlogAnchor } from "../../src/services/airlog-contract-local.mjs";
+import { buildTrustReport } from "../../src/services/build-trust-report.mjs";
 
 const PORT = Number(process.env.PORT || 8788);
 const DATA_DIR = process.env.PILOTLOG_HOME || process.env.PILOTLOG_DIR || "/data";
@@ -556,6 +557,14 @@ app.get("/", (_req, res) => {
           ·
           <a href="/export/sale-packet/html" style="color:#9aa3ff;text-decoration:none;">
             View Sale Packet (HTML)
+          </a>
+          ·
+          <a href="/export/trust-report/html" style="color:#9aa3ff;text-decoration:none;">
+            View Trust Report
+          </a>
+          ·
+          <a href="/export/trust-report" style="color:#9aa3ff;text-decoration:none;">
+            Download Trust Report (JSON)
           </a>
           ·
           <a href="/verify/hash/${logHash}" style="color:#9aa3ff;text-decoration:none;">
@@ -1834,6 +1843,220 @@ td { padding:6px 0; border-bottom:1px solid #1f2440; }
 </div>
 </body>
 </html>`);
+
+// ── Trust Report (JSON) ──────────────────────────────────────────────────────
+app.get("/export/trust-report", (_req, res) => {
+  const entries = readEntries();
+  const aircraft = readAircraft();
+  const verification = readVerification();
+  const maintenance = readMaintenance();
+  const hash = hashLogbook(entries, readProfile(), aircraft);
+
+  const report = buildTrustReport({
+    aircraft,
+    entries,
+    maintenance,
+    verification: { ...verification, currentHash: hash },
+  });
+
+  res.setHeader("Content-Type", "application/json");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="airlog-trust-report-${new Date().toISOString().slice(0,10)}.json"`
+  );
+  res.send(JSON.stringify(report, null, 2));
+});
+
+// ── Trust Report (HTML) ──────────────────────────────────────────────────────
+app.get("/export/trust-report/html", (_req, res) => {
+  const entries = readEntries();
+  const profile = readProfile();
+  const aircraft = readAircraft();
+  const verification = readVerification();
+  const maintenance = readMaintenance();
+  const hash = hashLogbook(entries, profile, aircraft);
+
+  const report = buildTrustReport({
+    aircraft,
+    entries,
+    maintenance,
+    verification: { ...verification, currentHash: hash },
+  });
+
+  const {
+    trustScore, riskLevel, riskFlags, provenance,
+    complianceCalendar, maintenanceChronology, integrityVerification, logbookSnapshot
+  } = report;
+
+  const generatedFormatted = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+
+  function scoreColor(score) {
+    if (score >= 80) return "#22c55e";
+    if (score >= 50) return "#f59e0b";
+    return "#ef4444";
+  }
+
+  function riskBadgeStyle(severity) {
+    if (severity === "critical") return "background:#7f1d1d;color:#fca5a5;";
+    if (severity === "high")     return "background:#7c2d12;color:#fdba74;";
+    if (severity === "medium")   return "background:#78350f;color:#fde68a;";
+    return "background:#1e3a5f;color:#93c5fd;";
+  }
+
+  function compColor(c) {
+    if (c === "red")    return "#ef4444";
+    if (c === "yellow") return "#f59e0b";
+    if (c === "green")  return "#22c55e";
+    return "#6b7280";
+  }
+
+  const riskFlagRows = riskFlags.length > 0
+    ? riskFlags.map(f => `<tr>
+        <td><span style="padding:2px 8px;border-radius:4px;font-size:12px;${riskBadgeStyle(f.severity)}">${f.severity.toUpperCase()}</span></td>
+        <td style="font-family:monospace;font-size:12px;color:#94a3b8;">${f.code}</td>
+        <td>${f.detail}</td>
+      </tr>`).join("\n")
+    : `<tr><td colspan="3" style="color:#22c55e;text-align:center;">No risk flags — records look clean.</td></tr>`;
+
+  const compRows = complianceCalendar.map(c => `<tr>
+    <td>${c.label}</td>
+    <td>${c.dueDate || "—"}</td>
+    <td>${c.daysUntilDue !== null ? c.daysUntilDue + " days" : "—"}</td>
+    <td><span style="color:${compColor(c.color)};font-weight:600;">${c.status.replace(/_/g," ").toUpperCase()}</span></td>
+  </tr>`).join("\n");
+
+  const chronoRows = maintenanceChronology.map(m => {
+    const gapBadge = m.gapDaysFromPrevious !== null
+      ? `<span style="color:${m.gapDaysFromPrevious > 365 ? "#ef4444" : "#94a3b8"};font-size:11px;">(+${m.gapDaysFromPrevious}d gap)</span>`
+      : "";
+    const cat = (m.category || "").replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    const rts = m.returnToService
+      ? `<span style="color:#22c55e;">✓ RTS</span>`
+      : `<span style="color:#ef4444;">✗ No RTS</span>`;
+    return `<tr>
+      <td>${m.date} ${gapBadge}</td>
+      <td><span class="badge">${cat}</span></td>
+      <td>${m.description || "—"}</td>
+      <td>${m.mechanic || m.performedBy || "—"}</td>
+      <td>${m.totalAirframeHours != null ? Number(m.totalAirframeHours).toFixed(1) + " hrs" : "—"}</td>
+      <td>${rts}</td>
+    </tr>`;
+  }).join("\n");
+
+  const hashLine = integrityVerification.anchored
+    ? (integrityVerification.hashMatch
+        ? `<span style="color:#22c55e;">✓ Hash verified — records unchanged since anchoring</span>`
+        : `<span style="color:#ef4444;">✗ Hash mismatch — records may have changed since anchoring</span>`)
+    : `<span style="color:#f59e0b;">⚠ Records not anchored — integrity cannot be independently verified</span>`;
+
+  const provenanceRows = provenance ? `
+    <tr><td>Registration</td><td>${provenance.ident || "—"}</td></tr>
+    <tr><td>Type</td><td>${provenance.type || "—"}</td></tr>
+    <tr><td>Serial Number</td><td>${provenance.serialNumber || "—"}</td></tr>
+    <tr><td>Manufacture Year</td><td>${provenance.manufactureYear || "—"}</td></tr>
+    <tr><td>Total Time in Service</td><td>${provenance.totalTimeInService != null ? Number(provenance.totalTimeInService).toFixed(1) + " hrs" : "—"}</td></tr>
+    <tr><td>Registration Date</td><td>${provenance.registrationDate ? String(provenance.registrationDate).slice(0,10) : "—"}</td></tr>
+    <tr><td>Engine Type</td><td>${provenance.engineType || "—"}</td></tr>
+    <tr><td>Engine Serial</td><td>${provenance.engineSerial || "—"}</td></tr>
+    <tr><td>Propeller Type</td><td>${provenance.propType || "—"}</td></tr>
+    <tr><td>Propeller Serial</td><td>${provenance.propSerial || "—"}</td></tr>
+  ` : `<tr><td colspan="2">No aircraft data</td></tr>`;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AirLog Trust Report — ${provenance?.ident || "Aircraft"}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0f1117;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:32px 24px;line-height:1.6}
+  .container{max-width:900px;margin:0 auto}
+  h1{font-size:28px;font-weight:700;margin-bottom:4px}
+  h2{font-size:18px;font-weight:600;color:#94a3b8;margin:32px 0 12px;text-transform:uppercase;letter-spacing:.08em}
+  .subtitle{color:#64748b;font-size:14px;margin-bottom:32px}
+  .score-ring{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:120px;height:120px;border-radius:50%;border:6px solid ${scoreColor(trustScore)};margin-bottom:8px}
+  .score-num{font-size:40px;font-weight:800;color:${scoreColor(trustScore)}}
+  .score-label{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.1em}
+  .risk-banner{padding:12px 18px;border-radius:8px;margin-bottom:32px;font-weight:600;font-size:15px;background:${riskLevel === "high" ? "#7f1d1d" : riskLevel === "medium" ? "#78350f" : "#14532d"};color:${riskLevel === "high" ? "#fca5a5" : riskLevel === "medium" ? "#fde68a" : "#86efac"}}
+  .header-row{display:flex;align-items:center;gap:32px;margin-bottom:24px}
+  table{width:100%;border-collapse:collapse;font-size:14px;margin-bottom:16px}
+  th{text-align:left;padding:8px 12px;background:#1e293b;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #334155}
+  td{padding:8px 12px;border-bottom:1px solid #1e293b;vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  .badge{background:#1e3a5f;color:#93c5fd;padding:2px 8px;border-radius:4px;font-size:12px;white-space:nowrap}
+  .section{background:#141920;border:1px solid #1e293b;border-radius:10px;padding:20px;margin-bottom:24px}
+  .integrity-box{background:#0d1520;border:1px solid #334155;border-radius:8px;padding:14px 18px;font-size:13px;color:#94a3b8;margin-top:8px}
+  .integrity-box code{font-family:monospace;font-size:11px;word-break:break-all;color:#64748b;display:block;margin-top:4px}
+  .footer{margin-top:40px;text-align:center;font-size:12px;color:#475569}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header-row">
+    <div>
+      <div class="score-ring"><span class="score-num">${trustScore}</span><span class="score-label">Trust Score</span></div>
+    </div>
+    <div>
+      <h1>AirLog Trust Report</h1>
+      <div class="subtitle">Aircraft: ${provenance?.ident || "—"} &nbsp;·&nbsp; Generated ${generatedFormatted}</div>
+      <div class="risk-banner">Overall Risk: ${riskLevel.toUpperCase()} &nbsp;·&nbsp; ${riskFlags.length} flag${riskFlags.length !== 1 ? "s" : ""} found</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Aircraft Provenance</h2>
+    <table><tbody>${provenanceRows}</tbody></table>
+  </div>
+
+  <div class="section">
+    <h2>Integrity Verification</h2>
+    <div class="integrity-box">
+      ${hashLine}
+      <code>Anchor Hash: ${integrityVerification.anchorHash || "—"}<br>Current Hash: ${integrityVerification.currentHash || "—"}<br>Network: ${integrityVerification.anchorNetwork || "—"} &nbsp;·&nbsp; Anchored: ${integrityVerification.anchorTime ? String(integrityVerification.anchorTime).slice(0,10) : "—"}</code>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Risk Indicators</h2>
+    <table>
+      <thead><tr><th>Severity</th><th>Code</th><th>Detail</th></tr></thead>
+      <tbody>${riskFlagRows}</tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Compliance Calendar</h2>
+    <table>
+      <thead><tr><th>Item</th><th>Due Date</th><th>Days Until Due</th><th>Status</th></tr></thead>
+      <tbody>${compRows}</tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Maintenance Chronology</h2>
+    <table>
+      <thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Mechanic / Shop</th><th>Airframe Hrs</th><th>RTS</th></tr></thead>
+      <tbody>${chronoRows || `<tr><td colspan="6" style="color:#64748b;text-align:center;">No maintenance records.</td></tr>`}</tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Logbook Snapshot</h2>
+    <table><tbody>
+      <tr><td>Total Flight Entries</td><td>${logbookSnapshot.totalEntries}</td></tr>
+      <tr><td>Total Flight Hours</td><td>${Number(logbookSnapshot.totalHours).toFixed(1)}</td></tr>
+    </tbody></table>
+  </div>
+
+  <div class="footer">Generated by AirLog &nbsp;·&nbsp; ${new Date().toISOString()}</div>
+</div>
+</body>
+</html>`;
+
+  res.setHeader("Content-Type", "text/html");
+  res.send(html);
+
 });
 
 app.listen(PORT, "0.0.0.0", () => {
