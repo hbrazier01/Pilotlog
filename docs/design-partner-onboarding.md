@@ -11,10 +11,9 @@ This guide walks you through running the system, reviewing its outputs, and givi
 AirLog turns messy aircraft records into clean, verifiable digital history. The current prototype covers:
 
 - **Aircraft logbook** — flight entry ingestion and totals
-- **Maintenance records** — chronology, component tracking, return-to-service status
 - **Compliance calendar** — annual, transponder, pitot-static, ELT due dates
-- **Sale packet** — buyer-ready summary document (JSON + HTML)
-- **Trust report** — risk-scored dossier for buyers: provenance, maintenance chronology, risk indicators, integrity verification
+- **Sale packet** — buyer-ready summary document (JSON)
+- **Logbook summary** — exportable flight summary
 
 ---
 
@@ -25,8 +24,8 @@ AirLog turns messy aircraft records into clean, verifiable digital history. The 
 Open the live demo — N123AB (2018 Cirrus SR20) data is pre-loaded:
 
 - **Dashboard:** https://pilotlog-production.up.railway.app
-- **Sale Packet (HTML):** https://pilotlog-production.up.railway.app/export/sale-packet/html
-- **Trust Report (HTML):** https://pilotlog-production.up.railway.app/export/trust-report/html
+- **Sale Packet (JSON):** https://pilotlog-production.up.railway.app/export/sale-packet
+- **Logbook Summary:** https://pilotlog-production.up.railway.app/export/summary
 
 No login, no install required.
 
@@ -67,39 +66,21 @@ Visit **http://localhost:8788** to see:
 
 ## Step 3 — Review the Key Outputs
 
-### Sale Packet (HTML)
-**http://localhost:8788/export/sale-packet/html**
+### Sale Packet (JSON)
+**http://localhost:8788/export/sale-packet**
 
-A formatted document a seller would hand to a buyer. Includes:
+Machine-readable buyer-ready document. Includes:
 - Aircraft identity and specs
 - Compliance calendar
 - Maintenance history
 - Logbook summary
 - Record quality score
 
-### Trust Report (HTML) ← new
-**http://localhost:8788/export/trust-report/html**
-
-A risk-scored buyer dossier. Includes:
-- Trust Score (0–100)
-- Risk flags with severity (CRITICAL / HIGH / MEDIUM / LOW)
-- Aircraft provenance
-- Compliance calendar with overdue/upcoming status
-- Maintenance chronology with gap analysis
-- Integrity verification (hash match against anchored record)
-
-### Sale Packet (JSON)
-**http://localhost:8788/export/sale-packet**
-
-Machine-readable format for integration or further processing.
-
-### Trust Report (JSON)
-**http://localhost:8788/export/trust-report**
-
-Same as above for the trust dossier.
-
-### Logbook Summary
+### Logbook Summary (HTML)
 **http://localhost:8788/export/summary**
+
+### Logbook Summary (JSON download)
+**http://localhost:8788/export/summary/download**
 
 ---
 
@@ -159,14 +140,10 @@ Key questions we want answered:
 | Endpoint | Description |
 |---|---|
 | `GET /` | Dashboard |
-| `GET /export/summary` | Logbook summary (HTML) |
-| `GET /export/summary/download` | Logbook summary (JSON download) |
-| `GET /export/sale-packet` | Sale packet (JSON download) |
-| `GET /export/sale-packet/html` | Sale packet (HTML view) |
-| `GET /export/trust-report` | Trust report (JSON download) |
-| `GET /export/trust-report/html` | Trust report (HTML view) |
-| `GET /verify/hash/:hash` | Verify a record hash |
-| `GET /aircraft` | Aircraft list (JSON) |
 | `GET /entries` | Flight entries (JSON) |
 | `GET /profile` | Pilot profile (JSON) |
-| `GET /maintenance` | Maintenance records (JSON) |
+| `GET /export/summary` | Logbook summary (HTML) |
+| `GET /export/summary/download` | Logbook summary (JSON download) |
+| `GET /export/sale-packet` | Sale packet (JSON) |
+| `GET /verify/hash/:hash` | Verify a record hash |
+| `GET /health` | Service health check |
