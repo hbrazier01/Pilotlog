@@ -1168,20 +1168,25 @@ app.post("/verify/anchor", (_req, res) => {
 
   const verification = {
     ...contractResult.integrity,
-    anchored: true,
+    anchored: contractResult.runtimeAvailable,
     anchorTime: new Date().toISOString(),
     anchorTx: null,
-    contract: {
-      registerAirframe: !!contractResult.registerResult,
-      authorizeIssuer: !!contractResult.authorizeResult,
-      addEntry: !!contractResult.addEntryResult,
-    },
+    runtimeAvailable: contractResult.runtimeAvailable,
+    contract: contractResult.runtimeAvailable
+      ? {
+          registerAirframe: !!contractResult.registerResult,
+          authorizeIssuer: !!contractResult.authorizeResult,
+          addEntry: !!contractResult.addEntryResult,
+        }
+      : "runtime unavailable",
   };
 
   fs.writeFileSync(VERIFICATION_PATH, JSON.stringify(verification, null, 2));
 
   res.json({
-    message: "Logbook anchored via local AirLog contract execution",
+    message: contractResult.runtimeAvailable
+      ? "Logbook anchored via local AirLog contract execution"
+      : "Logbook integrity computed — Midnight runtime unavailable (degraded mode)",
     verification,
   });
 });  

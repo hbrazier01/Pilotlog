@@ -10,6 +10,25 @@ const CONTRACT_PATH = path.resolve(
   "compact/contracts/airlog/src/managed/airlog/contract/index.cjs"
 );
 
+let ContractModule = null;
+let CompactRuntime = null;
+let runtimeAvailable = false;
+
+try {
+  ContractModule = require(
+    "../../compact/contracts/airlog/src/managed/airlog/contract/index.cjs"
+  );
+  CompactRuntime = require(
+    "../../compact/contracts/airlog/node_modules/@midnight-ntwrk/compact-runtime/dist/runtime.js"
+  );
+  runtimeAvailable = true;
+} catch (err) {
+  console.warn(
+    "[airlog-contract-local] Midnight runtime unavailable — running in degraded mode:",
+    err.message
+  );
+}
+
 const RUNTIME_PATH = path.resolve(
   process.cwd(),
   "compact/contracts/airlog/node_modules/@midnight-ntwrk/compact-runtime/dist/runtime.js"
@@ -137,6 +156,7 @@ export function simulateAirlogAnchor({ aircraft, entries }) {
     runtimeAvailable: true,
     degraded: false,
     integrity,
+    runtimeAvailable: true,
     registerResult,
     authorizeResult,
     addEntryResult,
