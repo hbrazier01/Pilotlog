@@ -20,7 +20,19 @@ AirLog turns messy aircraft records into clean, verifiable digital history. The 
 
 ## Step 1 — Run the System
 
-### Option A: Docker (recommended)
+### Option A: View the live demo (no setup required)
+
+Open the live demo — N123AB (2018 Cirrus SR20) data is pre-loaded:
+
+- **Dashboard:** https://pilotlog-production.up.railway.app
+- **Sale Packet (HTML):** https://pilotlog-production.up.railway.app/export/sale-packet/html
+- **Trust Report (HTML):** https://pilotlog-production.up.railway.app/export/trust-report/html
+
+No login, no install required.
+
+---
+
+### Option B: Docker (run locally)
 
 ```bash
 git clone https://github.com/hbrazier01/Pilotlog.git
@@ -30,7 +42,7 @@ docker compose up
 
 Open: **http://localhost:8788**
 
-### Option B: Node directly
+### Option C: Node directly
 
 ```bash
 npm install
