@@ -1,6 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { resolve, dirname } from "node:path";
 import { buildIntegrityResult } from "./build-integrity-result.mjs";
 
 // NOTE: compact-runtime is NOT loaded at module init time.
@@ -17,14 +20,17 @@ let CompactRuntime = null;
 let runtimeAvailable = false;
 
 const _require = createRequire(import.meta.url);
+const _dir = dirname(fileURLToPath(import.meta.url));
+
+const CONTRACT_CJS = resolve(_dir, "../../compact/contracts/airlog/src/managed/airlog/contract/index.cjs");
+const RUNTIME_JS = resolve(_dir, "../../compact/contracts/airlog/node_modules/@midnight-ntwrk/compact-runtime/dist/runtime.js");
 
 function loadRuntime() {
-  const ContractModule = _require(
-    "../../compact/contracts/airlog/src/managed/airlog/contract/index.cjs"
-  );
-  const CompactRuntime = _require(
-    "../../compact/contracts/airlog/node_modules/@midnight-ntwrk/compact-runtime/dist/runtime.js"
-  );
+  if (!existsSync(CONTRACT_CJS) || !existsSync(RUNTIME_JS)) {
+    throw new Error("Midnight runtime not available in this environment");
+  }
+  const ContractModule = _require(CONTRACT_CJS);
+  const CompactRuntime = _require(RUNTIME_JS);
   return { ContractModule, CompactRuntime };
 }
 

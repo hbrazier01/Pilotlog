@@ -4,3 +4,9 @@ node_modules
 .DS_Store
 data
 compact
+node_modules/
+compact/
+.git/
+.gitignore
+*.log
+.DS_Store
