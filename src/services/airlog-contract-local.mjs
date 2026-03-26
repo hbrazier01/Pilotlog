@@ -3,7 +3,9 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { buildIntegrityResult } from "./build-integrity-result.mjs";
 
-const require = createRequire(import.meta.url);
+// NOTE: compact-runtime is NOT loaded at module init time.
+// It is lazy-loaded inside simulateAirlogAnchor() so that missing
+// the runtime package never prevents app startup.
 
 const CONTRACT_PATH = path.resolve(
   process.cwd(),
@@ -14,19 +16,16 @@ let ContractModule = null;
 let CompactRuntime = null;
 let runtimeAvailable = false;
 
-try {
-  ContractModule = require(
+const _require = createRequire(import.meta.url);
+
+function loadRuntime() {
+  const ContractModule = _require(
     "../../compact/contracts/airlog/src/managed/airlog/contract/index.cjs"
   );
-  CompactRuntime = require(
+  const CompactRuntime = _require(
     "../../compact/contracts/airlog/node_modules/@midnight-ntwrk/compact-runtime/dist/runtime.js"
   );
-  runtimeAvailable = true;
-} catch (err) {
-  console.warn(
-    "[airlog-contract-local] Midnight runtime unavailable — running in degraded mode:",
-    err.message
-  );
+  return { ContractModule, CompactRuntime };
 }
 
 const RUNTIME_PATH = path.resolve(
