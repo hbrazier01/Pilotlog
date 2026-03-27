@@ -1,12 +1,43 @@
+import fs from "node:fs";
+import path from "node:path";
 import { createRequire } from "node:module";
 import { buildIntegrityResult } from "./build-integrity-result.mjs";
-import ContractModule from "../../compact/contracts/airlog/src/managed/airlog/contract/index.cjs";
 
 const require = createRequire(import.meta.url);
 
-const CompactRuntime = require(
-  "../../compact/contracts/airlog/node_modules/@midnight-ntwrk/compact-runtime/dist/runtime.js"
+const CONTRACT_PATH = path.resolve(
+  process.cwd(),
+  "compact/contracts/airlog/src/managed/airlog/contract/index.cjs"
 );
+
+const RUNTIME_PATH = path.resolve(
+  process.cwd(),
+  "compact/contracts/airlog/node_modules/@midnight-ntwrk/compact-runtime/dist/runtime.js"
+);
+
+function loadCompactDeps() {
+  if (!fs.existsSync(CONTRACT_PATH) || !fs.existsSync(RUNTIME_PATH)) {
+    return {
+      available: false,
+      reason: "Compact contract/runtime not available in this environment",
+    };
+  }
+
+  try {
+    const ContractModule = require(CONTRACT_PATH);
+    const CompactRuntime = require(RUNTIME_PATH);
+    return {
+      available: true,
+      ContractModule,
+      CompactRuntime,
+    };
+  } catch (error) {
+    return {
+      available: false,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
 
 function hexToBytes32(hex) {
   const clean = String(hex).trim().replace(/^0x/, "");
@@ -35,7 +66,7 @@ function dummyCoinPublicKey() {
   };
 }
 
-function createCircuitContext(contract) {
+function createCircuitContext(contract, CompactRuntime) {
   const stateResult = contract.initialState({
     initialPrivateState: {},
     initialZswapLocalState: {
@@ -64,8 +95,21 @@ export function simulateAirlogAnchor({ aircraft, entries }) {
     network: "midnight-preview",
   });
 
+  const compact = loadCompactDeps();
+
+  if (!compact.available) {
+    return {
+      runtimeAvailable: false,
+      degraded: true,
+      message: compact.reason,
+      integrity,
+    };
+  }
+
+  const { ContractModule, CompactRuntime } = compact;
+
   const contract = new ContractModule.Contract({});
-  const context = createCircuitContext(contract);
+  const context = createCircuitContext(contract, CompactRuntime);
 
   const airframeId = hexToBytes32(integrity.airframeId);
   const docHash = hexToBytes32(integrity.anchorHash);
@@ -90,6 +134,8 @@ export function simulateAirlogAnchor({ aircraft, entries }) {
   );
 
   return {
+    runtimeAvailable: true,
+    degraded: false,
     integrity,
     registerResult,
     authorizeResult,
