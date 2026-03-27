@@ -8,6 +8,7 @@ RUN npm ci || npm install
 # Copy source
 COPY . .
 
+ENV PILOTLOG_HOME=/app/data
 ENV PORT=8788
 EXPOSE 8788
 
