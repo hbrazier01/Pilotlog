@@ -1191,6 +1191,107 @@ app.post("/verify/anchor", (_req, res) => {
   });
 });  
 
+function computeGaps(aircraft, maintenance) {
+  const gaps = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // 1. Maintenance chronology gaps > 12 months
+  const dated = maintenance
+    .filter((m) => m.date)
+    .map((m) => ({ date: new Date(String(m.date).slice(0, 10)), entry: m }))
+    .filter((x) => !isNaN(x.date))
+    .sort((a, b) => a.date - b.date);
+
+  for (let i = 1; i < dated.length; i++) {
+    const prev = dated[i - 1];
+    const curr = dated[i];
+    const daysDiff = Math.round((curr.date - prev.date) / 86400000);
+    if (daysDiff > 365) {
+      gaps.push({
+        type: "maintenance_gap",
+        description: `No maintenance recorded for ${Math.round(daysDiff / 30)} months (${String(prev.date.toISOString()).slice(0, 10)} to ${String(curr.date.toISOString()).slice(0, 10)})`,
+        severity: daysDiff > 730 ? "high" : "medium",
+        dateRange: {
+          start: String(prev.date.toISOString()).slice(0, 10),
+          end: String(curr.date.toISOString()).slice(0, 10),
+        },
+      });
+    }
+  }
+
+  // Check gap from last maintenance to today
+  if (dated.length > 0) {
+    const lastDate = dated[dated.length - 1].date;
+    const daysSinceLast = Math.round((today - lastDate) / 86400000);
+    if (daysSinceLast > 365) {
+      gaps.push({
+        type: "maintenance_gap",
+        description: `No maintenance recorded in the last ${Math.round(daysSinceLast / 30)} months (last entry: ${String(lastDate.toISOString()).slice(0, 10)})`,
+        severity: daysSinceLast > 730 ? "high" : "medium",
+        dateRange: {
+          start: String(lastDate.toISOString()).slice(0, 10),
+          end: today.toISOString().slice(0, 10),
+        },
+      });
+    }
+  }
+
+  // 2. Missing annual inspection in last 12 months
+  for (const a of aircraft) {
+    if (!a.annualDue) {
+      gaps.push({
+        type: "missing_inspection",
+        description: `No annual inspection date recorded for ${a.ident || "aircraft"}`,
+        severity: "high",
+      });
+    } else {
+      const annualDate = new Date(String(a.annualDue).slice(0, 10));
+      const daysUntilAnnual = Math.round((annualDate - today) / 86400000);
+      if (daysUntilAnnual < 0) {
+        gaps.push({
+          type: "missing_inspection",
+          description: `Annual inspection overdue for ${a.ident || "aircraft"} (was due ${String(a.annualDue).slice(0, 10)})`,
+          severity: "high",
+        });
+      }
+    }
+  }
+
+  // 3. Components without TSOH/SMOH data
+  const majorComponents = ["engine", "propeller", "prop"];
+  const componentsCovered = new Set();
+  for (const m of maintenance) {
+    for (const c of m.components || []) {
+      const name = (c.name || "").toLowerCase();
+      for (const comp of majorComponents) {
+        if (name.includes(comp)) componentsCovered.add(comp);
+      }
+    }
+  }
+  for (const a of aircraft) {
+    if (!a.engineTimeSMOH && !a.engineSerial) {
+      gaps.push({
+        type: "missing_tsoh",
+        description: `Engine time since major overhaul (SMOH) not recorded for ${a.ident || "aircraft"}`,
+        severity: "medium",
+        component: "engine",
+      });
+    }
+    const propCovered = componentsCovered.has("propeller") || componentsCovered.has("prop") || a.propSerial;
+    if (!propCovered) {
+      gaps.push({
+        type: "missing_tsoh",
+        description: `Propeller service history not recorded for ${a.ident || "aircraft"}`,
+        severity: "medium",
+        component: "propeller",
+      });
+    }
+  }
+
+  return gaps;
+}
+
 app.get("/export/sale-packet", (_req, res) => {
   const entries = readEntries();
   const profile = readProfile();
@@ -1236,9 +1337,12 @@ app.get("/export/sale-packet", (_req, res) => {
     documents: m.documents || []
   }));
 
+  const gaps = computeGaps(aircraft, maintenance);
+
   const packet = {
     generated: new Date().toISOString(),
     packetType: "airlog-sale-packet",
+    gaps,
     verification: {
       anchored: verification?.anchored || false,
       anchorHash: verification?.anchorHash || null,
@@ -1292,6 +1396,7 @@ app.get("/export/sale-packet/html", (_req, res) => {
   const currentHash = hash;
   const anchorHash = verification?.anchorHash || null;
   const hashMatch = anchorHash && anchorHash === currentHash;
+  const gaps = computeGaps(aircraft, maintenance);
 
   // Record quality score
   const qualityFactors = [];
@@ -1584,6 +1689,16 @@ app.get("/export/sale-packet/html", (_req, res) => {
     .score-bar { height: 8px; background: #e2e8f0; border-radius: 4px; margin: 12px 0; overflow: hidden; }
     .score-fill { height: 100%; background: linear-gradient(90deg, #1a3a8f, #4a7adf); border-radius: 4px; transition: width 0.3s; }
 
+    /* GAPS */
+    .gap-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f0f4f8; }
+    .gap-item:last-child { border-bottom: none; }
+    .gap-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
+    .gap-dot-high { background: #ef4444; }
+    .gap-dot-medium { background: #f59e0b; }
+    .gap-text { font-size: 12px; color: #2d3748; }
+    .gap-type { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #a0aec0; margin-top: 2px; }
+    .gap-none { color: #22c55e; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+
     /* FOOTER */
     .footer {
       text-align: center;
@@ -1714,6 +1829,23 @@ app.get("/export/sale-packet/html", (_req, res) => {
             ${maintenanceRows}
           </tbody>
         </table>`}
+    </div>
+  </section>
+
+  <!-- RECORD GAPS & FLAGS -->
+  <section>
+    <div class="section-title">Record Gaps &amp; Flags</div>
+    <div class="section-body">
+      ${gaps.length === 0
+        ? `<div class="gap-none"><span style="font-size:16px;">✓</span> No gaps detected — records appear complete</div>`
+        : gaps.map((g) => `
+        <div class="gap-item">
+          <div class="gap-dot gap-dot-${g.severity}"></div>
+          <div>
+            <div class="gap-text">${g.description}</div>
+            <div class="gap-type">${g.type.replace(/_/g, " ")}${g.severity === "high" ? " · high severity" : " · medium severity"}</div>
+          </div>
+        </div>`).join("")}
     </div>
   </section>
 
