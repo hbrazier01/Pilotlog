@@ -4,7 +4,7 @@ services:
     container_name: pilotlog-read-api
     working_dir: /app
     volumes:
-      - ./:/app
+      - .:/app
       - /app/node_modules
     ports:
       - "8788:8788"
@@ -13,5 +13,5 @@ services:
       PILOTLOG_HOME: "/app/data"
       PILOTLOG_DIR: "/app/data"
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
-    command: sh -lc "npm install && node pilotlog-cli/src/readApi.mjs"
+    command: sh -lc "cd /app && npm install --omit=dev && node pilotlog-cli/src/readApi.mjs"
     restart: unless-stopped
