@@ -1838,6 +1838,23 @@ app.get("/export/sale-packet/html", (_req, res) => {
     </section>
   </div>
 
+  <!-- RECORD GAPS & FLAGS -->
+  <section>
+    <div class="section-title">Record Gaps &amp; Flags</div>
+    <div class="section-body">
+      ${gaps.length === 0
+        ? `<div class="gap-none"><span style="font-size:16px;">✓</span> No gaps detected — records appear complete</div>`
+        : gaps.map((g) => `
+        <div class="gap-item">
+          <div class="gap-dot gap-dot-${g.severity}"></div>
+          <div>
+            <div class="gap-text">${g.description}</div>
+            <div class="gap-type">${g.type.replace(/_/g, " ")}${g.severity === "high" ? " · high severity" : " · medium severity"}</div>
+          </div>
+        </div>`).join("")}
+    </div>
+  </section>
+
   <!-- LOGBOOK SUMMARY -->
   <section>
     <div class="section-title">Logbook Summary</div>
@@ -1918,30 +1935,6 @@ app.get("/export/sale-packet/html", (_req, res) => {
     </div>
   </section>
 
-  <!-- MAINTENANCE HISTORY -->
-  <section>
-    <div class="section-title">Maintenance History (${maintenance.length} records)</div>
-    <div class="section-body" style="padding:0;">
-      ${maintenance.length === 0
-        ? '<div style="padding:20px;color:#a0aec0;text-align:center;">No maintenance records on file.</div>'
-        : `<table class="data-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Category</th>
-              <th>Description</th>
-              <th>Mechanic</th>
-              <th>Airframe Hrs</th>
-              <th>RTS</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${maintenanceRows}
-          </tbody>
-        </table>`}
-    </div>
-  </section>
-
   <!-- AD COMPLIANCE -->
   <section>
     <div class="section-title">AD Compliance</div>
@@ -1996,20 +1989,27 @@ app.get("/export/sale-packet/html", (_req, res) => {
     </div>
   </section>
 
-  <!-- RECORD GAPS & FLAGS -->
+  <!-- MAINTENANCE HISTORY -->
   <section>
-    <div class="section-title">Record Gaps &amp; Flags</div>
-    <div class="section-body">
-      ${gaps.length === 0
-        ? `<div class="gap-none"><span style="font-size:16px;">✓</span> No gaps detected — records appear complete</div>`
-        : gaps.map((g) => `
-        <div class="gap-item">
-          <div class="gap-dot gap-dot-${g.severity}"></div>
-          <div>
-            <div class="gap-text">${g.description}</div>
-            <div class="gap-type">${g.type.replace(/_/g, " ")}${g.severity === "high" ? " · high severity" : " · medium severity"}</div>
-          </div>
-        </div>`).join("")}
+    <div class="section-title">Maintenance History (${maintenance.length} records)</div>
+    <div class="section-body" style="padding:0;">
+      ${maintenance.length === 0
+        ? '<div style="padding:20px;color:#a0aec0;text-align:center;">No maintenance records on file.</div>'
+        : `<table class="data-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Category</th>
+              <th>Description</th>
+              <th>Mechanic</th>
+              <th>Airframe Hrs</th>
+              <th>RTS</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${maintenanceRows}
+          </tbody>
+        </table>`}
     </div>
   </section>
 
