@@ -8,12 +8,11 @@ RUN npm ci || npm install
 # Copy source
 COPY . .
 
-ENV PILOTLOG_HOME=/app/data
-ENV PORT=8788
-
-ENV PORT=8788
+# Set data path only (do NOT hardcode PORT)
 ENV PILOTLOG_HOME=/app/data
 
+# Expose port (for documentation only; Railway uses dynamic PORT)
 EXPOSE 8788
 
+# Start the app
 CMD ["node", "pilotlog-cli/src/readApi.mjs"]
