@@ -289,7 +289,9 @@ function scoreClass(score) {
 }
 
 const app = express();
-
+app.get("/health", (_req, res) => {
+  res.status(200).send("OK");
+});
 app.get("/", (_req, res) => {
   const asOf = new Date().toISOString();
 
