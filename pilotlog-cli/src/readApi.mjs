@@ -1147,6 +1147,122 @@ app.get("/verify/hash/:hash", (_req, res) => {
   });
 });
 
+app.get("/export/sale-packet/html", (_req, res) => {
+  const entries = sortNewestFirst(readEntries());
+  const profile = readProfile();
+  const aircraft = readAircraft();
+  const verification = readVerification();
+
+  const totals = computeTotals(entries);
+  const hash = hashLogbook(entries, profile, aircraft);
+
+  const aircraftRecord = aircraft[0] || null;
+
+  const qualityScore = Math.min(100, Math.round(
+    (entries.length > 0 ? 20 : 0) +
+    (profile?.endorsements?.length ? 10 : 0) +
+    (profile?.medical?.kind !== "None" ? 10 : 0) +
+    (profile?.proficiency?.flightReviewDate ? 10 : 0) +
+    (aircraftRecord ? 15 : 0) +
+    (verification?.anchored ? 20 : 10)
+  ));
+
+  const scoreColor =
+    qualityScore >= 85 ? "#6ee7b7" :
+    qualityScore >= 60 ? "#fbbf24" :
+    "#f87171";
+
+  res.type("html").send(`<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>AirLog Sale Packet</title>
+<style>
+body { font-family: -apple-system, sans-serif; background:#0b0e1a; color:#e8ecf1; padding:40px; }
+.wrap { max-width:900px; margin:auto; }
+
+.section { margin-bottom:30px; padding:20px; border:1px solid #1f2440; border-radius:12px; background:#121624; }
+.title { font-size:22px; font-weight:700; margin-bottom:10px; }
+
+.ok { color:#6ee7b7; }
+.warn { color:#fbbf24; }
+.bad { color:#f87171; }
+.muted { color:#9aa3b2; }
+
+.big { font-size:32px; font-weight:800; }
+
+table { width:100%; border-collapse:collapse; margin-top:10px; }
+td { padding:6px 0; border-bottom:1px solid #1f2440; }
+
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="section">
+  <div class="title">Trust Summary</div>
+  <div class="big" style="color:${scoreColor}">
+    ${qualityScore} / 100
+  </div>
+  <div class="muted">
+    ${verification?.anchored ? "Anchored on Midnight" : "Not anchored"}
+  </div>
+  <div class="muted">Hash: ${hash.slice(0,16)}...</div>
+</div>
+
+<div class="section">
+  <div class="title">Aircraft Snapshot</div>
+  ${
+    aircraftRecord
+      ? `
+      <div><b>${aircraftRecord.ident}</b> · ${aircraftRecord.type || ""}</div>
+      <div class="muted">Annual: ${aircraftRecord.annualDue || "Not set"}</div>
+      <div class="muted">Transponder: ${aircraftRecord.transponderDue || "Not set"}</div>
+      `
+      : `<div class="warn">No aircraft record</div>`
+  }
+</div>
+
+<div class="section">
+  <div class="title">Logbook Summary</div>
+  <table>
+    <tr><td>Total Hours</td><td>${totals.total.toFixed(1)}</td></tr>
+    <tr><td>PIC</td><td>${totals.pic.toFixed(1)}</td></tr>
+    <tr><td>Landings</td><td>${(totals.dayLandings + totals.nightLandings)}</td></tr>
+    <tr><td>Entries</td><td>${entries.length}</td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <div class="title">Component Snapshot</div>
+  <div class="muted">Engine / Prop tracking coming next</div>
+</div>
+
+<div class="section">
+  <div class="title">AD Compliance</div>
+  <div class="warn">No AD records found</div>
+</div>
+
+<div class="section">
+  <div class="title">Form 337 / Alterations</div>
+  <div class="warn">No 337 records found</div>
+</div>
+
+<div class="section">
+  <div class="title">Buyer Evidence Index</div>
+  <table>
+    <tr><td>Flight Logs</td><td>${entries.length}</td></tr>
+    <tr><td>Aircraft Records</td><td>${aircraft.length}</td></tr>
+    <tr><td>Endorsements</td><td>${profile?.endorsements?.length || 0}</td></tr>
+    <tr><td>Anchored</td><td>${verification?.anchored ? "Yes" : "No"}</td></tr>
+  </table>
+</div>
+
+</div>
+</body>
+</html>`);
+});
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`pilotlog-read-api listening on :${PORT}`);
   console.log(`Reading entries from: ${ENTRIES_PATH}`);
