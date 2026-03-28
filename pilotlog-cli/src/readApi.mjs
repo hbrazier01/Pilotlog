@@ -1459,6 +1459,83 @@ app.get("/export/sale-packet/html", (_req, res) => {
     </tr>`
   ).join("\n");
 
+  // AD compliance rows
+  const adEntries = maintenance.filter((m) => m.category === "ad-compliance" || (m.adCompliance && m.adCompliance.length > 0));
+  const adRows = adEntries.map((m) => {
+    const ads = m.adCompliance && m.adCompliance.length > 0
+      ? m.adCompliance.map((ad) => `
+        <tr>
+          <td>${ad.adNumber || "—"}</td>
+          <td>${ad.title || m.description || "—"}</td>
+          <td>${m.date ? String(m.date).slice(0, 10) : "—"}</td>
+          <td>${m.mechanic || m.performedBy || "—"}</td>
+          <td>${ad.nextDue ? fmt(ad.nextDue) : "—"}</td>
+        </tr>`).join("")
+      : `<tr>
+          <td>—</td>
+          <td>${m.description || "—"}</td>
+          <td>${m.date ? String(m.date).slice(0, 10) : "—"}</td>
+          <td>${m.mechanic || m.performedBy || "—"}</td>
+          <td>—</td>
+        </tr>`;
+    return ads;
+  }).join("");
+
+  // 337 / Major alteration rows
+  const alterationEntries = maintenance.filter((m) =>
+    m.category === "major-alteration" || m.category === "337" || (m.description || "").toLowerCase().includes("337")
+  );
+  const alterationRows = alterationEntries.map((m) => {
+    const docs = (m.documents || []).join(", ") || "—";
+    return `<tr>
+      <td>${m.date ? String(m.date).slice(0, 10) : "—"}</td>
+      <td>${m.description || "—"}</td>
+      <td>${m.mechanic || m.performedBy || "—"}</td>
+      <td>${docs}</td>
+    </tr>`;
+  }).join("");
+
+  // Component snapshot: engine, prop, avionics
+  const pa = primaryAircraft;
+  // Find last service date for engine/prop from maintenance
+  function lastServiceDate(keyword) {
+    const matches = maintenance
+      .filter((m) => (m.components || []).some((c) => (c.name || "").toLowerCase().includes(keyword)) ||
+        (m.description || "").toLowerCase().includes(keyword))
+      .map((m) => m.date ? new Date(String(m.date).slice(0, 10)) : null)
+      .filter(Boolean)
+      .sort((a, b) => b - a);
+    return matches.length > 0 ? matches[0].toISOString().slice(0, 10) : null;
+  }
+
+  // Buyer evidence index
+  const adCount = adEntries.length;
+  const docCount = maintenance.reduce((n, m) => n + (m.documents || []).length, 0);
+  const hasAnnual = !!(pa.annualDue);
+  const evidenceItems = [
+    { label: "Flight log entries", value: entries.length > 0 ? `${entries.length} entries` : "None", pass: entries.length > 0 },
+    { label: "Maintenance records", value: maintenance.length > 0 ? `${maintenance.length} records` : "None", pass: maintenance.length > 0 },
+    { label: "Annual inspection on file", value: hasAnnual ? fmt(pa.annualDue) : "Not recorded", pass: hasAnnual },
+    { label: "AD compliance records", value: adCount > 0 ? `${adCount} records` : "None", pass: adCount > 0 },
+    { label: "Referenced documents", value: docCount > 0 ? `${docCount} files` : "None", pass: docCount > 0 },
+    { label: "Pilot profile", value: profile?.pilot?.fullName ? profile.pilot.fullName : "Incomplete", pass: !!(profile?.pilot?.fullName) },
+    { label: "On-chain anchor", value: anchored ? `Yes — ${verification.anchorNetwork || "network"}` : "Not yet anchored", pass: anchored },
+  ];
+
+  const evidenceRows = evidenceItems.map((ei) =>
+    `<tr>
+      <td style="color:${ei.pass ? "#22c55e" : "#ef4444"};font-weight:700;width:24px;">${ei.pass ? "✓" : "✗"}</td>
+      <td style="color:#4a5568;">${ei.label}</td>
+      <td style="font-weight:600;color:${ei.pass ? "#2d3748" : "#ef4444"};">${ei.value}</td>
+    </tr>`
+  ).join("");
+
+  // Trust summary
+  const highGaps = gaps.filter((g) => g.severity === "high").length;
+  const medGaps = gaps.filter((g) => g.severity === "medium").length;
+  const trustColor = gaps.length === 0 ? "#22c55e" : highGaps > 0 ? "#ef4444" : "#f59e0b";
+  const trustLabel = gaps.length === 0 ? "Clean" : highGaps > 0 ? "Issues Found" : "Review Recommended";
+
   const aircraftRows = aircraft.map((a) => `
     <tr><td>Registration</td><td>${a.ident || "—"}</td></tr>
     <tr><td>Type</td><td>${a.type || "—"}</td></tr>
@@ -1728,6 +1805,39 @@ app.get("/export/sale-packet/html", (_req, res) => {
     </div>
   </div>
 
+  <!-- TRUST SUMMARY + BUYER EVIDENCE INDEX -->
+  <div class="grid-2">
+    <section>
+      <div class="section-title">Trust Summary</div>
+      <div class="section-body">
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;">
+          <div style="width:14px;height:14px;border-radius:50%;background:${trustColor};flex-shrink:0;"></div>
+          <div>
+            <div style="font-size:16px;font-weight:700;color:${trustColor};">${trustLabel}</div>
+            <div style="font-size:11px;color:#718096;margin-top:2px;">
+              ${gaps.length === 0 ? "No record gaps or flags detected" : `${gaps.length} issue${gaps.length > 1 ? "s" : ""} — ${highGaps > 0 ? highGaps + " high" : ""}${highGaps > 0 && medGaps > 0 ? ", " : ""}${medGaps > 0 ? medGaps + " medium" : ""}`}
+            </div>
+          </div>
+        </div>
+        <table class="kv-table">
+          <tr><td style="color:#718096;">Integrity</td><td>${integrityStatus}</td></tr>
+          <tr><td style="color:#718096;">Hash</td><td>${hashMatchBadge}</td></tr>
+          <tr><td style="color:#718096;">Quality Score</td><td><strong>${qualityScore}/100</strong></td></tr>
+          <tr><td style="color:#718096;">Maintenance Records</td><td>${maintenance.length}</td></tr>
+          <tr><td style="color:#718096;">Log Entries</td><td>${entries.length}</td></tr>
+        </table>
+      </div>
+    </section>
+    <section>
+      <div class="section-title">Buyer Evidence Index</div>
+      <div class="section-body" style="padding:0;">
+        <table class="data-table">
+          <tbody>${evidenceRows}</tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
   <!-- LOGBOOK SUMMARY -->
   <section>
     <div class="section-title">Logbook Summary</div>
@@ -1829,6 +1939,60 @@ app.get("/export/sale-packet/html", (_req, res) => {
             ${maintenanceRows}
           </tbody>
         </table>`}
+    </div>
+  </section>
+
+  <!-- AD COMPLIANCE -->
+  <section>
+    <div class="section-title">AD Compliance</div>
+    <div class="section-body" style="padding:0;">
+      ${adEntries.length === 0
+        ? '<div style="padding:20px;color:#a0aec0;text-align:center;">No AD compliance records on file.</div>'
+        : `<table class="data-table">
+          <thead><tr><th>AD Number</th><th>Description</th><th>Date Complied</th><th>Mechanic</th><th>Next Due</th></tr></thead>
+          <tbody>${adRows}</tbody>
+        </table>`}
+    </div>
+  </section>
+
+  <!-- 337 / MAJOR ALTERATIONS -->
+  <section>
+    <div class="section-title">337 / Major Alterations</div>
+    <div class="section-body" style="padding:0;">
+      ${alterationEntries.length === 0
+        ? '<div style="padding:20px;color:#a0aec0;text-align:center;">No major alterations on file.</div>'
+        : `<table class="data-table">
+          <thead><tr><th>Date</th><th>Description</th><th>Performed By</th><th>Documents</th></tr></thead>
+          <tbody>${alterationRows}</tbody>
+        </table>`}
+    </div>
+  </section>
+
+  <!-- COMPONENT SNAPSHOT -->
+  <section>
+    <div class="section-title">Component Snapshot</div>
+    <div class="section-body">
+      <div class="grid-3">
+        <div class="stat-card">
+          <div class="stat-label">Engine</div>
+          <div style="font-size:13px;font-weight:600;color:#1a1a2e;margin-top:6px;">${pa.engineType || "—"}</div>
+          <div style="font-size:11px;color:#718096;margin-top:2px;">S/N: ${pa.engineSerial || "—"}</div>
+          <div style="font-size:11px;color:#718096;margin-top:2px;">SMOH: ${pa.engineTimeSMOH != null ? fmtNum(pa.engineTimeSMOH) + " hrs" : "Not recorded"}</div>
+          <div style="font-size:11px;color:#718096;margin-top:2px;">Last service: ${lastServiceDate("engine") || "—"}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Propeller</div>
+          <div style="font-size:13px;font-weight:600;color:#1a1a2e;margin-top:6px;">${pa.propType || "—"}</div>
+          <div style="font-size:11px;color:#718096;margin-top:2px;">S/N: ${pa.propSerial || "—"}</div>
+          <div style="font-size:11px;color:#718096;margin-top:2px;">Last service: ${lastServiceDate("prop") || "—"}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Avionics</div>
+          ${(pa.avionics || []).length > 0
+            ? (pa.avionics || []).map((av) => `<div style="font-size:12px;color:#2d3748;margin-top:4px;">${av}</div>`).join("")
+            : '<div style="font-size:12px;color:#a0aec0;margin-top:6px;">Not recorded</div>'}
+        </div>
+      </div>
     </div>
   </section>
 
