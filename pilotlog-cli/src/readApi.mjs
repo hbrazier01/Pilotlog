@@ -1533,8 +1533,28 @@ app.get("/export/sale-packet/html", (_req, res) => {
   // Trust summary
   const highGaps = gaps.filter((g) => g.severity === "high").length;
   const medGaps = gaps.filter((g) => g.severity === "medium").length;
-  const trustColor = gaps.length === 0 ? "#22c55e" : highGaps > 0 ? "#ef4444" : "#f59e0b";
-  const trustLabel = gaps.length === 0 ? "Clean" : highGaps > 0 ? "Issues Found" : "Review Recommended";
+  const trustColor = qualityScore >= 75 ? "#22c55e" : qualityScore >= 45 ? "#f59e0b" : "#ef4444";
+  const trustLabel = qualityScore >= 75 ? "Strong" : qualityScore >= 45 ? "Moderate" : "Weak";
+  const trustExplanation = qualityScore >= 75
+    ? "Records are well-documented with maintenance history, compliance dates, and flight log entries present."
+    : qualityScore >= 45
+    ? "Core records are present but some documentation gaps were identified. A pre-buy inspection is recommended."
+    : "Significant documentation gaps exist. Independent verification is strongly recommended before purchase.";
+
+  // Logbook continuity
+  const sortedEntries = [...entries].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const firstEntryDate = sortedEntries.length > 0 ? String(sortedEntries[0].date).slice(0, 10) : null;
+  const lastEntryDate = sortedEntries.length > 0 ? String(sortedEntries[sortedEntries.length - 1].date).slice(0, 10) : null;
+
+  // Buyer summary plain language
+  const buyerSummaryStatus = anchored
+    ? "Records have been cryptographically hashed."
+    : "Records have not yet been anchored to an external verification network.";
+  const buyerSummaryGaps = highGaps > 0
+    ? `${highGaps} high-severity record gap${highGaps > 1 ? "s" : ""} ${highGaps > 1 ? "were" : "was"} identified and should be reviewed prior to purchase.`
+    : gaps.length > 0
+    ? `${gaps.length} record item${gaps.length > 1 ? "s" : ""} flagged for review.`
+    : "No record gaps or flags were detected.";
 
   const aircraftRows = aircraft.map((a) => `
     <tr><td>Registration</td><td>${a.ident || "—"}</td></tr>
@@ -1805,18 +1825,37 @@ app.get("/export/sale-packet/html", (_req, res) => {
     </div>
   </div>
 
+  <!-- BUYER SUMMARY -->
+  <section style="border-left: 4px solid ${trustColor};">
+    <div class="section-title" style="background:#fafbff;">Buyer Summary</div>
+    <div class="section-body">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:14px;">
+        <div style="font-size:32px;font-weight:800;color:${trustColor};line-height:1;">${trustLabel}</div>
+        <div style="font-size:13px;color:#2d3748;line-height:1.6;max-width:640px;">
+          ${trustExplanation}
+        </div>
+      </div>
+      <div style="font-size:13px;color:#4a5568;line-height:1.8;">
+        This record package covers <strong>${primaryAircraft.type || "the aircraft"}</strong>
+        (${primaryAircraft.ident || "—"}), serial number <strong>${primaryAircraft.serialNumber || "—"}</strong>.
+        The logbook contains <strong>${entries.length} entr${entries.length === 1 ? "y" : "ies"}</strong>
+        ${firstEntryDate && lastEntryDate ? `spanning <strong>${firstEntryDate}</strong> to <strong>${lastEntryDate}</strong>` : ""}.
+        ${buyerSummaryStatus}
+        ${buyerSummaryGaps}
+      </div>
+    </div>
+  </section>
+
   <!-- TRUST SUMMARY + BUYER EVIDENCE INDEX -->
   <div class="grid-2">
     <section>
       <div class="section-title">Trust Summary</div>
       <div class="section-body">
-        <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px;">
           <div style="width:14px;height:14px;border-radius:50%;background:${trustColor};flex-shrink:0;"></div>
           <div>
-            <div style="font-size:16px;font-weight:700;color:${trustColor};">${trustLabel}</div>
-            <div style="font-size:11px;color:#718096;margin-top:2px;">
-              ${gaps.length === 0 ? "No record gaps or flags detected" : `${gaps.length} issue${gaps.length > 1 ? "s" : ""} — ${highGaps > 0 ? highGaps + " high" : ""}${highGaps > 0 && medGaps > 0 ? ", " : ""}${medGaps > 0 ? medGaps + " medium" : ""}`}
-            </div>
+            <div style="font-size:16px;font-weight:700;color:${trustColor};">${trustLabel} — ${qualityScore}/100</div>
+            <div style="font-size:11px;color:#718096;margin-top:2px;">${trustExplanation}</div>
           </div>
         </div>
         <table class="kv-table">
@@ -1859,6 +1898,11 @@ app.get("/export/sale-packet/html", (_req, res) => {
   <section>
     <div class="section-title">Logbook Summary</div>
     <div class="section-body">
+      <div style="display:flex;gap:24px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #e2e8f0;flex-wrap:wrap;">
+        <div><span style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#718096;font-weight:600;">First Entry</span><div style="font-size:14px;font-weight:700;color:#1a1a2e;margin-top:3px;">${firstEntryDate || "—"}</div></div>
+        <div><span style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#718096;font-weight:600;">Last Entry</span><div style="font-size:14px;font-weight:700;color:#1a1a2e;margin-top:3px;">${lastEntryDate || "—"}</div></div>
+        <div><span style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#718096;font-weight:600;">Total Entries</span><div style="font-size:14px;font-weight:700;color:#1a1a2e;margin-top:3px;">${entries.length}</div></div>
+      </div>
       <div class="grid-3">
         <div class="stat-card">
           <div class="stat-label">Total Hours</div>
@@ -1940,7 +1984,7 @@ app.get("/export/sale-packet/html", (_req, res) => {
     <div class="section-title">AD Compliance</div>
     <div class="section-body" style="padding:0;">
       ${adEntries.length === 0
-        ? '<div style="padding:20px;color:#a0aec0;text-align:center;">No AD compliance records on file.</div>'
+        ? '<div style="padding:20px 24px;color:#4a5568;font-size:13px;line-height:1.7;border-left:3px solid #e2e8f0;margin:16px;border-radius:2px;">No airworthiness directive compliance records are included in this package. The absence of records in this system does not confirm compliance status. Buyers should verify AD compliance independently through the aircraft maintenance logbooks and with a qualified A&amp;P mechanic or IA prior to purchase.</div>'
         : `<table class="data-table">
           <thead><tr><th>AD Number</th><th>Description</th><th>Date Complied</th><th>Mechanic</th><th>Next Due</th></tr></thead>
           <tbody>${adRows}</tbody>
@@ -1953,7 +1997,7 @@ app.get("/export/sale-packet/html", (_req, res) => {
     <div class="section-title">337 / Major Alterations</div>
     <div class="section-body" style="padding:0;">
       ${alterationEntries.length === 0
-        ? '<div style="padding:20px;color:#a0aec0;text-align:center;">No major alterations on file.</div>'
+        ? '<div style="padding:20px 24px;color:#4a5568;font-size:13px;line-height:1.7;border-left:3px solid #e2e8f0;margin:16px;border-radius:2px;">No FAA Form 337 or major alteration records are included in this package. This does not confirm that no alterations have been performed. Buyers should review all aircraft logbooks and FAA records directly to verify the modification history of this aircraft.</div>'
         : `<table class="data-table">
           <thead><tr><th>Date</th><th>Description</th><th>Performed By</th><th>Documents</th></tr></thead>
           <tbody>${alterationRows}</tbody>
