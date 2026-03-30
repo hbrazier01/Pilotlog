@@ -608,6 +608,10 @@ app.get("/", (_req, res) => {
           <a href="/verify/hash/${logHash}" style="color:#9aa3ff;text-decoration:none;">
             Verify Current Hash
           </a>
+          ·
+          <a href="/verify/airworthy" style="color:#9aa3ff;text-decoration:none;">
+            Airworthiness Check
+          </a>
         </div>
       </div>
      </div>

@@ -48,8 +48,8 @@ function loadCompactDeps() {
   }
 
   try {
-    const ContractModule = require(CONTRACT_PATH);
-    const CompactRuntime = require(RUNTIME_PATH);
+    const ContractModule = _require(CONTRACT_PATH);
+    const CompactRuntime = _require(RUNTIME_PATH);
     return {
       available: true,
       ContractModule,
