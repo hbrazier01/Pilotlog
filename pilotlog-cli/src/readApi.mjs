@@ -609,7 +609,7 @@ app.get("/", (_req, res) => {
             Verify Current Hash
           </a>
           ·
-          <a href="/verify/airworthy" style="color:#9aa3ff;text-decoration:none;">
+          <a href="/verify/airworthy/html" style="color:#9aa3ff;text-decoration:none;">
             Airworthiness Check
           </a>
         </div>
@@ -2290,6 +2290,208 @@ app.get("/verify/airworthy", (_req, res) => {
     missing,
     generated: new Date().toISOString()
   });
+});
+
+// ── Airworthiness Check (HTML) ───────────────────────────────────────────────
+app.get("/verify/airworthy/html", (_req, res) => {
+  const aircraft = readAircraft();
+  const maintenance = readMaintenance();
+  const entries = readEntries();
+
+  const pa = aircraft[0] || {};
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  function daysUntil(dateStr) {
+    if (!dateStr) return null;
+    const d = new Date(String(dateStr).slice(0, 10));
+    if (isNaN(d)) return null;
+    return Math.round((d - today) / 86400000);
+  }
+
+  const checks = [];
+  let overallPass = true;
+
+  // Annual inspection
+  if (pa.annualDue) {
+    const days = daysUntil(pa.annualDue);
+    if (days !== null && days >= 0) {
+      checks.push({ label: "Annual Inspection", status: "pass", detail: `Current — due ${String(pa.annualDue).slice(0, 10)} (${days} days remaining)` });
+    } else {
+      overallPass = false;
+      checks.push({ label: "Annual Inspection", status: "fail", detail: `Overdue by ${Math.abs(days)} days (was due ${String(pa.annualDue).slice(0, 10)})` });
+    }
+  } else {
+    overallPass = false;
+    checks.push({ label: "Annual Inspection", status: "unknown", detail: "Due date not recorded — currency cannot be confirmed" });
+  }
+
+  // Transponder check
+  if (pa.transponderDue) {
+    const days = daysUntil(pa.transponderDue);
+    if (days !== null && days >= 0) {
+      checks.push({ label: "Transponder / ADS-B Check", status: "pass", detail: `Current — due ${String(pa.transponderDue).slice(0, 10)}` });
+    } else {
+      overallPass = false;
+      checks.push({ label: "Transponder / ADS-B Check", status: "fail", detail: `Overdue by ${Math.abs(days)} days` });
+    }
+  } else {
+    checks.push({ label: "Transponder / ADS-B Check", status: "unknown", detail: "Check date not recorded" });
+  }
+
+  // Pitot-static check
+  if (pa.pitotStaticDue) {
+    const days = daysUntil(pa.pitotStaticDue);
+    if (days !== null && days >= 0) {
+      checks.push({ label: "Pitot-Static Check", status: "pass", detail: `Current — due ${String(pa.pitotStaticDue).slice(0, 10)}` });
+    } else {
+      overallPass = false;
+      checks.push({ label: "Pitot-Static Check", status: "fail", detail: `Overdue by ${Math.abs(days)} days` });
+    }
+  } else {
+    checks.push({ label: "Pitot-Static Check", status: "unknown", detail: "Check date not recorded" });
+  }
+
+  // ELT battery
+  if (pa.eltBatteryDue) {
+    const days = daysUntil(pa.eltBatteryDue);
+    if (days !== null && days >= 0) {
+      checks.push({ label: "ELT Battery", status: "pass", detail: `Current — due ${String(pa.eltBatteryDue).slice(0, 10)}` });
+    } else {
+      overallPass = false;
+      checks.push({ label: "ELT Battery", status: "fail", detail: `Expired ${Math.abs(days)} days ago` });
+    }
+  } else {
+    checks.push({ label: "ELT Battery", status: "unknown", detail: "Expiry date not recorded" });
+  }
+
+  // Maintenance history
+  if (maintenance.length > 0) {
+    checks.push({ label: "Maintenance Records", status: "pass", detail: `${maintenance.length} record${maintenance.length > 1 ? "s" : ""} on file` });
+  } else {
+    overallPass = false;
+    checks.push({ label: "Maintenance Records", status: "fail", detail: "No maintenance records — service history unverifiable" });
+  }
+
+  // AD compliance
+  const adEntries = maintenance.filter((m) => m.category === "ad-compliance" || (m.adCompliance && m.adCompliance.length > 0));
+  if (adEntries.length > 0) {
+    checks.push({ label: "AD Compliance Records", status: "pass", detail: `${adEntries.length} airworthiness directive record${adEntries.length > 1 ? "s" : ""} present` });
+  } else {
+    checks.push({ label: "AD Compliance Records", status: "unknown", detail: "No AD records in this system — verify independently with logbooks and an A&P/IA" });
+  }
+
+  // Flight log
+  if (entries.length > 0) {
+    checks.push({ label: "Flight Log Entries", status: "pass", detail: `${entries.length} entries on file` });
+  } else {
+    checks.push({ label: "Flight Log Entries", status: "unknown", detail: "No flight log entries — total time unverifiable" });
+  }
+
+  const passCount = checks.filter(c => c.status === "pass").length;
+  const failCount = checks.filter(c => c.status === "fail").length;
+  const unknownCount = checks.filter(c => c.status === "unknown").length;
+
+  const generatedFormatted = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+
+  function statusIcon(s) {
+    if (s === "pass") return "✓";
+    if (s === "fail") return "✗";
+    return "?";
+  }
+  function statusColor(s) {
+    if (s === "pass") return "#22c55e";
+    if (s === "fail") return "#ef4444";
+    return "#f59e0b";
+  }
+  function statusBg(s) {
+    if (s === "pass") return "#14532d";
+    if (s === "fail") return "#7f1d1d";
+    return "#78350f";
+  }
+
+  const checkRows = checks.map(c => `
+    <div class="check-row">
+      <div class="check-icon" style="background:${statusBg(c.status)};color:${statusColor(c.status)};">${statusIcon(c.status)}</div>
+      <div class="check-body">
+        <div class="check-label">${c.label}</div>
+        <div class="check-detail">${c.detail}</div>
+      </div>
+    </div>`).join("\n");
+
+  const resultBg = overallPass ? "#14532d" : "#7f1d1d";
+  const resultColor = overallPass ? "#86efac" : "#fca5a5";
+  const resultText = overallPass ? "PASS" : "FAIL";
+  const resultDesc = overallPass
+    ? "All recorded compliance items are current based on available data."
+    : `${failCount} item${failCount !== 1 ? "s" : ""} failed. Review required before purchase.`;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Airworthiness Check — ${pa.ident || "Aircraft"}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0f1117;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:32px 24px;line-height:1.6}
+  .container{max-width:700px;margin:0 auto}
+  .header{margin-bottom:28px}
+  h1{font-size:26px;font-weight:700;margin-bottom:4px}
+  .subtitle{font-size:14px;color:#64748b}
+  .result-banner{padding:16px 22px;border-radius:10px;margin-bottom:28px;display:flex;align-items:center;gap:16px;background:${resultBg}}
+  .result-badge{font-size:28px;font-weight:800;color:${resultColor}}
+  .result-text{font-size:15px;color:${resultColor};font-weight:500}
+  .result-sub{font-size:13px;color:${resultColor};opacity:.8;margin-top:2px}
+  .summary-row{display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap}
+  .summary-pill{padding:6px 16px;border-radius:20px;font-size:13px;font-weight:600}
+  .checks{display:flex;flex-direction:column;gap:10px;margin-bottom:28px}
+  .check-row{display:flex;align-items:flex-start;gap:14px;background:#141920;border:1px solid #1e293b;border-radius:8px;padding:14px 16px}
+  .check-icon{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;flex-shrink:0}
+  .check-label{font-size:15px;font-weight:600;color:#e2e8f0}
+  .check-detail{font-size:13px;color:#94a3b8;margin-top:2px}
+  .disclaimer{background:#141920;border:1px solid #334155;border-radius:8px;padding:16px 18px;font-size:13px;color:#64748b;line-height:1.7}
+  .disclaimer strong{color:#94a3b8}
+  .footer{margin-top:32px;text-align:center;font-size:12px;color:#475569}
+  .back-link{margin-bottom:20px;font-size:13px}
+  .back-link a{color:#9aa3ff;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="back-link"><a href="/">← Back to Dashboard</a></div>
+  <div class="header">
+    <h1>Airworthiness Check</h1>
+    <div class="subtitle">${pa.ident || "Aircraft"} &nbsp;·&nbsp; ${pa.make || ""} ${pa.model || ""} &nbsp;·&nbsp; Generated ${generatedFormatted}</div>
+  </div>
+
+  <div class="result-banner">
+    <div class="result-badge">${resultText}</div>
+    <div>
+      <div class="result-text">${resultDesc}</div>
+      <div class="result-sub">Record-based assessment only — not a legal airworthiness determination</div>
+    </div>
+  </div>
+
+  <div class="summary-row">
+    <div class="summary-pill" style="background:#14532d;color:#86efac;">${passCount} Passed</div>
+    ${failCount > 0 ? `<div class="summary-pill" style="background:#7f1d1d;color:#fca5a5;">${failCount} Failed</div>` : ""}
+    ${unknownCount > 0 ? `<div class="summary-pill" style="background:#78350f;color:#fde68a;">${unknownCount} Unknown</div>` : ""}
+  </div>
+
+  <div class="checks">${checkRows}</div>
+
+  <div class="disclaimer">
+    <strong>Important:</strong> This is a record-based assessment derived from data entered into AirLog. It does not constitute a legal determination of airworthiness under 14 CFR Part 91. A qualified A&amp;P mechanic or IA must physically inspect the aircraft and review all maintenance logbooks prior to purchase. The absence of a record in this system does not confirm compliance — it may simply mean the record has not been entered.
+  </div>
+
+  <div class="footer">Generated by AirLog &nbsp;·&nbsp; ${new Date().toISOString()}</div>
+</div>
+</body>
+</html>`;
+
+  res.setHeader("Content-Type", "text/html");
+  res.send(html);
 });
 
 // ── Trust Report (JSON) ──────────────────────────────────────────────────────
