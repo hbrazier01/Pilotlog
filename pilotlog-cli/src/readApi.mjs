@@ -1914,6 +1914,11 @@ app.get("/export/sale-packet/html", (_req, res) => {
           <tr><td style="color:#718096;">Maintenance Records</td><td>${maintenance.length}</td></tr>
           <tr><td style="color:#718096;">Log Entries</td><td>${entries.length}</td></tr>
         </table>
+        <div style="margin-top:12px;">
+          <a href="/verify/airworthy/html" style="display:inline-block;padding:7px 14px;background:#1a3a8f;color:#fff;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;">
+            View Airworthiness Check →
+          </a>
+        </div>
       </div>
     </section>
     <section>
@@ -2180,7 +2185,8 @@ app.get("/export/sale-packet/html", (_req, res) => {
 <div class="footer">
   <strong>Verified by AirLog</strong> &mdash;
   Record Hash: <code style="font-size:10px;">${currentHash.slice(0, 16)}…</code> &mdash;
-  Generated ${generatedFormatted}
+  Generated ${generatedFormatted} &mdash;
+  <a href="/verify/airworthy/html" style="color:#9aa3ff;text-decoration:none;">Airworthiness Check</a>
 </div>
 
 </body>
@@ -2459,7 +2465,11 @@ app.get("/verify/airworthy/html", (_req, res) => {
 </head>
 <body>
 <div class="container">
-  <div class="back-link"><a href="/">← Back to Dashboard</a></div>
+  <div class="back-link">
+    <a href="/">← Back to Dashboard</a>
+    &nbsp;&nbsp;·&nbsp;&nbsp;
+    <a href="/export/sale-packet/html">View Full Sale Packet</a>
+  </div>
   <div class="header">
     <h1>Airworthiness Check</h1>
     <div class="subtitle">${pa.ident || "Aircraft"} &nbsp;·&nbsp; ${pa.make || ""} ${pa.model || ""} &nbsp;·&nbsp; Generated ${generatedFormatted}</div>
