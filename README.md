@@ -1,126 +1,114 @@
-# PilotLog
+# AirLog
 
-PilotLog is a lightweight General Aviation flight logbook engine that converts flight records into structured, verifiable compliance summaries and resale-ready aircraft record packets.
+AirLog turns messy aircraft records into clean, structured, and verifiable digital history — improving resale trust, compliance clarity, and aircraft value.
 
-PilotLog currently serves as the prototype foundation for AirLog, a broader system focused on digitizing, organizing, and verifying legacy aircraft and pilot records.
+Built on PilotLog, the foundational flight logbook engine.
 
-## PilotLog Dashboard
+## Dashboard
 
 <img width="640" height="632" alt="Dashboard_github" src="https://github.com/user-attachments/assets/6a9c8a21-0dd1-44f4-9c98-ef6974a6a3c3" />
 
-The dashboard displays flight totals, regulatory currency status, aircraft maintenance alerts, record integrity verification, and structured logbook entries.
+## What It Does
 
-```
-CLI Ingestion
-      │
-      ▼
-Flight Entries
-(data/entries.json)
-      │
-      ▼
-PilotLog Engine
-  • currency calculations
-  • compliance checks
-  • maintenance alerts
-      │
-      ▼
-Record Integrity Hash
-      │
-      ▼
-Verification Output
-  • verification.json
-  • sale packet artifacts
-      │
-      ▼
-Read API + Dashboard
-http://localhost:8788
-```
+AirLog ingests aircraft and pilot records and produces structured outputs that answer three questions a buyer or inspector actually cares about:
 
-## Current Capabilities
+1. **Is this aircraft airworthy?** — compliance status on annual, transponder, pitot-static, ELT, and AD records
+2. **Can I trust these records?** — a Trust Basis that shows what is verified, what is assumed, and what is missing
+3. **What is the complete history?** — a buyer-facing sale packet with maintenance logs, flight history, component snapshot, and gap analysis
 
+## Running Locally
 
-PilotLog currently includes:
-
-- Command line ingestion tools for flight entries
-- Persistent runtime storage for aircraft records
-- Pilot currency tracking and compliance checks
-- Maintenance reminder alerts
-- Record integrity hashing for verification
-- Verification artifact generation
-- Local dashboard interface
-- Read API for structured record access
-
-## Example Outputs
-
-The system generates structured verification artifacts such as:
-```
-verification.json
-airlog-sale-packet-YYYY-MM-DD.json
-```
-These files demonstrate how aviation records can be converted into structured digital verification artifacts that may later be used for:
-
-• aircraft resale documentation
-• record audits
-• compliance review
-• record authenticity verification
-
-## Running PilotLog Locally
-
-Clone the repository:
-```
+```bash
 git clone https://github.com/hbrazier01/Pilotlog.git
 cd Pilotlog
 docker compose up
 ```
-Once running, open your browser:
 
-http://localhost:8788
+Open: **http://localhost:8788**
 
-The dashboard will display:
+Or without Docker:
 
-• total flight hours
-• landing counts
-• currency status
-• compliance indicators
-• aircraft information
-• logged flight entries
+```bash
+cd pilotlog-cli
+node src/readApi.mjs
+```
 
-## Data Storage
+## Key Endpoints
 
-Flight entries are stored in runtime storage:
+| Endpoint | Description |
+|---|---|
+| `GET /` | Dashboard — flight totals, currency, compliance alerts |
+| `GET /verify/airworthy/html` | Buyer-facing airworthiness check — pass/fail on 7 compliance items |
+| `GET /verify/airworthy` | Same check as JSON |
+| `GET /export/sale-packet/html` | Full sale packet — Trust Basis, maintenance history, compliance calendar, gap analysis |
+| `GET /export/sale-packet` | Sale packet as JSON download |
+| `GET /export/trust-report/html` | Trust report — risk score, provenance, integrity verification |
+| `GET /verify/hash/:hash` | Hash verification — confirm record integrity |
 
-data/entries.json
+## Outputs Explained
 
-Example flight entries are included so the dashboard loads with demonstration data when the project runs locally.
+### Trust Basis (in sale packet)
+Shows exactly what AirLog can confirm vs. what it takes at face value vs. what is missing. Non-technical language intended for buyers.
 
-Runtime data is stored outside the application code to keep user data separate from source control.
+### Airworthiness Check
+Pass/fail assessment across: annual inspection, transponder/ADS-B, pitot-static, ELT battery, maintenance records, AD compliance, and flight log presence. Includes plain-language disclaimer that this is record-based, not a legal determination.
 
-## Technology Stack
+### Record Integrity Hash
+Every record set produces a SHA-256 hash. Any change — even a single character — produces a different hash. Buyers can compare hashes to confirm they are reviewing unmodified records.
 
-• Node.js
-• JavaScript / TypeScript
-• Docker container environment
-• CLI utilities for ingestion
-• Local API and dashboard interface
+### Gap Analysis
+Flags missing or overdue items (maintenance chronology gaps >12 months, missing annual, missing engine TSOH) with severity ratings.
 
-## Relationship to AirLog
+## Data
 
-PilotLog is the foundational engine for the larger AirLog system.
+Demo data for a 2018 Cirrus SR20 (N123AB) is included in `data/` and `pilotlog-cli/data/`. The aircraft has:
+- 4 flight log entries
+- 5 maintenance records including 1 AD compliance record
+- Annual inspection current through 2026-05-15
+- Transponder and pitot-static current through 2027
 
-AirLog expands this concept to include:
+To add a flight entry:
+```bash
+node scripts/add.mjs --from KAPA --to KADS --total 1.3 --pic 1.3
+```
 
-• aircraft maintenance log ingestion
-• legacy aircraft record digitization
-• structured aircraft history verification
-• resale-ready aircraft documentation
-• privacy-preserving verification anchored to Midnight
+## Architecture
 
-PilotLog demonstrates the core ingestion, structuring, and verification model that powers that future platform.
+```
+data/
+  aircraft.json     ← aircraft specs, compliance due dates
+  entries.json      ← flight log entries
+  maintenance.json  ← maintenance records, AD compliance, components
+  profile.json      ← pilot profile, medical, endorsements
 
-## About
+pilotlog-cli/src/readApi.mjs   ← Express API + all HTML pages
+src/services/                  ← trust report, integrity, contract simulation
+src/lib/                       ← hashing, canonicalization, airframe ID
+compact/contracts/airlog/      ← Midnight Compact smart contract (compiled)
+scripts/                       ← CLI utilities and Phase 2 readiness validator
+```
 
-A lightweight General Aviation pilot logbook engine focused on currency tracking, compliance awareness, and verifiable record generation.
+## Phase 2 — Midnight Blockchain
 
-## Development Status
+The Compact smart contract (`compact/contracts/airlog/src/airlog.compact`) is written and compiled. It supports:
+- `registerAirframe` — owner registers aircraft on-chain by airframe ID
+- `authorizeIssuer` — owner authorizes A&P/IA mechanics to add entries
+- `addEntry` — authorized mechanic records a maintenance event on-chain
+- `transferAirframe` — ownership transfer
 
-PilotLog is currently an active prototype and part of ongoing development toward the broader AirLog platform.
+Local circuit simulation works today. To validate readiness for live PreProd deployment:
+
+```bash
+node scripts/validate-phase2-readiness.mjs
+```
+
+Live deployment requires: Lace wallet with tDUST on Midnight PreProd, plus `MIDNIGHT_NODE_URL`, `MIDNIGHT_INDEXER_URL`, `MIDNIGHT_PROOF_SERVER_URL`, and `MIDNIGHT_WALLET_SEED` env vars.
+
+## Technology
+
+- Node.js / ES Modules
+- Express (read API + HTML pages)
+- Midnight Compact (ZK smart contract language)
+- @midnight-ntwrk/compact-runtime (local circuit simulation)
+- Docker
+- SHA-256 record hashing
