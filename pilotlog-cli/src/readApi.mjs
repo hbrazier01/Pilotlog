@@ -583,35 +583,19 @@ app.get("/", (_req, res) => {
    </div>
   </div>
 
-  <div class="muted">
-          PilotLog ·
-          <a href="/export/summary/download" style="color:#9aa3ff;text-decoration:none;">
-            Download Summary
+  <div>
+          <a href="/export/sale-packet/html" style="display:inline-block;padding:8px 18px;background:#1a3a8f;color:#fff;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none;margin-top:10px;">
+            View Sale Packet →
           </a>
-          ·
-          <a href="/export/sale-packet" style="color:#9aa3ff;text-decoration:none;">
-            Download Sale Packet
-          </a>
-          ·
-          <a href="/export/sale-packet/html" style="color:#9aa3ff;text-decoration:none;">
-            View Sale Packet (HTML)
-          </a>
-          ·
-          <a href="/export/trust-report/html" style="color:#9aa3ff;text-decoration:none;">
-            View Trust Report
-          </a>
-          ·
-          <a href="/export/trust-report" style="color:#9aa3ff;text-decoration:none;">
-            Download Trust Report (JSON)
-          </a>
-          ·
-          <a href="/verify/hash/${logHash}" style="color:#9aa3ff;text-decoration:none;">
-            Verify Current Hash
-          </a>
-          ·
-          <a href="/verify/airworthy/html" style="color:#9aa3ff;text-decoration:none;">
-            Airworthiness Check
-          </a>
+          <div class="muted" style="margin-top:10px;font-size:13px;">
+            <a href="/verify/airworthy/html" style="color:#9aa3ff;text-decoration:none;">Airworthiness Check</a>
+            &nbsp;·&nbsp;
+            <a href="/export/trust-report/html" style="color:#9aa3ff;text-decoration:none;">Trust Report</a>
+            &nbsp;·&nbsp;
+            <a href="/export/summary/download" style="color:#9aa3ff;text-decoration:none;">Download Summary</a>
+            &nbsp;·&nbsp;
+            <a href="/verify/hash/${logHash}" style="color:#9aa3ff;text-decoration:none;">Verify Hash</a>
+          </div>
         </div>
       </div>
      </div>
@@ -772,22 +756,6 @@ app.get("/", (_req, res) => {
     </div>
   </div>
 
-  <div class="card">
-    <div class="label">Record Quality</div>
-    <div class="val ${scoreClass(qualityScore)}">${qualityScore} / 110</div>
-
-    <div class="small">
-      <div class="muted" style="margin-top:6px;">Strengths</div>
-      ${strengths.map((s) => `<div class="ok">✓ ${s}</div>`).join("")}
-
-      ${
-        gaps.length
-          ? `<div class="muted" style="margin-top:10px;">Gaps</div>
-             ${gaps.map((g) => `<div class="warn">⚠ ${g}</div>`).join("")}`
-          : ""
-      }
-    </div>
-  </div>
 </div>
 
   <div class="card" style="margin-top:18px; border-color:#2a3060;">
@@ -798,10 +766,6 @@ app.get("/", (_req, res) => {
           <span style="font-size:28px; font-weight:800; color:${resaleColor};">${resaleReadiness}</span>
           <span class="muted" style="font-size:13px;">Resale Readiness</span>
         </div>
-      </div>
-      <div style="margin-left:auto; text-align:right;">
-        <div class="label">Record Quality Score</div>
-        <div style="font-size:22px; font-weight:700; margin-top:4px; color:${resaleColor};">${qualityScore} / 110</div>
       </div>
     </div>
     <div class="small" style="margin-top:12px; line-height:1.8; color:#d1d5db;">
@@ -2166,7 +2130,7 @@ app.get("/export/sale-packet/html", (_req, res) => {
       </div>
     </section>
     <section>
-      <div class="section-title">Record Quality Score</div>
+      <div class="section-title">Record Completeness Score</div>
       <div class="section-body">
         <div class="score-display">${qualityScore}<span style="font-size:20px;color:#a0aec0;">/100</span></div>
         <div class="score-label">${qualityScore >= 80 ? "Excellent" : qualityScore >= 60 ? "Good" : qualityScore >= 40 ? "Fair" : "Incomplete"}</div>
@@ -2342,7 +2306,8 @@ app.get("/verify/airworthy/html", (_req, res) => {
       checks.push({ label: "Transponder / ADS-B Check", status: "fail", detail: `Overdue by ${Math.abs(days)} days` });
     }
   } else {
-    checks.push({ label: "Transponder / ADS-B Check", status: "unknown", detail: "Check date not recorded" });
+    overallPass = false;
+    checks.push({ label: "Transponder / ADS-B Check", status: "unknown", detail: "Check date not recorded — cannot confirm currency" });
   }
 
   // Pitot-static check
@@ -2355,7 +2320,8 @@ app.get("/verify/airworthy/html", (_req, res) => {
       checks.push({ label: "Pitot-Static Check", status: "fail", detail: `Overdue by ${Math.abs(days)} days` });
     }
   } else {
-    checks.push({ label: "Pitot-Static Check", status: "unknown", detail: "Check date not recorded" });
+    overallPass = false;
+    checks.push({ label: "Pitot-Static Check", status: "unknown", detail: "Check date not recorded — cannot confirm currency" });
   }
 
   // ELT battery
@@ -2368,7 +2334,8 @@ app.get("/verify/airworthy/html", (_req, res) => {
       checks.push({ label: "ELT Battery", status: "fail", detail: `Expired ${Math.abs(days)} days ago` });
     }
   } else {
-    checks.push({ label: "ELT Battery", status: "unknown", detail: "Expiry date not recorded" });
+    overallPass = false;
+    checks.push({ label: "ELT Battery", status: "unknown", detail: "Expiry date not recorded — cannot confirm currency" });
   }
 
   // Maintenance history
@@ -2384,6 +2351,7 @@ app.get("/verify/airworthy/html", (_req, res) => {
   if (adEntries.length > 0) {
     checks.push({ label: "AD Compliance Records", status: "pass", detail: `${adEntries.length} airworthiness directive record${adEntries.length > 1 ? "s" : ""} present` });
   } else {
+    overallPass = false;
     checks.push({ label: "AD Compliance Records", status: "unknown", detail: "No AD records in this system — verify independently with logbooks and an A&P/IA" });
   }
 
@@ -2391,6 +2359,7 @@ app.get("/verify/airworthy/html", (_req, res) => {
   if (entries.length > 0) {
     checks.push({ label: "Flight Log Entries", status: "pass", detail: `${entries.length} entries on file` });
   } else {
+    overallPass = false;
     checks.push({ label: "Flight Log Entries", status: "unknown", detail: "No flight log entries — total time unverifiable" });
   }
 
@@ -2429,8 +2398,10 @@ app.get("/verify/airworthy/html", (_req, res) => {
   const resultColor = overallPass ? "#86efac" : "#fca5a5";
   const resultText = overallPass ? "PASS" : "FAIL";
   const resultDesc = overallPass
-    ? "All recorded compliance items are current based on available data."
-    : `${failCount} item${failCount !== 1 ? "s" : ""} failed. Review required before purchase.`;
+    ? "All compliance items on record are current. No missing or overdue items."
+    : failCount > 0
+      ? `${failCount} item${failCount !== 1 ? "s" : ""} failed. Review required before purchase.`
+      : `${unknownCount} item${unknownCount !== 1 ? "s" : ""} could not be confirmed from available records. Independent verification required.`;
 
   const html = `<!DOCTYPE html>
 <html lang="en">
