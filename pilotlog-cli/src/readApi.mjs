@@ -1339,9 +1339,31 @@ app.get("/export/sale-packet", (_req, res) => {
 
   const gaps = computeGaps(aircraft, maintenance);
 
+  // Build trust basis for JSON packet
+  const adEntriesForPacket = maintenance.filter((m) => m.category === "ad-compliance" || (m.adCompliance && m.adCompliance.length > 0));
+  const primaryA = aircraft[0] || {};
+  const tbVerified = [];
+  const tbAssumed = [];
+  const tbMissing = [];
+  if (maintenance.length > 0) tbVerified.push(`${maintenance.length} maintenance record${maintenance.length > 1 ? "s" : ""} on file`);
+  if (primaryA.annualDue) tbVerified.push(`Annual inspection on file — due ${primaryA.annualDue}`);
+  if (entries.length > 0) tbVerified.push(`${entries.length} flight log entries recorded`);
+  if (adEntriesForPacket.length > 0) tbVerified.push(`${adEntriesForPacket.length} AD compliance records present`);
+  if (primaryA.serialNumber) tbVerified.push("Aircraft serial number on file");
+  if (primaryA.engineSerial) tbVerified.push("Engine serial number on file");
+  tbAssumed.push("Flight hours are pilot-reported and not independently audited");
+  tbAssumed.push("Aircraft specifications provided by the seller");
+  if (maintenance.length > 0) tbAssumed.push("Maintenance entries reflect mechanic records — work quality not inspected by AirLog");
+  if (!primaryA.annualDue) tbMissing.push("Annual inspection date not recorded");
+  if (adEntriesForPacket.length === 0) tbMissing.push("No AD compliance records — compliance status cannot be confirmed");
+  for (const g of gaps) {
+    if (g.severity === "high" && g.description) tbMissing.push(g.description);
+  }
+
   const packet = {
     generated: new Date().toISOString(),
     packetType: "airlog-sale-packet",
+    trustBasis: { verified: tbVerified, assumed: tbAssumed, missing: tbMissing },
     gaps,
     verification: {
       anchored: verification?.anchored || false,
@@ -1555,6 +1577,29 @@ app.get("/export/sale-packet/html", (_req, res) => {
     : gaps.length > 0
     ? `${gaps.length} record item${gaps.length > 1 ? "s" : ""} flagged for review.`
     : "No record gaps or flags were detected.";
+
+  // Trust Basis — what is verified, assumed, and missing
+  const trustBasis = { verified: [], assumed: [], missing: [] };
+  if (maintenance.length > 0) trustBasis.verified.push(`${maintenance.length} maintenance record${maintenance.length > 1 ? "s" : ""} on file`);
+  if (primaryAircraft.annualDue) trustBasis.verified.push(`Annual inspection on file — due ${fmt(primaryAircraft.annualDue)}`);
+  if (entries.length > 0) trustBasis.verified.push(`${entries.length} flight log entr${entries.length > 1 ? "ies" : "y"} recorded`);
+  if (adEntries.length > 0) trustBasis.verified.push(`${adEntries.length} AD compliance record${adEntries.length > 1 ? "s" : ""} present`);
+  if (primaryAircraft.serialNumber) trustBasis.verified.push("Aircraft serial number on file");
+  if (primaryAircraft.engineSerial) trustBasis.verified.push("Engine serial number on file");
+  if (currentHash) trustBasis.verified.push(`Record set produces a consistent hash (${currentHash.slice(0, 8)}…)`);
+
+  trustBasis.assumed.push("Flight hours are pilot-reported and not independently audited");
+  trustBasis.assumed.push("Aircraft specifications provided by the seller");
+  if (maintenance.length > 0) trustBasis.assumed.push("Maintenance entries reflect mechanic records — work quality not inspected by AirLog");
+  if (!anchored) trustBasis.assumed.push("Record hash is locally computed — not externally anchored or time-stamped");
+
+  if (!primaryAircraft.annualDue) trustBasis.missing.push("Annual inspection date not recorded");
+  if (adEntries.length === 0) trustBasis.missing.push("No AD compliance records — compliance status cannot be confirmed");
+  if (!primaryAircraft.engineSerial) trustBasis.missing.push("Engine serial number not recorded");
+  if (!primaryAircraft.serialNumber) trustBasis.missing.push("Aircraft serial number not recorded");
+  for (const g of gaps) {
+    if (g.severity === "high" && g.description) trustBasis.missing.push(g.description);
+  }
 
   const aircraftRows = aircraft.map((a) => `
     <tr><td>Registration</td><td>${a.ident || "—"}</td></tr>
@@ -1877,6 +1922,35 @@ app.get("/export/sale-packet/html", (_req, res) => {
     </section>
   </div>
 
+  <!-- TRUST BASIS -->
+  <section>
+    <div class="section-title">Trust Basis</div>
+    <div class="section-body">
+      <p style="font-size:12px;color:#718096;margin-bottom:14px;line-height:1.6;">
+        This section explains what AirLog can confirm, what it takes as given, and what it cannot verify.
+        It is intended to help buyers make informed decisions — not to substitute for a pre-buy inspection.
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
+        <div>
+          <div style="font-size:11px;font-weight:700;color:#22c55e;letter-spacing:0.05em;margin-bottom:8px;text-transform:uppercase;">✓ Verified</div>
+          ${trustBasis.verified.length > 0
+            ? trustBasis.verified.map(v => `<div style="font-size:12px;color:#2d3748;padding:4px 0;border-bottom:1px solid #f0f2f5;">${v}</div>`).join("")
+            : `<div style="font-size:12px;color:#a0aec0;">No items verified</div>`}
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:#f59e0b;letter-spacing:0.05em;margin-bottom:8px;text-transform:uppercase;">~ Assumed</div>
+          ${trustBasis.assumed.map(a => `<div style="font-size:12px;color:#4a5568;padding:4px 0;border-bottom:1px solid #f0f2f5;">${a}</div>`).join("")}
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:#ef4444;letter-spacing:0.05em;margin-bottom:8px;text-transform:uppercase;">✗ Missing / Unverifiable</div>
+          ${trustBasis.missing.length > 0
+            ? trustBasis.missing.map(m => `<div style="font-size:12px;color:#ef4444;padding:4px 0;border-bottom:1px solid #f0f2f5;">${m}</div>`).join("")
+            : `<div style="font-size:12px;color:#22c55e;">No known gaps</div>`}
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- RECORD GAPS & FLAGS -->
   <section>
     <div class="section-title">Record Gaps &amp; Flags</div>
@@ -2073,6 +2147,9 @@ app.get("/export/sale-packet/html", (_req, res) => {
           </div>` : ""}
           ${verification?.anchorTime ? `<div style="font-size:11px;color:#718096;margin-bottom:6px;">Anchored: ${String(verification.anchorTime).slice(0,10)}</div>` : ""}
           ${verification?.anchorNetwork ? `<div style="font-size:11px;color:#718096;margin-bottom:6px;">Network: ${verification.anchorNetwork}</div>` : ""}
+          <div style="font-size:11px;color:#718096;margin-top:12px;line-height:1.6;border-left:3px solid #e2e8f0;padding-left:10px;">
+            This record set hashes to the value below. Any change to the underlying records — even a single character — will produce a different hash. You can use this to confirm you are reviewing unmodified records.
+          </div>
           <div style="font-size:11px;color:#718096;margin-top:8px;font-weight:600;">Current Record Hash</div>
           <div class="hash-display">${currentHash}</div>
           ${anchorHash && anchorHash !== currentHash ? `<div style="font-size:11px;color:#718096;margin-top:8px;font-weight:600;">Anchored Hash</div><div class="hash-display">${anchorHash}</div>` : ""}
@@ -2129,6 +2206,85 @@ app.get("/verify/hash/:hash", (_req, res) => {
     anchorNetwork: verification.anchorNetwork,
     anchorTime: verification.anchorTime,
     anchorTx: verification.anchorTx
+  });
+});
+
+// ── Airworthiness Verification ───────────────────────────────────────────────
+app.get("/verify/airworthy", (_req, res) => {
+  const aircraft = readAircraft();
+  const maintenance = readMaintenance();
+  const entries = readEntries();
+
+  const pa = aircraft[0] || {};
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  function daysUntil(dateStr) {
+    if (!dateStr) return null;
+    const d = new Date(String(dateStr).slice(0, 10));
+    if (isNaN(d)) return null;
+    return Math.round((d - today) / 86400000);
+  }
+
+  const basis = [];
+  const missing = [];
+  let pass = true;
+
+  // Annual inspection
+  if (pa.annualDue) {
+    const days = daysUntil(pa.annualDue);
+    if (days !== null && days >= 0) {
+      basis.push(`Annual inspection current — due ${String(pa.annualDue).slice(0, 10)} (${days} days)`);
+    } else if (days !== null && days < 0) {
+      pass = false;
+      missing.push(`Annual inspection overdue by ${Math.abs(days)} days (due ${String(pa.annualDue).slice(0, 10)})`);
+    }
+  } else {
+    pass = false;
+    missing.push("Annual inspection date not recorded — currency cannot be confirmed");
+  }
+
+  // Flight records present
+  if (entries.length > 0) {
+    basis.push(`${entries.length} flight log entr${entries.length > 1 ? "ies" : "y"} on file`);
+  } else {
+    missing.push("No flight log entries — total time unverifiable");
+  }
+
+  // Maintenance history
+  if (maintenance.length > 0) {
+    basis.push(`${maintenance.length} maintenance record${maintenance.length > 1 ? "s" : ""} on file`);
+  } else {
+    missing.push("No maintenance records — service history unverifiable");
+  }
+
+  // AD compliance
+  const adEntries = maintenance.filter((m) => m.category === "ad-compliance" || (m.adCompliance && m.adCompliance.length > 0));
+  if (adEntries.length > 0) {
+    basis.push(`${adEntries.length} AD compliance record${adEntries.length > 1 ? "s" : ""} present`);
+  } else {
+    missing.push("No AD compliance records — airworthiness directive status unverifiable");
+  }
+
+  // Transponder check
+  if (pa.transponderDue) {
+    const days = daysUntil(pa.transponderDue);
+    if (days !== null && days >= 0) {
+      basis.push(`Transponder check current — due ${String(pa.transponderDue).slice(0, 10)}`);
+    } else if (days !== null && days < 0) {
+      missing.push(`Transponder check overdue by ${Math.abs(days)} days`);
+    }
+  } else {
+    missing.push("Transponder check date not recorded");
+  }
+
+  res.json({
+    pass,
+    result: pass ? "PASS" : "FAIL",
+    disclaimer: "This is a record-based assessment only. It does not constitute a legal airworthiness determination. A qualified A&P mechanic or IA must inspect the aircraft prior to purchase.",
+    basis,
+    missing,
+    generated: new Date().toISOString()
   });
 });
 
