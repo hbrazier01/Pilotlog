@@ -1,15 +1,10 @@
 {
-  "anchored": true,
-  "anchorHash": "f6c5ca8963179a052633ff689d2793c05d0d81729ed8324a8fe23cf1cc0f721f",
-  "anchorTime": "2026-03-13T03:03:43.247Z",
-  "anchorNetwork": "midnight-preview",
+  "anchored": false,
+  "anchorHash": null,
+  "anchorTime": null,
+  "anchorNetwork": null,
   "anchorTx": null,
-  "entries": 4,
-  "aircraftIdent": "N123AB",
-  "airframeId": "f6c6311f2d31049edefeb9d3a1856ccc442c9c3bf3f91f498158fe92b2b9ea87",
-  "contract": {
-    "registerAirframe": true,
-    "authorizeIssuer": true,
-    "addEntry": true
-  }
+  "entries": 0,
+  "aircraftIdent": null,
+  "airframeId": null
 }

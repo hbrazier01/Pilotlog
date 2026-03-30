@@ -8,7 +8,7 @@ import { simulateAirlogAnchor } from "../../src/services/airlog-contract-local.m
 import { buildTrustReport } from "../../src/services/build-trust-report.mjs";
 
 const PORT = Number(process.env.PORT || 8788);
-const DATA_DIR = process.env.PILOTLOG_HOME || process.env.PILOTLOG_DIR || "/data";
+const DATA_DIR = process.env.PILOTLOG_HOME || process.env.PILOTLOG_DIR || path.resolve(process.cwd(), "data");
 const ENTRIES_PATH = path.join(DATA_DIR, "entries.json");
 const PROFILE_PATH = path.join(DATA_DIR, "profile.json");
 const AIRCRAFT_PATH = path.join(DATA_DIR, "aircraft.json");
