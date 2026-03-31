@@ -584,14 +584,10 @@ app.get("/", (_req, res) => {
   </div>
 
   <div>
-          <a href="/export/sale-packet/html" style="display:inline-block;padding:8px 18px;background:#1a3a8f;color:#fff;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none;margin-top:10px;">
-            View Sale Packet →
+          <a href="/report" style="display:inline-block;padding:8px 18px;background:#1a3a8f;color:#fff;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none;margin-top:10px;">
+            Get your Record Report →
           </a>
           <div class="muted" style="margin-top:10px;font-size:13px;">
-            <a href="/verify/airworthy/html" style="color:#9aa3ff;text-decoration:none;">Airworthiness Check</a>
-            &nbsp;·&nbsp;
-            <a href="/export/trust-report/html" style="color:#9aa3ff;text-decoration:none;">Trust Report</a>
-            &nbsp;·&nbsp;
             <a href="/export/summary/download" style="color:#9aa3ff;text-decoration:none;">Download Summary</a>
             &nbsp;·&nbsp;
             <a href="/verify/hash/${logHash}" style="color:#9aa3ff;text-decoration:none;">Verify Hash</a>
@@ -2688,6 +2684,318 @@ app.get("/export/trust-report/html", (_req, res) => {
   res.setHeader("Content-Type", "text/html");
   res.send(html);
 
+});
+
+// ─── Aircraft Record Report (unified product) ────────────────────────────────
+app.get("/report", (_req, res) => {
+  const entries = readEntries();
+  const profile = readProfile();
+  const aircraft = readAircraft();
+  const verification = readVerification();
+  const maintenance = readMaintenance();
+
+  const hash = hashLogbook(entries, profile, aircraft);
+  const totals = computeTotals(entries);
+  const generatedFormatted = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  const primaryAircraft = aircraft[0] || {};
+  const anchored = verification?.anchored || false;
+  const anchorHash = verification?.anchorHash || null;
+  const hashMatch = anchorHash && anchorHash === hash;
+  const gaps = computeGaps(aircraft, maintenance);
+  const adEntries = maintenance.filter((m) => m.category === "ad-compliance" || (m.adCompliance && m.adCompliance.length > 0));
+
+  function fmt(val) { return val ? String(val).slice(0, 10) : "—"; }
+  function fmtNum(val) { return Number(val || 0).toFixed(1); }
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  function daysUntil(dateStr) {
+    if (!dateStr) return null;
+    const d = new Date(String(dateStr).slice(0, 10));
+    if (isNaN(d)) return null;
+    return Math.round((d - today) / 86400000);
+  }
+  function complianceBadge(days) {
+    if (days === null) return ["badge-gray", "Unknown"];
+    if (days < 0) return ["badge-red", "OVERDUE"];
+    if (days <= 30) return ["badge-red", "Due Soon"];
+    if (days <= 90) return ["badge-yellow", "Upcoming"];
+    return ["badge-green", "Current"];
+  }
+
+  // Compliance checks (airworthiness)
+  const complianceChecks = [];
+  function addCheck(label, dueDate, note) {
+    const days = daysUntil(dueDate);
+    const [cls, status] = complianceBadge(days);
+    const detail = dueDate ? `Due ${fmt(dueDate)}${days !== null ? (days < 0 ? ` — ${Math.abs(days)} days overdue` : ` — ${days} days`) : ""}` : "No date on file";
+    complianceChecks.push({ label, cls, status, detail, note: note || null });
+  }
+  addCheck("Annual Inspection", primaryAircraft.annualDue);
+  addCheck("Transponder / ADS-B Check", primaryAircraft.transponderDue);
+  addCheck("Pitot-Static Check", primaryAircraft.pitotStaticDue);
+  addCheck("ELT Battery", primaryAircraft.eltBatteryDue);
+
+  const overallPass = complianceChecks.every((c) => c.status === "Current");
+  const overallFail = complianceChecks.some((c) => c.status === "OVERDUE");
+  const overallUnknown = complianceChecks.some((c) => c.status === "Unknown");
+  const verdictClass = overallFail ? "badge-red" : overallUnknown ? "badge-yellow" : "badge-green";
+  const verdictLabel = overallFail ? "FAIL" : overallUnknown ? "INCOMPLETE" : "PASS";
+
+  const complianceRows = complianceChecks.map((c) =>
+    `<tr>
+      <td>${c.label}</td>
+      <td>${c.detail}</td>
+      <td><span class="badge ${c.cls}">${c.status}</span></td>
+    </tr>`
+  ).join("\n");
+
+  // Maintenance timeline
+  const sortedMaint = [...maintenance].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const maintenanceRows = sortedMaint.map((m) => {
+    const cat = (m.category || "").replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    return `<tr>
+      <td>${fmt(m.date)}</td>
+      <td><span class="badge badge-gray">${cat || "—"}</span></td>
+      <td>${m.description || "—"}</td>
+      <td>${m.mechanic || m.performedBy || "—"}</td>
+      <td>${m.totalAirframeHours != null ? fmtNum(m.totalAirframeHours) + " hrs" : "—"}</td>
+      <td class="${m.returnToService ? "rts-yes" : "rts-no"}">${m.returnToService ? "✓" : "—"}</td>
+    </tr>`;
+  }).join("\n");
+
+  // Verification summary (trust basis)
+  const tbVerified = [];
+  const tbAssumed = [];
+  const tbMissing = [];
+  if (maintenance.length > 0) tbVerified.push(`${maintenance.length} maintenance record${maintenance.length > 1 ? "s" : ""} on file`);
+  if (primaryAircraft.annualDue) tbVerified.push(`Annual inspection on file — due ${fmt(primaryAircraft.annualDue)}`);
+  if (entries.length > 0) tbVerified.push(`${entries.length} flight log entr${entries.length > 1 ? "ies" : "y"} recorded`);
+  if (adEntries.length > 0) tbVerified.push(`${adEntries.length} AD compliance record${adEntries.length > 1 ? "s" : ""} present`);
+  if (primaryAircraft.serialNumber) tbVerified.push("Aircraft serial number on file");
+  if (primaryAircraft.engineSerial) tbVerified.push("Engine serial number on file");
+  if (hash) tbVerified.push(`Record hash computed (${hash.slice(0,8)}…)`);
+  tbAssumed.push("Flight hours are pilot-reported and not independently audited");
+  tbAssumed.push("Aircraft specifications provided by the seller");
+  if (maintenance.length > 0) tbAssumed.push("Maintenance entries reflect mechanic records — work quality not inspected by AirLog");
+  if (!anchored) tbAssumed.push("Record hash is locally computed — not externally anchored");
+  if (!primaryAircraft.annualDue) tbMissing.push("Annual inspection date not recorded");
+  if (adEntries.length === 0) tbMissing.push("No AD compliance records — compliance status cannot be confirmed");
+  if (!primaryAircraft.engineSerial) tbMissing.push("Engine serial number not recorded");
+  if (!primaryAircraft.serialNumber) tbMissing.push("Aircraft serial number not recorded");
+  for (const g of gaps) { if (g.severity === "high" && g.description) tbMissing.push(g.description); }
+
+  function listItems(arr, cls) {
+    if (!arr.length) return `<li style="color:#6b7280;">None</li>`;
+    return arr.map((s) => `<li class="${cls}">${s}</li>`).join("\n");
+  }
+
+  // Missing items / gaps
+  const gapRows = gaps.length === 0
+    ? `<p style="color:#22c55e;font-weight:600;padding:12px 20px;">No record gaps detected.</p>`
+    : gaps.map((g) => {
+        const color = g.severity === "high" ? "#ef4444" : g.severity === "medium" ? "#f59e0b" : "#6b7280";
+        return `<tr>
+          <td style="color:${color};font-weight:700;text-transform:uppercase;font-size:11px;">${g.severity || "low"}</td>
+          <td>${g.description || "—"}</td>
+        </tr>`;
+      }).join("\n");
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aircraft Record Report — ${primaryAircraft.ident || "Aircraft"}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 13px; color: #1a1a2e; background: #f5f7fa; line-height: 1.5; }
+    @media print { body { background: #fff; font-size: 11px; } .no-print { display: none !important; } section { break-inside: avoid; } }
+    .container { max-width: 960px; margin: 0 auto; padding: 24px 20px 48px; }
+    .header { background: linear-gradient(135deg, #0d1b4b 0%, #1a3a8f 100%); color: #fff; padding: 32px 36px; border-radius: 8px; margin-bottom: 28px; display: flex; justify-content: space-between; align-items: flex-start; }
+    .header-brand { font-size: 22px; font-weight: 700; letter-spacing: 0.04em; }
+    .header-brand span { color: #7aa7ff; }
+    .header-sub { font-size: 12px; color: #b0c4ff; margin-top: 4px; }
+    .header-ident { text-align: right; }
+    .header-ident .ident { font-size: 36px; font-weight: 800; letter-spacing: 0.06em; }
+    .header-ident .type { font-size: 14px; color: #b0c4ff; margin-top: 2px; }
+    .header-ident .gendate { font-size: 11px; color: #8099cc; margin-top: 6px; }
+    section { background: #fff; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 20px; overflow: hidden; }
+    .section-title { background: #f8fafc; border-bottom: 1px solid #e2e8f0; padding: 12px 20px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #4a5568; }
+    .section-body { padding: 16px 20px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { background: #f8fafc; color: #4a5568; font-weight: 600; text-align: left; padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+    td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .badge-green { background: #dcfce7; color: #166534; }
+    .badge-red { background: #fee2e2; color: #991b1b; }
+    .badge-yellow { background: #fef9c3; color: #854d0e; }
+    .badge-gray { background: #f1f5f9; color: #475569; }
+    .verdict { display: flex; align-items: center; gap: 12px; padding: 16px 20px; }
+    .verdict-label { font-size: 28px; font-weight: 800; }
+    .verdict-sub { font-size: 13px; color: #6b7280; }
+    .rts-yes { color: #22c55e; font-weight: 700; }
+    .rts-no { color: #94a3b8; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px 20px; }
+    .kv td:first-child { color: #6b7280; width: 52%; font-size: 12px; }
+    .kv td:last-child { font-weight: 600; font-size: 12px; }
+    ul.trust-list { list-style: none; padding: 0; margin: 0; }
+    ul.trust-list li { padding: 4px 0; font-size: 12px; }
+    li.ok::before { content: "✓ "; color: #22c55e; font-weight: 700; }
+    li.assumed::before { content: "~ "; color: #f59e0b; font-weight: 700; }
+    li.missing::before { content: "✗ "; color: #ef4444; font-weight: 700; }
+    .tamper-seal { background: #0f1117; color: #e2e8f0; border-radius: 8px; padding: 20px; font-family: monospace; font-size: 12px; line-height: 1.8; }
+    .tamper-seal .label { color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; }
+    .tamper-seal .value { color: #7aa7ff; word-break: break-all; }
+    .disclaimer { font-size: 11px; color: #9ca3af; padding: 12px 20px; border-top: 1px solid #f1f5f9; }
+    .back-link { display: inline-block; margin-bottom: 16px; font-size: 13px; color: #1a3a8f; text-decoration: none; }
+    .back-link:hover { text-decoration: underline; }
+    .print-btn { display: inline-block; padding: 8px 18px; background: #1a3a8f; color: #fff; border-radius: 8px; font-size: 13px; font-weight: 700; text-decoration: none; cursor: pointer; border: none; }
+    .print-btn:hover { background: #0d1b4b; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <div class="no-print" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
+    <a href="/" class="back-link">← Dashboard</a>
+    <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
+  </div>
+
+  <div class="header">
+    <div>
+      <div class="header-brand">Air<span>Log</span></div>
+      <div class="header-sub">Aircraft Record Report</div>
+    </div>
+    <div class="header-ident">
+      <div class="ident">${primaryAircraft.ident || "—"}</div>
+      <div class="type">${primaryAircraft.type || "—"}</div>
+      <div class="gendate">Generated ${generatedFormatted}</div>
+    </div>
+  </div>
+
+  <!-- 1. Compliance Status -->
+  <section>
+    <div class="section-title">Compliance Status</div>
+    <div class="verdict">
+      <div class="verdict-label"><span class="badge ${verdictClass}" style="font-size:18px;padding:4px 14px;">${verdictLabel}</span></div>
+      <div class="verdict-sub">Based on inspection and equipment due dates on file.<br><em>This is a record-based assessment only. A qualified A&amp;P mechanic must inspect the aircraft prior to purchase.</em></div>
+    </div>
+    <table>
+      <thead><tr><th>Item</th><th>Due Date</th><th>Status</th></tr></thead>
+      <tbody>${complianceRows}</tbody>
+    </table>
+  </section>
+
+  <!-- 2. Aircraft Summary -->
+  <section>
+    <div class="section-title">Aircraft Summary</div>
+    <div class="two-col">
+      <table class="kv">
+        <tbody>
+          <tr><td>Registration</td><td>${primaryAircraft.ident || "—"}</td></tr>
+          <tr><td>Make / Model</td><td>${[primaryAircraft.make, primaryAircraft.model].filter(Boolean).join(" ") || primaryAircraft.type || "—"}</td></tr>
+          <tr><td>Year</td><td>${primaryAircraft.manufactureYear || primaryAircraft.year || "—"}</td></tr>
+          <tr><td>Serial Number</td><td>${primaryAircraft.serialNumber || "—"}</td></tr>
+          <tr><td>Total Time in Service</td><td>${primaryAircraft.totalTimeInService != null ? fmtNum(primaryAircraft.totalTimeInService) + " hrs" : "—"}</td></tr>
+        </tbody>
+      </table>
+      <table class="kv">
+        <tbody>
+          <tr><td>Engine Type</td><td>${primaryAircraft.engineType || "—"}</td></tr>
+          <tr><td>Engine Serial</td><td>${primaryAircraft.engineSerial || "—"}</td></tr>
+          <tr><td>Engine SMOH</td><td>${primaryAircraft.engineTimeSMOH != null ? fmtNum(primaryAircraft.engineTimeSMOH) + " hrs" : "—"}</td></tr>
+          <tr><td>Propeller Type</td><td>${primaryAircraft.propType || "—"}</td></tr>
+          <tr><td>Propeller Serial</td><td>${primaryAircraft.propSerial || "—"}</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="padding:0 20px 16px;">
+      <table class="kv" style="max-width:480px;">
+        <tbody>
+          <tr><td>Flight Log Entries</td><td>${entries.length}</td></tr>
+          <tr><td>Total Flight Hours</td><td>${fmtNum(totals.total)} hrs</td></tr>
+          <tr><td>PIC Hours</td><td>${fmtNum(totals.pic)} hrs</td></tr>
+          <tr><td>Pilot on File</td><td>${profile?.pilot?.fullName || "—"}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 3. Maintenance Timeline -->
+  <section>
+    <div class="section-title">Maintenance Timeline</div>
+    ${maintenance.length === 0
+      ? `<p style="padding:16px 20px;color:#6b7280;">No maintenance records on file.</p>`
+      : `<table>
+          <thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Mechanic</th><th>Airframe Hrs</th><th>RTS</th></tr></thead>
+          <tbody>${maintenanceRows}</tbody>
+        </table>`}
+  </section>
+
+  <!-- 4. Verification Summary -->
+  <section>
+    <div class="section-title">Verification Summary</div>
+    <div class="two-col">
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#4a5568;margin-bottom:8px;">Verified</div>
+        <ul class="trust-list">${listItems(tbVerified, "ok")}</ul>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#4a5568;margin-bottom:8px;">Assumed / Unaudited</div>
+        <ul class="trust-list">${listItems(tbAssumed, "assumed")}</ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. Missing Items -->
+  <section>
+    <div class="section-title">Missing Items &amp; Gaps</div>
+    ${gaps.length === 0
+      ? gapRows
+      : `<table>
+          <thead><tr><th>Severity</th><th>Description</th></tr></thead>
+          <tbody>${gapRows}</tbody>
+        </table>`}
+    ${tbMissing.length > 0
+      ? `<div style="padding:12px 20px;border-top:1px solid #f1f5f9;">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#4a5568;margin-bottom:8px;">Not Recorded</div>
+          <ul class="trust-list">${listItems(tbMissing, "missing")}</ul>
+        </div>`
+      : ""}
+  </section>
+
+  <!-- 6. Tamper Seal -->
+  <section>
+    <div class="section-title">Tamper Seal</div>
+    <div style="padding:16px 20px;">
+      <div class="tamper-seal">
+        <div><span class="label">Record Hash</span></div>
+        <div><span class="value">${hash || "—"}</span></div>
+        <div style="margin-top:10px;"><span class="label">Anchor Status</span></div>
+        <div><span class="value">${anchored
+          ? `Anchored — ${verification.anchorNetwork || "network"} · tx: ${verification.anchorTx || "—"}`
+          : "Not yet anchored to an external network"}</span></div>
+        ${anchorHash ? `<div style="margin-top:10px;"><span class="label">Anchored Hash</span></div>
+        <div><span class="value">${anchorHash}</span></div>
+        <div style="margin-top:6px;"><span class="label">Hash Match</span></div>
+        <div><span class="value" style="color:${hashMatch ? "#22c55e" : "#ef4444"};">${hashMatch ? "✓ Match — records unchanged since anchoring" : "✗ Drift detected — records may have changed"}</span></div>` : ""}
+      </div>
+      <p style="margin-top:12px;font-size:11px;color:#9ca3af;">
+        The record hash is a SHA-256 fingerprint of all flight log entries, maintenance records, and aircraft data.
+        Any modification to the underlying records will produce a different hash.
+        ${anchored ? "This hash has been anchored to an external network for independent verification." : "This hash is locally computed and has not yet been anchored."}
+      </p>
+    </div>
+    <p class="disclaimer">This report was generated by AirLog and reflects data entered by the aircraft owner or operator. AirLog does not independently verify the accuracy of maintenance records, flight hours, or compliance dates. This report is not a substitute for a pre-purchase inspection by a qualified A&amp;P mechanic or IA.</p>
+  </section>
+
+</div>
+</body>
+</html>`;
+
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(html);
 });
 
 app.listen(PORT, "0.0.0.0", () => {
