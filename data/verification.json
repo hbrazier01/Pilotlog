@@ -1,10 +1,1 @@
-{
-  "anchored": false,
-  "anchorHash": null,
-  "anchorTime": null,
-  "anchorNetwork": null,
-  "anchorTx": null,
-  "entries": 0,
-  "aircraftIdent": null,
-  "airframeId": null
-}
+{"anchored":false,"anchorHash":null,"anchorTime":null,"anchorNetwork":"midnight-preview","anchorTx":null}

@@ -4,7 +4,7 @@ import path from "node:path";
 import express from "express";
 import { createHash, randomBytes } from "node:crypto";
 import { buildIntegrityResult } from "../../src/services/build-integrity-result.mjs";
-import { simulateAirlogAnchor } from "../../src/services/airlog-contract-local.mjs";
+import { anchorOnMidnight } from "../../src/services/airlog-anchor-midnight.mjs";
 import { buildTrustReport } from "../../src/services/build-trust-report.mjs";
 
 const PORT = Number(process.env.PORT || 8788);
@@ -1114,7 +1114,7 @@ app.get("/export/summary/download", (_req, res) => {
   res.send(JSON.stringify(payload, null, 2));
 });
 
-app.post("/verify/anchor", (_req, res) => {
+app.post("/verify/anchor", async (_req, res) => {
   const entries = readEntries();
   const aircraftList = readAircraft();
   const aircraft = aircraftList[0];
@@ -1125,32 +1125,35 @@ app.post("/verify/anchor", (_req, res) => {
     });
   }
 
-  const contractResult = simulateAirlogAnchor({
-    aircraft,
-    entries,
+  const integrity = buildIntegrityResult({ aircraft, entries });
+  const totalHours = entries.reduce((s, e) => s + Number(e.total || 0), 0);
+
+  const anchorResult = await anchorOnMidnight({
+    anchorHash: integrity.anchorHash,
+    airframeId: integrity.airframeId,
+    hours: totalHours,
   });
 
   const verification = {
-    ...contractResult.integrity,
-    anchored: contractResult.runtimeAvailable,
-    anchorTime: new Date().toISOString(),
-    anchorTx: null,
-    runtimeAvailable: contractResult.runtimeAvailable,
-    contract: contractResult.runtimeAvailable
-      ? {
-          registerAirframe: !!contractResult.registerResult,
-          authorizeIssuer: !!contractResult.authorizeResult,
-          addEntry: !!contractResult.addEntryResult,
-        }
-      : "runtime unavailable",
+    ...integrity,
+    anchored: anchorResult.anchored === true,
+    anchorTime: anchorResult.anchoredAt || new Date().toISOString(),
+    anchorTx: anchorResult.anchorId || null,
+    anchorNetwork: anchorResult.network || "midnight-local",
+    runtimeAvailable: anchorResult.anchored === true,
+    contract: anchorResult.anchored
+      ? { contractAddress: anchorResult.contractAddress, anchorId: anchorResult.anchorId }
+      : anchorResult.pending
+        ? "pending"
+        : "unavailable",
   };
 
   fs.writeFileSync(VERIFICATION_PATH, JSON.stringify(verification, null, 2));
 
   res.json({
-    message: contractResult.runtimeAvailable
-      ? "Logbook anchored via local AirLog contract execution"
-      : "Logbook integrity computed — Midnight runtime unavailable (degraded mode)",
+    message: anchorResult.anchored
+      ? "Logbook anchored on Midnight local network"
+      : `Anchor pending — ${anchorResult.error || "network unavailable"}`,
     verification,
   });
 });  
@@ -2694,12 +2697,60 @@ app.get("/report", (_req, res) => {
   const verification = readVerification();
   const maintenance = readMaintenance();
 
-  const hash = hashLogbook(entries, profile, aircraft);
+  // Use canonical hash (same algorithm as the contract) so anchor comparison is consistent
+  const hash = aircraft[0]
+    ? buildIntegrityResult({ aircraft: aircraft[0], entries }).anchorHash
+    : hashLogbook(entries, profile, aircraft);
+
+  // Auto-anchor: trigger in background if records changed since last anchor.
+  // The report renders immediately with stored verification; anchor result persists for next load.
+  let liveVerification = verification;
+  const existingAnchorHash = verification?.anchorHash || null;
+  if (aircraft[0] && (!existingAnchorHash || existingAnchorHash !== hash)) {
+    // Update stored hash immediately so UI shows "Pending verification…"
+    const pendingVerification = {
+      ...(verification || {}),
+      anchorHash: hash,
+      airframeId: buildIntegrityResult({ aircraft: aircraft[0], entries }).airframeId,
+      aircraftIdent: aircraft[0]?.registration || null,
+      entries: entries.length,
+      anchored: false,
+      anchorTime: null,
+      anchorTx: null,
+      anchorNetwork: "midnight-local",
+      runtimeAvailable: false,
+      contract: "pending",
+    };
+    try { fs.writeFileSync(VERIFICATION_PATH, JSON.stringify(pendingVerification, null, 2)); } catch {}
+    liveVerification = pendingVerification;
+
+    // Fire real anchor in background — result persists to disk when done
+    const totalHours = entries.reduce((s, e) => s + Number(e.total || 0), 0);
+    const bgAirframeId = pendingVerification.airframeId;
+    const bgHash = hash;
+    anchorOnMidnight({ anchorHash: bgHash, airframeId: bgAirframeId, hours: totalHours })
+      .then((anchorResult) => {
+        const updated = {
+          ...pendingVerification,
+          anchored: anchorResult.anchored === true,
+          anchorTime: anchorResult.anchoredAt || null,
+          anchorTx: anchorResult.anchorId || null,
+          anchorNetwork: anchorResult.network || "midnight-local",
+          runtimeAvailable: anchorResult.anchored === true,
+          contract: anchorResult.anchored
+            ? { contractAddress: anchorResult.contractAddress, anchorId: anchorResult.anchorId }
+            : anchorResult.pending ? "pending" : "unavailable",
+        };
+        try { fs.writeFileSync(VERIFICATION_PATH, JSON.stringify(updated, null, 2)); } catch {}
+      })
+      .catch(() => {});
+  }
+
   const totals = computeTotals(entries);
   const generatedFormatted = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
   const primaryAircraft = aircraft[0] || {};
-  const anchored = verification?.anchored || false;
-  const anchorHash = verification?.anchorHash || null;
+  const anchored = liveVerification?.anchored || false;
+  const anchorHash = liveVerification?.anchorHash || null;
   const hashMatch = anchorHash && anchorHash === hash;
   const gaps = computeGaps(aircraft, maintenance);
   const adEntries = maintenance.filter((m) => m.category === "ad-compliance" || (m.adCompliance && m.adCompliance.length > 0));
@@ -2716,7 +2767,7 @@ app.get("/report", (_req, res) => {
   }
   function complianceBadge(days) {
     if (days === null) return ["badge-gray", "Unknown"];
-    if (days < 0) return ["badge-red", "OVERDUE"];
+    if (days < 0) return ["badge-red", "Overdue"];
     if (days <= 30) return ["badge-red", "Due Soon"];
     if (days <= 90) return ["badge-yellow", "Upcoming"];
     return ["badge-green", "Current"];
@@ -2736,10 +2787,19 @@ app.get("/report", (_req, res) => {
   addCheck("ELT Battery", primaryAircraft.eltBatteryDue);
 
   const overallPass = complianceChecks.every((c) => c.status === "Current");
-  const overallFail = complianceChecks.some((c) => c.status === "OVERDUE");
+  const overallFail = complianceChecks.some((c) => c.status === "Overdue");
   const overallUnknown = complianceChecks.some((c) => c.status === "Unknown");
   const verdictClass = overallFail ? "badge-red" : overallUnknown ? "badge-yellow" : "badge-green";
-  const verdictLabel = overallFail ? "FAIL" : overallUnknown ? "INCOMPLETE" : "PASS";
+  const verdictLabel = overallFail
+    ? "Records show unresolved airworthiness items"
+    : overallUnknown
+      ? "Records are incomplete for a full airworthiness call"
+      : "Records support airworthiness";
+  const verdictSubcopy = overallFail
+    ? "At least one required inspection or equipment check is overdue in the records on file."
+    : overallUnknown
+      ? "Some required due dates are missing in the records, so a full determination is not possible yet."
+      : "Inspection and equipment due dates on file are currently in date.";
 
   const complianceRows = complianceChecks.map((c) =>
     `<tr>
@@ -2774,10 +2834,10 @@ app.get("/report", (_req, res) => {
   if (primaryAircraft.serialNumber) tbVerified.push("Aircraft serial number on file");
   if (primaryAircraft.engineSerial) tbVerified.push("Engine serial number on file");
   if (hash) tbVerified.push(`Record hash computed (${hash.slice(0,8)}…)`);
-  tbAssumed.push("Flight hours are pilot-reported and not independently audited");
-  tbAssumed.push("Aircraft specifications provided by the seller");
-  if (maintenance.length > 0) tbAssumed.push("Maintenance entries reflect mechanic records — work quality not inspected by AirLog");
-  if (!anchored) tbAssumed.push("Record hash is locally computed — not externally anchored");
+  tbAssumed.push("Flight hours are owner-reported and not independently audited");
+  tbAssumed.push("Aircraft specifications are seller-provided");
+  if (maintenance.length > 0) tbAssumed.push("Maintenance entries reflect logged mechanic records; workmanship itself is not inspected by AirLog");
+  if (!anchored) tbAssumed.push("Record hash is generated locally and not yet externally anchored");
   if (!primaryAircraft.annualDue) tbMissing.push("Annual inspection date not recorded");
   if (adEntries.length === 0) tbMissing.push("No AD compliance records — compliance status cannot be confirmed");
   if (!primaryAircraft.engineSerial) tbMissing.push("Engine serial number not recorded");
@@ -2805,7 +2865,7 @@ app.get("/report", (_req, res) => {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Aircraft Record Report — ${primaryAircraft.ident || "Aircraft"}</title>
+  <title>Aircraft History & Pre-Buy Summary — ${primaryAircraft.ident || "Aircraft"}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 13px; color: #1a1a2e; background: #f5f7fa; line-height: 1.5; }
@@ -2832,8 +2892,12 @@ app.get("/report", (_req, res) => {
     .badge-yellow { background: #fef9c3; color: #854d0e; }
     .badge-gray { background: #f1f5f9; color: #475569; }
     .verdict { display: flex; align-items: center; gap: 12px; padding: 16px 20px; }
-    .verdict-label { font-size: 28px; font-weight: 800; }
+    .verdict-label { font-size: 20px; font-weight: 800; line-height: 1.3; }
     .verdict-sub { font-size: 13px; color: #6b7280; }
+    .buyer-impact { margin: 0 20px 14px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; padding: 12px 14px; }
+    .buyer-impact-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #475569; margin-bottom: 6px; }
+    .buyer-impact ul { margin: 0; padding-left: 18px; color: #334155; font-size: 12px; }
+    .buyer-impact li { margin: 3px 0; }
     .rts-yes { color: #22c55e; font-weight: 700; }
     .rts-no { color: #94a3b8; }
     .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px 20px; }
@@ -2847,7 +2911,7 @@ app.get("/report", (_req, res) => {
     .tamper-seal { background: #0f1117; color: #e2e8f0; border-radius: 8px; padding: 20px; font-family: monospace; font-size: 12px; line-height: 1.8; }
     .tamper-seal .label { color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; }
     .tamper-seal .value { color: #7aa7ff; word-break: break-all; }
-    .disclaimer { font-size: 11px; color: #9ca3af; padding: 12px 20px; border-top: 1px solid #f1f5f9; }
+    .disclaimer { font-size: 10px; color: #94a3b8; padding: 10px 20px; border-top: 1px dashed #e2e8f0; background: #fcfdff; }
     .back-link { display: inline-block; margin-bottom: 16px; font-size: 13px; color: #1a3a8f; text-decoration: none; }
     .back-link:hover { text-decoration: underline; }
     .print-btn { display: inline-block; padding: 8px 18px; background: #1a3a8f; color: #fff; border-radius: 8px; font-size: 13px; font-weight: 700; text-decoration: none; cursor: pointer; border: none; }
@@ -2865,7 +2929,7 @@ app.get("/report", (_req, res) => {
   <div class="header">
     <div>
       <div class="header-brand">Air<span>Log</span></div>
-      <div class="header-sub">Aircraft Record Report</div>
+      <div class="header-sub">Aircraft History &amp; Pre-Buy Summary</div>
     </div>
     <div class="header-ident">
       <div class="ident">${primaryAircraft.ident || "—"}</div>
@@ -2878,8 +2942,16 @@ app.get("/report", (_req, res) => {
   <section>
     <div class="section-title">Compliance Status</div>
     <div class="verdict">
-      <div class="verdict-label"><span class="badge ${verdictClass}" style="font-size:18px;padding:4px 14px;">${verdictLabel}</span></div>
-      <div class="verdict-sub">Based on inspection and equipment due dates on file.<br><em>This is a record-based assessment only. A qualified A&amp;P mechanic must inspect the aircraft prior to purchase.</em></div>
+      <div class="verdict-label"><span class="badge ${verdictClass}" style="font-size:14px;padding:6px 12px;text-transform:none;">${verdictLabel}</span></div>
+      <div class="verdict-sub">${verdictSubcopy}<br><em>Record-based screening only; confirm condition with a qualified A&amp;P pre-buy inspection.</em></div>
+    </div>
+    <div class="buyer-impact">
+      <div class="buyer-impact-title">Buyer Impact</div>
+      <ul>
+        <li><strong>Pre-buy process:</strong> ${overallFail ? "Expect additional inspection findings and corrective actions before close." : overallUnknown ? "Expect a smoother process once missing dates and records are provided." : "Records suggest a smoother pre-buy process with fewer compliance surprises."}</li>
+        <li><strong>Documentation risk:</strong> ${tbMissing.length > 0 ? "Some required records are missing; unresolved documentation may delay underwriting or escrow." : "No major documentation gaps are flagged in this report."}</li>
+        <li><strong>Resale position:</strong> ${overallFail || tbMissing.length > 0 ? "Open record issues can reduce buyer confidence and negotiating leverage." : "Complete and current records generally support stronger resale confidence."}</li>
+      </ul>
     </div>
     <table>
       <thead><tr><th>Item</th><th>Due Date</th><th>Status</th></tr></thead>
@@ -2942,7 +3014,7 @@ app.get("/report", (_req, res) => {
         <ul class="trust-list">${listItems(tbVerified, "ok")}</ul>
       </div>
       <div>
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#4a5568;margin-bottom:8px;">Assumed / Unaudited</div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#4a5568;margin-bottom:8px;">Reported, Not Independently Verified</div>
         <ul class="trust-list">${listItems(tbAssumed, "assumed")}</ul>
       </div>
     </div>
@@ -2970,21 +3042,29 @@ app.get("/report", (_req, res) => {
     <div class="section-title">Tamper Seal</div>
     <div style="padding:16px 20px;">
       <div class="tamper-seal">
-        <div><span class="label">Record Hash</span></div>
-        <div><span class="value">${hash || "—"}</span></div>
-        <div style="margin-top:10px;"><span class="label">Anchor Status</span></div>
-        <div><span class="value">${anchored
-          ? `Anchored — ${verification.anchorNetwork || "network"} · tx: ${verification.anchorTx || "—"}`
-          : "Not yet anchored to an external network"}</span></div>
-        ${anchorHash ? `<div style="margin-top:10px;"><span class="label">Anchored Hash</span></div>
-        <div><span class="value">${anchorHash}</span></div>
-        <div style="margin-top:6px;"><span class="label">Hash Match</span></div>
-        <div><span class="value" style="color:${hashMatch ? "#22c55e" : "#ef4444"};">${hashMatch ? "✓ Match — records unchanged since anchoring" : "✗ Drift detected — records may have changed"}</span></div>` : ""}
+        <div style="margin-bottom:10px;">
+          <span class="label">Verification Status</span><br>
+          <span class="value" style="font-size:14px;color:${anchored ? "#22c55e" : "#94a3b8"};">
+            ${anchored ? "Anchored on Midnight ✓" : "Pending verification…"}
+          </span>
+        </div>
+        <details style="margin-top:8px;">
+          <summary style="cursor:pointer;font-size:11px;color:#64748b;letter-spacing:0.05em;text-transform:uppercase;user-select:none;">View verification details</summary>
+          <div style="margin-top:10px;">
+            <div><span class="label">Report Hash</span></div>
+            <div><span class="value">${hash || "—"}</span></div>
+            ${anchored && liveVerification?.anchorTx ? `<div style="margin-top:8px;"><span class="label">Anchor ID</span></div>
+            <div><span class="value">${liveVerification.anchorTx}</span></div>` : ""}
+            ${anchored && liveVerification?.anchorTime ? `<div style="margin-top:8px;"><span class="label">Anchored At</span></div>
+            <div><span class="value">${String(liveVerification.anchorTime).slice(0, 19).replace("T", " ")} UTC</span></div>` : ""}
+            ${hashMatch ? `<div style="margin-top:8px;"><span class="label">Integrity</span></div>
+            <div><span class="value" style="color:#22c55e;">✓ Records match anchored hash</span></div>` : anchorHash ? `<div style="margin-top:8px;"><span class="label">Integrity</span></div>
+            <div><span class="value" style="color:#ef4444;">Records have changed since last anchor</span></div>` : ""}
+          </div>
+        </details>
       </div>
       <p style="margin-top:12px;font-size:11px;color:#9ca3af;">
-        The record hash is a SHA-256 fingerprint of all flight log entries, maintenance records, and aircraft data.
-        Any modification to the underlying records will produce a different hash.
-        ${anchored ? "This hash has been anchored to an external network for independent verification." : "This hash is locally computed and has not yet been anchored."}
+        This report is independently verified. Any change to the underlying records produces a different fingerprint.
       </p>
     </div>
     <p class="disclaimer">This report was generated by AirLog and reflects data entered by the aircraft owner or operator. AirLog does not independently verify the accuracy of maintenance records, flight hours, or compliance dates. This report is not a substitute for a pre-purchase inspection by a qualified A&amp;P mechanic or IA.</p>
