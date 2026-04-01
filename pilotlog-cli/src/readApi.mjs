@@ -2182,6 +2182,56 @@ app.get("/verify/hash/:hash", (_req, res) => {
   });
 });
 
+// ── Public Anchor Verification ───────────────────────────────────────────────
+function verifyAnchorTx(tx) {
+  const verification = readVerification();
+  const entries = readEntries();
+  const aircraftList = readAircraft();
+  const aircraft = aircraftList[0];
+
+  if (!tx) {
+    return { status: 400, body: { error: "tx parameter is required" } };
+  }
+
+  if (!verification?.anchorTx || !verification?.anchored) {
+    return {
+      status: 200,
+      body: { tx, anchored: false, integrity: "invalid" },
+    };
+  }
+
+  if (verification.anchorTx !== tx) {
+    return {
+      status: 200,
+      body: { tx, anchored: false, integrity: "invalid" },
+    };
+  }
+
+  // Compute current hash for comparison
+  let currentHash = null;
+  try {
+    if (aircraft) {
+      currentHash = buildIntegrityResult({ aircraft, entries }).anchorHash;
+    }
+  } catch {}
+
+  const hashMatch = currentHash && verification.anchorHash
+    ? currentHash === verification.anchorHash
+    : null;
+
+  return {
+    status: 200,
+    body: {
+      tx,
+      anchored: true,
+      hash: verification.anchorHash,
+      timestamp: verification.anchorTime || null,
+      integrity: hashMatch === false ? "hash_mismatch" : "valid",
+      network: verification.anchorNetwork || "midnight-local",
+    },
+  };
+}
+
 // ── Airworthiness Verification ───────────────────────────────────────────────
 app.get("/verify/airworthy", (_req, res) => {
   const aircraft = readAircraft();
@@ -2472,6 +2522,17 @@ app.get("/verify/airworthy/html", (_req, res) => {
 
   res.setHeader("Content-Type", "text/html");
   res.send(html);
+});
+
+app.get("/verify", (req, res) => {
+  const tx = req.query.tx;
+  const result = verifyAnchorTx(tx);
+  res.status(result.status).json(result.body);
+});
+
+app.get("/verify/:tx", (req, res) => {
+  const result = verifyAnchorTx(req.params.tx);
+  res.status(result.status).json(result.body);
 });
 
 // ── Trust Report (JSON) ──────────────────────────────────────────────────────
@@ -3054,7 +3115,8 @@ app.get("/report", (_req, res) => {
             <div><span class="label">Report Hash</span></div>
             <div><span class="value">${hash || "—"}</span></div>
             ${anchored && liveVerification?.anchorTx ? `<div style="margin-top:8px;"><span class="label">Anchor ID</span></div>
-            <div><span class="value">${liveVerification.anchorTx}</span></div>` : ""}
+            <div><span class="value">${liveVerification.anchorTx}</span></div>
+            <div style="margin-top:6px;"><a href="/verify/${liveVerification.anchorTx}" target="_blank" style="font-size:11px;color:#6366f1;text-decoration:none;">↗ Verify independently</a></div>` : ""}
             ${anchored && liveVerification?.anchorTime ? `<div style="margin-top:8px;"><span class="label">Anchored At</span></div>
             <div><span class="value">${String(liveVerification.anchorTime).slice(0, 19).replace("T", " ")} UTC</span></div>` : ""}
             ${hashMatch ? `<div style="margin-top:8px;"><span class="label">Integrity</span></div>
