@@ -10,6 +10,7 @@
 
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { existsSync } from "node:fs";
 
 const ANCHOR_SCRIPT = path.resolve(
   "/Users/admin1/midnight-local-dev/anchorEntry.mjs"
@@ -29,6 +30,11 @@ const ANCHOR_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
  * @returns {Promise<{anchored:boolean, anchorId?:string, anchoredAt?:string, network?:string, hash?:string, pending?:boolean, error?:string}>}
  */
 export async function anchorOnMidnight({ anchorHash, airframeId, hours = 0 }) {
+  // Skip if anchor script is not available (e.g. Railway deployment without local Midnight)
+  if (!existsSync(ANCHOR_SCRIPT)) {
+    return { anchored: false, pending: true, error: "anchor script not available in this environment" };
+  }
+
   return new Promise((resolve) => {
     let stdout = "";
     let timedOut = false;
