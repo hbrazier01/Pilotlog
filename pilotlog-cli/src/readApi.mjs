@@ -590,7 +590,7 @@ app.get("/", (_req, res) => {
           <div class="muted" style="margin-top:10px;font-size:13px;">
             <a href="/export/summary/download" style="color:#9aa3ff;text-decoration:none;">Download Summary</a>
             &nbsp;·&nbsp;
-            <a href="/verify/hash/${logHash}" style="color:#9aa3ff;text-decoration:none;">Verify Hash</a>
+            <a href="/verify/hash/${logHash}" style="color:#9aa3ff;text-decoration:none;">Verify Report</a>
           </div>
         </div>
       </div>
@@ -2183,6 +2183,66 @@ app.get("/verify/hash/:hash", (_req, res) => {
 });
 
 // ── Public Anchor Verification ───────────────────────────────────────────────
+function renderVerifyHtml(body) {
+  const anchored = body.anchored === true;
+  const integrityOk = body.integrity === "valid";
+  const statusColor = anchored && integrityOk ? "#22c55e" : anchored && !integrityOk ? "#ef4444" : "#f59e0b";
+  const statusIcon = anchored && integrityOk ? "✓" : anchored && !integrityOk ? "✗" : "—";
+  const statusLabel = anchored && integrityOk ? "Anchored" : anchored && !integrityOk ? "Hash Mismatch" : "Not Anchored";
+  const integrityLabel = integrityOk ? "✓ Valid" : body.integrity === "hash_mismatch" ? "✗ Hash mismatch — records changed after anchoring" : "—";
+  const timestampStr = body.timestamp ? String(body.timestamp).slice(0, 19).replace("T", " ") + " UTC" : "—";
+  const network = body.network || "midnight-local";
+  const tx = body.tx || "—";
+  const hash = body.hash || "—";
+  const reason = body.reason || null;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AirLog — Blockchain Verification</title>
+<style>
+  body { margin: 0; background: #0f172a; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 40px 20px; }
+  .container { max-width: 560px; margin: 0 auto; }
+  .header { margin-bottom: 32px; }
+  .header h1 { font-size: 20px; font-weight: 700; color: #f8fafc; margin: 0 0 4px; }
+  .header p { font-size: 13px; color: #64748b; margin: 0; }
+  .card { background: #1e293b; border-radius: 10px; padding: 24px; margin-bottom: 16px; }
+  .status-badge { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 20px; font-size: 14px; font-weight: 700; background: ${anchored && integrityOk ? "#14532d" : anchored && !integrityOk ? "#7f1d1d" : "#422006"}; color: ${statusColor}; margin-bottom: 20px; }
+  .row { display: flex; flex-direction: column; margin-bottom: 14px; }
+  .row:last-child { margin-bottom: 0; }
+  .lbl { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; margin-bottom: 4px; }
+  .val { font-size: 12px; color: #cbd5e1; word-break: break-all; font-family: ui-monospace, monospace; }
+  .val.ok { color: #22c55e; font-family: inherit; font-size: 13px; }
+  .val.fail { color: #ef4444; font-family: inherit; font-size: 13px; }
+  .back { display: inline-block; margin-top: 24px; font-size: 12px; color: #6366f1; text-decoration: none; }
+  .back:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>AirLog · Blockchain Verification</h1>
+    <p>Independent confirmation of the Midnight network anchor for this aircraft record report.</p>
+  </div>
+  <div class="card">
+    <div class="status-badge">${statusIcon} ${statusLabel}</div>
+    ${reason ? `<div class="row"><div class="lbl">Note</div><div class="val">${reason}</div></div>` : ""}
+    <div class="row"><div class="lbl">Transaction ID</div><div class="val">${tx}</div></div>
+    <div class="row"><div class="lbl">Anchored</div><div class="val ${anchored ? "ok" : "fail"}">${anchored ? "✓ Yes" : "✗ No"}</div></div>
+    <div class="row"><div class="lbl">Integrity</div><div class="val ${integrityOk ? "ok" : "fail"}">${integrityLabel}</div></div>
+    <div class="row"><div class="lbl">Timestamp</div><div class="val">${timestampStr}</div></div>
+    <div class="row"><div class="lbl">Network</div><div class="val">${network}</div></div>
+    ${anchored ? `<div class="row"><div class="lbl">Anchored Hash</div><div class="val">${hash}</div></div>` : ""}
+  </div>
+  <a href="/report" class="back">← Back to Record Report</a>
+  <span style="font-size:11px;color:#334155;margin-left:16px;"><a href="?format=json" style="color:#334155;">View raw JSON</a></span>
+</div>
+</body>
+</html>`;
+}
+
 function verifyAnchorTx(tx) {
   const verification = readVerification();
   const entries = readEntries();
@@ -2528,12 +2588,18 @@ app.get("/verify", (req, res) => {
   // If no tx param, use the stored anchorTx from verification.json for self-contained verification
   const tx = req.query.tx || readVerification()?.anchorTx || null;
   const result = verifyAnchorTx(tx);
-  res.status(result.status).json(result.body);
+  if (req.query.format === "json") {
+    return res.status(result.status).json(result.body);
+  }
+  res.status(result.status).setHeader("Content-Type", "text/html; charset=utf-8").send(renderVerifyHtml(result.body));
 });
 
 app.get("/verify/:tx", (req, res) => {
   const result = verifyAnchorTx(req.params.tx);
-  res.status(result.status).json(result.body);
+  if (req.query.format === "json") {
+    return res.status(result.status).json(result.body);
+  }
+  res.status(result.status).setHeader("Content-Type", "text/html; charset=utf-8").send(renderVerifyHtml(result.body));
 });
 
 // ── Trust Report (JSON) ──────────────────────────────────────────────────────
@@ -3110,14 +3176,18 @@ app.get("/report", (_req, res) => {
             ${anchored && hashMatch ? "Anchored on Midnight ✓" : anchored && !hashMatch ? "Verification failed — records changed since anchor" : "Pending verification…"}
           </span>
         </div>
-        <details style="margin-top:8px;">
+        <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <a href="/verify/hash/${hash}" style="display:inline-block;padding:8px 16px;background:#1e3a5f;color:#93c5fd;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;">Verify Report</a>
+          ${anchored && liveVerification?.anchorTx ? `<a href="/verify/${liveVerification.anchorTx}" target="_blank" style="display:inline-block;padding:8px 16px;background:#312e81;color:#a5b4fc;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;">Verify on Blockchain ↗</a>` : ""}
+        </div>
+        <p style="margin-top:8px;font-size:11px;color:#64748b;">Verify internally or confirm independently on the Midnight network.</p>
+        <details style="margin-top:12px;">
           <summary style="cursor:pointer;font-size:11px;color:#64748b;letter-spacing:0.05em;text-transform:uppercase;user-select:none;">View verification details</summary>
           <div style="margin-top:10px;">
             <div><span class="label">Report Hash</span></div>
             <div><span class="value">${hash || "—"}</span></div>
             ${anchored && liveVerification?.anchorTx ? `<div style="margin-top:8px;"><span class="label">Anchor ID</span></div>
-            <div><span class="value">${liveVerification.anchorTx}</span></div>
-            <div style="margin-top:6px;"><a href="/verify/${liveVerification.anchorTx}" target="_blank" style="font-size:11px;color:#6366f1;text-decoration:none;">↗ Verify independently</a></div>` : ""}
+            <div><span class="value">${liveVerification.anchorTx}</span></div>` : ""}
             ${anchored && liveVerification?.anchorTime ? `<div style="margin-top:8px;"><span class="label">Anchored At</span></div>
             <div><span class="value">${String(liveVerification.anchorTime).slice(0, 19).replace("T", " ")} UTC</span></div>` : ""}
             ${hashMatch ? `<div style="margin-top:8px;"><span class="label">Integrity</span></div>
