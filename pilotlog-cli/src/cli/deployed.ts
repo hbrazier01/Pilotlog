@@ -71,8 +71,8 @@ const DEPLOYMENT_JSON = path.resolve(__dirname, "../../../../deployment.json");
 
 // Midnight PreProd network endpoints
 const PREPROD_CONFIG = {
-  indexer: "https://indexer.preprod.midnight.network/api/v1/graphql",
-  indexerWS: "wss://indexer.preprod.midnight.network/api/v1/graphql/ws",
+  indexer: "https://indexer.preprod.midnight.network/api/v4/graphql",
+  indexerWS: "wss://indexer.preprod.midnight.network/api/v4/graphql/ws",
   node: "https://rpc.preprod.midnight.network",
   proofServer: "http://127.0.0.1:6300",
 };
