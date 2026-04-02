@@ -2190,7 +2190,7 @@ function verifyAnchorTx(tx) {
   const aircraft = aircraftList[0];
 
   if (!tx) {
-    return { status: 400, body: { error: "tx parameter is required" } };
+    return { status: 200, body: { anchored: false, integrity: "invalid", reason: "No anchor transaction on record" } };
   }
 
   if (!verification?.anchorTx || !verification?.anchored) {
@@ -2525,7 +2525,8 @@ app.get("/verify/airworthy/html", (_req, res) => {
 });
 
 app.get("/verify", (req, res) => {
-  const tx = req.query.tx;
+  // If no tx param, use the stored anchorTx from verification.json for self-contained verification
+  const tx = req.query.tx || readVerification()?.anchorTx || null;
   const result = verifyAnchorTx(tx);
   res.status(result.status).json(result.body);
 });
@@ -2773,7 +2774,7 @@ app.get("/report", (_req, res) => {
       ...(verification || {}),
       anchorHash: hash,
       airframeId: buildIntegrityResult({ aircraft: aircraft[0], entries }).airframeId,
-      aircraftIdent: aircraft[0]?.registration || null,
+      aircraftIdent: aircraft[0]?.ident || null,
       entries: entries.length,
       anchored: false,
       anchorTime: null,
@@ -3105,8 +3106,8 @@ app.get("/report", (_req, res) => {
       <div class="tamper-seal">
         <div style="margin-bottom:10px;">
           <span class="label">Verification Status</span><br>
-          <span class="value" style="font-size:14px;color:${anchored ? "#22c55e" : "#94a3b8"};">
-            ${anchored ? "Anchored on Midnight ✓" : "Pending verification…"}
+          <span class="value" style="font-size:14px;color:${anchored && hashMatch ? "#22c55e" : anchored && !hashMatch ? "#ef4444" : "#94a3b8"};">
+            ${anchored && hashMatch ? "Anchored on Midnight ✓" : anchored && !hashMatch ? "Verification failed — records changed since anchor" : "Pending verification…"}
           </span>
         </div>
         <details style="margin-top:8px;">
