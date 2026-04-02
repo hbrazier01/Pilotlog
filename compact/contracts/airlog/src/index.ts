@@ -1,20 +1,18 @@
 import ContractModule from "./managed/airlog/contract/index.cjs";
-import type { Ledger, Entry, EntryType, Witnesses, ImpureCircuits } from "./managed/airlog/contract/index.cjs";
+import type { Ledger, Entry, EntryType } from "./managed/airlog/contract/index.cjs";
 
 export const pureCircuits = ContractModule.pureCircuits;
 
-// Subclass the generated Contract to add `provableCircuits` required by compact-js runtime.
-// All circuits in this contract are impure (ZK-provable), so provableCircuits aliases circuits.
-class Contract<T, W extends Witnesses<T> = Witnesses<T>> extends ContractModule.Contract<T, W> {
-  get provableCircuits(): ImpureCircuits<T> {
-    return this.circuits as unknown as ImpureCircuits<T>;
-  }
-}
+// Patch the original Contract prototype to add `provableCircuits` without subclassing.
+// Subclassing breaks Midnight's instanceof checks (ContractMaintenanceAuthority).
+// All circuits here are impure (ZK-provable), so provableCircuits aliases circuits.
+Object.defineProperty(ContractModule.Contract.prototype, 'provableCircuits', {
+  get() { return this.circuits; },
+  configurable: true,
+  enumerable: false,
+});
 
-export const Airlog = {
-  ...ContractModule,
-  Contract,
-};
+export * as Airlog from "./managed/airlog/contract/index.cjs";
 
 export * from "./witnesses.js";
 export type { AirlogPrivateState } from "./witnesses.js";
