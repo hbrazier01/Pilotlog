@@ -26,6 +26,7 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
+    "@midnight-ntwrk/compact-runtime": "^0.8.1",
     "midnight-contracts": "git+https://riusricardo@github.com/riusricardo/midnight-contracts"
   }
 }

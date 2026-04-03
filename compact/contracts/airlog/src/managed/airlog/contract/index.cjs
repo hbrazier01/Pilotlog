@@ -1,6 +1,6 @@
 'use strict';
 const __compactRuntime = require('@midnight-ntwrk/compact-runtime');
-const expectedRuntimeVersionString = '0.8.1';
+const expectedRuntimeVersionString = '0.15.0';
 const expectedRuntimeVersion = expectedRuntimeVersionString.split('-')[0].split('.').map(Number);
 const actualRuntimeVersion = __compactRuntime.versionString.split('-')[0].split('.').map(Number);
 if (expectedRuntimeVersion[0] != actualRuntimeVersion[0]
@@ -42,11 +42,11 @@ class _ZswapCoinPublicKey_0 {
 
 const _descriptor_1 = new _ZswapCoinPublicKey_0();
 
-const _descriptor_2 = new __compactRuntime.CompactTypeBoolean();
+const _descriptor_2 = __compactRuntime.CompactTypeBoolean;
 
 const _descriptor_3 = new __compactRuntime.CompactTypeUnsignedInteger(18446744073709551615n, 8);
 
-const _descriptor_4 = new __compactRuntime.CompactTypeField();
+const _descriptor_4 = __compactRuntime.CompactTypeField;
 
 const _descriptor_5 = new __compactRuntime.CompactTypeEnum(6, 1);
 
