@@ -295,6 +295,91 @@ app.get("/health", (_req, res) => {
   res.status(200).send("OK");
 });
 
+// Compute passenger currency for a given landing type over 90 days.
+// Returns { status: 'green'|'yellow'|'red', count, daysUntilExpiry, message, action }
+function computePassengerCurrency(entries, type /* 'day' | 'night' */, asOf) {
+  const cutoff = new Date(asOf);
+  cutoff.setDate(cutoff.getDate() - 90);
+  const cutoffMs = cutoff.getTime();
+  const asOfMs = new Date(asOf).getTime();
+
+  const field = type === 'day' ? 'dayLandings' : 'nightLandings';
+
+  // Collect individual landing events sorted oldest-first within 90-day window
+  const landingDates = [];
+  for (const e of entries) {
+    const d = new Date(e.date);
+    if (!isNaN(d) && d.getTime() >= cutoffMs) {
+      const n = Number(e[field] || 0);
+      for (let i = 0; i < n; i++) landingDates.push(d.getTime());
+    }
+  }
+  landingDates.sort((a, b) => a - b);
+
+  const count = landingDates.length;
+  const label = type === 'day' ? 'day' : 'night';
+
+  if (count >= 3) {
+    // Current — find when oldest of last-3 will age out of 90-day window
+    const oldest3 = landingDates[landingDates.length - 3];
+    const expiryMs = oldest3 + 90 * 24 * 60 * 60 * 1000;
+    const daysLeft = Math.ceil((expiryMs - asOfMs) / (24 * 60 * 60 * 1000));
+    return {
+      status: 'green',
+      count,
+      daysUntilExpiry: daysLeft,
+      message: `You're current to carry passengers during the ${label}.`,
+      action: `Currency valid for ${daysLeft} more day${daysLeft === 1 ? '' : 's'}.`,
+    };
+  }
+
+  const needed = 3 - count;
+
+  if (count === 0) {
+    return {
+      status: 'red',
+      count,
+      daysUntilExpiry: 0,
+      message: `You are not current. You need ${needed} ${label} landing${needed === 1 ? '' : 's'} to carry passengers.`,
+      action: `Complete ${needed} landing${needed === 1 ? '' : 's'} to restore currency.`,
+    };
+  }
+
+  // Has some landings — find when the most recent will age out
+  const newestMs = landingDates[landingDates.length - 1];
+  const expiryMs = newestMs + 90 * 24 * 60 * 60 * 1000;
+  const daysLeft = Math.ceil((expiryMs - asOfMs) / (24 * 60 * 60 * 1000));
+
+  if (daysLeft > 0 && daysLeft <= 14) {
+    return {
+      status: 'yellow',
+      count,
+      daysUntilExpiry: daysLeft,
+      message: `You need ${needed} more ${label} landing${needed === 1 ? '' : 's'} in the next ${daysLeft} day${daysLeft === 1 ? '' : 's'} to stay current.`,
+      action: `Act soon — currency window closing.`,
+    };
+  }
+
+  if (daysLeft <= 0) {
+    return {
+      status: 'red',
+      count,
+      daysUntilExpiry: 0,
+      message: `You are not current. You need ${needed} more ${label} landing${needed === 1 ? '' : 's'} to carry passengers.`,
+      action: `Complete ${needed} landing${needed === 1 ? '' : 's'} to restore currency.`,
+    };
+  }
+
+  // > 14 days left but < 3 landings (edge case: they have some but need more, not urgent yet)
+  return {
+    status: 'yellow',
+    count,
+    daysUntilExpiry: daysLeft,
+    message: `You need ${needed} more ${label} landing${needed === 1 ? '' : 's'} to be current.`,
+    action: `${daysLeft} day${daysLeft === 1 ? '' : 's'} until existing landings expire.`,
+  };
+}
+
 app.get("/", (_req, res) => {
   const entries = sortNewestFirst(readEntries());
   const totals = computeTotals(entries);
@@ -307,6 +392,23 @@ app.get("/", (_req, res) => {
   const totalFlights = entries.length;
   const lastFlightDate = entries[0]?.date ? String(entries[0].date).slice(0, 10) : "—";
   const landings = Number(totals.dayLandings || 0) + Number(totals.nightLandings || 0);
+
+  // Passenger currency
+  const now = new Date().toISOString();
+  const dayCurrency = computePassengerCurrency(entries, 'day', now);
+  const nightCurrency = computePassengerCurrency(entries, 'night', now);
+
+  const worstStatus = (a, b) => {
+    const rank = { red: 0, yellow: 1, green: 2 };
+    return rank[a] <= rank[b] ? a : b;
+  };
+  const overallStatus = worstStatus(dayCurrency.status, nightCurrency.status);
+  const readinessLabel = overallStatus === 'green' ? 'Good to Fly' : overallStatus === 'yellow' ? 'Needs Attention' : 'Not Current';
+  const readinessColor = overallStatus === 'green' ? '#22c55e' : overallStatus === 'yellow' ? '#f59e0b' : '#ef4444';
+  const readinessBg = overallStatus === 'green' ? '#052e16' : overallStatus === 'yellow' ? '#1c1203' : '#1c0505';
+
+  const statusDot = (s) => s === 'green' ? '#22c55e' : s === 'yellow' ? '#f59e0b' : '#ef4444';
+  const statusLabel = (s) => s === 'green' ? 'Current' : s === 'yellow' ? 'Expiring Soon' : 'Not Current';
 
   // Aircraft summary from entries
   const aircraftStats = {};
@@ -364,6 +466,31 @@ app.get("/", (_req, res) => {
   .btn:hover { background:#1e46b0; }
   .btn-outline { background:transparent; border:1px solid #222843; color:#9aa3ff; }
   .actions { display:flex; gap:12px; margin-top:20px; flex-wrap:wrap; align-items:center; }
+  .log-form { display:none; background:#121624; border:1px solid #222843; border-radius:14px; padding:20px; margin-top:16px; }
+  .log-form.open { display:block; }
+  .log-form h3 { margin:0 0 16px; font-size:15px; font-weight:700; }
+  .form-row { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+  .form-field { display:flex; flex-direction:column; gap:4px; flex:1; min-width:120px; }
+  .form-field label { font-size:11px; color:#b6b9c6; text-transform:uppercase; letter-spacing:.06em; }
+  .form-field input { background:#0b0f18; border:1px solid #222843; border-radius:6px; padding:8px 10px; color:#fff; font-size:14px; width:100%; box-sizing:border-box; }
+  .form-field input:focus { outline:none; border-color:#1a3a8f; }
+  .form-actions { display:flex; gap:10px; margin-top:4px; }
+  .btn-sm { padding:8px 16px; font-size:13px; }
+  .btn-cancel { background:transparent; border:1px solid #222843; color:#b6b9c6; border-radius:8px; padding:8px 16px; font-size:13px; cursor:pointer; }
+  .btn-cancel:hover { color:#fff; }
+  .toast { display:none; position:fixed; bottom:24px; right:24px; background:#1a3a8f; color:#fff; padding:12px 20px; border-radius:10px; font-size:14px; font-weight:600; z-index:999; }
+  .toast.show { display:block; }
+  .assistant-section { margin-top:20px; }
+  .readiness-chip { display:inline-flex; align-items:center; gap:8px; padding:8px 16px; border-radius:999px; font-size:13px; font-weight:700; margin-bottom:14px; }
+  .currency-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
+  .currency-card { background:#121624; border:1px solid #222843; border-radius:14px; padding:16px; }
+  .currency-card-header { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .currency-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+  .currency-type { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:#b6b9c6; }
+  .currency-status-label { font-size:13px; font-weight:700; }
+  .currency-message { font-size:13px; color:#b6b9c6; margin-top:4px; line-height:1.5; }
+  .currency-action { font-size:12px; color:#9aa3ff; margin-top:6px; }
+  .section-title { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:#b6b9c6; margin-bottom:10px; }
   @media(max-width:820px) { .big { font-size:40px; } }
   </style>
 </head>
@@ -400,10 +527,131 @@ app.get("/", (_req, res) => {
     </div>
   </div>
 
+  <div class="assistant-section">
+    <div class="section-title">Flight Readiness</div>
+    <div class="readiness-chip" style="background:${readinessBg};color:${readinessColor};">
+      <span style="width:8px;height:8px;border-radius:50%;background:${readinessColor};display:inline-block;"></span>
+      ${readinessLabel}
+    </div>
+    <div class="currency-cards">
+      <div class="currency-card">
+        <div class="currency-card-header">
+          <span class="currency-dot" style="background:${statusDot(dayCurrency.status)};"></span>
+          <span class="currency-type">Day</span>
+          <span class="currency-status-label" style="color:${statusDot(dayCurrency.status)};">${statusLabel(dayCurrency.status)}</span>
+        </div>
+        <div class="currency-message">${dayCurrency.message}</div>
+        <div class="currency-action">${dayCurrency.action}</div>
+      </div>
+      <div class="currency-card">
+        <div class="currency-card-header">
+          <span class="currency-dot" style="background:${statusDot(nightCurrency.status)};"></span>
+          <span class="currency-type">Night</span>
+          <span class="currency-status-label" style="color:${statusDot(nightCurrency.status)};">${statusLabel(nightCurrency.status)}</span>
+        </div>
+        <div class="currency-message">${nightCurrency.message}</div>
+        <div class="currency-action">${nightCurrency.action}</div>
+      </div>
+    </div>
+  </div>
+
   <div class="actions">
-    <span class="btn btn-outline" style="cursor:default;opacity:0.6;">+ Log Flight <span style="font-size:11px;font-weight:400;">(coming soon)</span></span>
+    <button class="btn btn-outline" id="openLogBtn" onclick="toggleForm()">+ Log Flight</button>
     <a href="/report" class="btn">View Aircraft Record Report →</a>
   </div>
+
+  <div class="log-form" id="logForm">
+    <h3>Log a Flight</h3>
+    <form id="flightForm" onsubmit="submitFlight(event)">
+      <div class="form-row">
+        <div class="form-field">
+          <label>Aircraft ID</label>
+          <input type="text" name="aircraftId" placeholder="e.g. N123AB" required />
+        </div>
+        <div class="form-field">
+          <label>Date</label>
+          <input type="date" name="date" value="${new Date().toISOString().slice(0,10)}" required />
+        </div>
+        <div class="form-field">
+          <label>Total Time (hrs)</label>
+          <input type="number" name="totalTime" placeholder="1.5" min="0" step="0.1" required />
+        </div>
+        <div class="form-field">
+          <label>Day Landings</label>
+          <input type="number" name="dayLandings" placeholder="1" min="0" step="1" value="0" />
+        </div>
+        <div class="form-field">
+          <label>Night Landings</label>
+          <input type="number" name="nightLandings" placeholder="0" min="0" step="1" value="0" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-field">
+          <label>From</label>
+          <input type="text" name="from" placeholder="KAPA" maxlength="10" />
+        </div>
+        <div class="form-field">
+          <label>To</label>
+          <input type="text" name="to" placeholder="KADS" maxlength="10" />
+        </div>
+        <div class="form-field" style="flex:2;min-width:200px;">
+          <label>Remarks</label>
+          <input type="text" name="remarks" placeholder="Optional notes" />
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-sm">Save Flight</button>
+        <button type="button" class="btn-cancel" onclick="toggleForm()">Cancel</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    function toggleForm() {
+      const form = document.getElementById('logForm');
+      const btn = document.getElementById('openLogBtn');
+      const open = form.classList.toggle('open');
+      btn.textContent = open ? '✕ Cancel' : '+ Log Flight';
+      if (open) form.querySelector('input[name="aircraftId"]').focus();
+    }
+    async function submitFlight(e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const body = {
+        aircraftId: fd.get('aircraftId').toUpperCase().trim(),
+        date: fd.get('date'),
+        totalTime: parseFloat(fd.get('totalTime')) || 0,
+        dayLandings: parseInt(fd.get('dayLandings')) || 0,
+        nightLandings: parseInt(fd.get('nightLandings')) || 0,
+        from: (fd.get('from') || '').toUpperCase().trim(),
+        to: (fd.get('to') || '').toUpperCase().trim(),
+        remarks: (fd.get('remarks') || '').trim(),
+      };
+      const res = await fetch('/entries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showToast('Error: ' + (err.error || res.status));
+        return;
+      }
+      e.target.reset();
+      e.target.querySelector('input[name="date"]').value = new Date().toISOString().slice(0,10);
+      toggleForm();
+      showToast('Flight logged!');
+      setTimeout(() => location.reload(), 600);
+    }
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2500);
+    }
+  </script>
 
   ${aircraftRows ? `
   <div class="table">
@@ -454,7 +702,7 @@ app.get("/entries", (_req, res) => {
 });
 
 app.post("/entries", (req, res) => {
-  const { date, aircraftId, totalTime, dayLandings, nightLandings } = req.body || {};
+  const { date, aircraftId, totalTime, dayLandings, nightLandings, from, to, remarks } = req.body || {};
   if (!aircraftId) {
     return res.status(400).json({ error: "aircraftId is required" });
   }
@@ -465,6 +713,9 @@ app.post("/entries", (req, res) => {
     totalTime: Number(totalTime) || 0,
     dayLandings: Number(dayLandings) || 0,
     nightLandings: Number(nightLandings) || 0,
+    from: from ? String(from).toUpperCase().trim() : "",
+    to: to ? String(to).toUpperCase().trim() : "",
+    remarks: remarks ? String(remarks).trim() : "",
   };
   const entries = readEntries();
   entries.push(entry);
