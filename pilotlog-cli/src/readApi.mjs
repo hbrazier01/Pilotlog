@@ -125,7 +125,7 @@ function sortNewestFirst(entries) {
 function computeTotals(entries) {
   return entries.reduce(
     (acc, e) => {
-      acc.total += Number(e.total || 0);
+      acc.total += Number(e.totalTime || e.total || 0);
       acc.pic += Number(e.pic || 0);
       acc.dual += Number(e.dual || 0);
       acc.xc += Number(e.xc || 0);
@@ -289,246 +289,49 @@ function scoreClass(score) {
 }
 
 const app = express();
+app.use(express.json());
 
 app.get("/health", (_req, res) => {
   res.status(200).send("OK");
 });
 
 app.get("/", (_req, res) => {
-  const asOf = new Date().toISOString();
-
   const entries = sortNewestFirst(readEntries());
   const totals = computeTotals(entries);
   const recent = entries.slice(0, 10);
   const profile = readProfile();
-  const verification = readVerification();
-  const aircraftRecords = readAircraft();
-  const maintenanceRecords = readMaintenance().sort((a, b) => String(b.date).localeCompare(String(a.date)));
-  const logHash = verification?.anchorHash || hashLogbook(entries, profile, aircraftRecords);
 
-  const last90 = entries.filter((e) => withinDays(e.date, asOf, 90));
-  const land90 = sumLandings(last90);
+  const pilotName = profile?.pilot?.fullName || "Pilot";
 
-  const cutoff6mo = monthsAgoIso(asOf, 6);
-  const last6mo = entries.filter(
-    (e) => String(e.date) >= cutoff6mo && String(e.date) <= asOf
-  );
-  const ifr = sumIfr(last6mo);
+  const fmt = (n) => Number(n || 0).toFixed(1);
+  const totalFlights = entries.length;
+  const lastFlightDate = entries[0]?.date ? String(entries[0].date).slice(0, 10) : "—";
+  const landings = Number(totals.dayLandings || 0) + Number(totals.nightLandings || 0);
 
-  const ifrCurrent =
-    ifr.approaches >= 6 && ifr.holds >= 1 && ifr.intercepts >= 1;
-
-  const ifrApproachesNeeded = Math.max(0, 6 - ifr.approaches);
-  const ifrHoldsNeeded = Math.max(0, 1 - ifr.holds);
-  const ifrInterceptsNeeded = Math.max(0, 1 - ifr.intercepts);
-
-  let nextApproachExpiry = null;
-  if (ifr.approaches > 0) {
-    const oldest = last6mo[last6mo.length - 1];
-    nextApproachExpiry = addMonths(oldest.date, 6);
-  }
-
-  const passengerDayNeeded = Math.max(0, 3 - land90.day);
-  const passengerNightNeeded = Math.max(0, 3 - land90.night);
-
-  const flightReviewDate = profile?.proficiency?.flightReviewDate ?? null;
-  const flightReviewCurrent = isWithinMonths(asOf, flightReviewDate, 24);
-
-  const medical = profile?.medical ?? { kind: "None" };
-  let medicalCurrent = false;
-
-  if (medical.kind === "Medical") {
-    medicalCurrent = isFuture(asOf, medical.expires);
-  } else if (medical.kind === "BasicMed") {
-    const cmecOk = !!medical?.basicMed?.cmecDate;
-    const courseOk = !!medical?.basicMed?.onlineCourseDate;
-    medicalCurrent = cmecOk && courseOk;
-  }
-
-  const pilotName = profile?.pilot?.fullName || "Pilot not set";
-  const endorsementCount = Array.isArray(profile?.endorsements)
-    ? profile.endorsements.length
-    : 0;
-
-  const medicalLabel =
-    medical.kind === "Medical"
-      ? `Class ${medical.class || "?"}`
-      : medical.kind === "BasicMed"
-        ? "BasicMed"
-        : "None";
-
+  // Aircraft summary from entries
   const aircraftStats = {};
-
   for (const e of entries) {
-    const ident = e.aircraftIdent || "Unknown";
-
+    const ident = e.aircraftIdent || e.aircraftId || "Unknown";
     if (!aircraftStats[ident]) {
-      aircraftStats[ident] = {
-        flights: 0,
-        hours: 0,
-        lastFlight: e.date,
-      };
+      aircraftStats[ident] = { flights: 0, hours: 0, lastFlight: e.date, type: e.aircraftType || "" };
     }
-
     aircraftStats[ident].flights += 1;
-    aircraftStats[ident].hours += Number(e.total || 0);
-
-    if (new Date(e.date) > new Date(aircraftStats[ident].lastFlight)) {
+    aircraftStats[ident].hours += Number(e.totalTime || e.total || 0);
+    if (String(e.date) > String(aircraftStats[ident].lastFlight)) {
       aircraftStats[ident].lastFlight = e.date;
     }
   }
-
-  const aircraft = Object.entries(aircraftStats)[0] || null;
-
-  const activeAircraftIdent = aircraft?.[0] || null;
-  const activeAircraftRecord =
-    aircraftRecords.find((a) => a.ident === activeAircraftIdent) || null;
-
-  const annualDue = activeAircraftRecord?.annualDue || null;
-  const transponderDue = activeAircraftRecord?.transponderDue || null;
-  const pitotStaticDue = activeAircraftRecord?.pitotStaticDue || null;
-  const eltBatteryDue = activeAircraftRecord?.eltBatteryDue || null;
-
-  const lastDayLandingDate = latestDate(entries, (e) => e.dayLandings);
-  const passengerDayDue = lastDayLandingDate ? addDays(lastDayLandingDate, 90) : null;
-
-  const flightReviewDue = flightReviewDate ? addMonths(flightReviewDate, 24) : null;
-
-  const maintenanceAlerts = [];
-
-  const pushAlert = (label, dueDate) => {
-    const d = daysUntil(asOf, dueDate);
-    if (d === null) return;
-    if (d < 0) {
-      maintenanceAlerts.push(`${label} overdue`);
-    } else if (d <= 90) {
-      maintenanceAlerts.push(`${label} due in ${d} day${d === 1 ? "" : "s"}`);
-    }
-  };
-
-  pushAlert("Annual", annualDue);
-  pushAlert("Transponder", transponderDue);
-  pushAlert("Pitot Static", pitotStaticDue);
-  pushAlert("ELT Battery", eltBatteryDue);
-
-  let medicalDue = null;
-  if (medical.kind === "Medical") {
-    medicalDue = medical.expires || null;
-  } else if (medical.kind === "BasicMed") {
-    medicalDue = medical.basicMed?.onlineCourseDate
-      ? addMonths(medical.basicMed.onlineCourseDate, 24)
-      : null;
-  }
-
-  let qualityScore = 0;
-
-  const strengths = [];
-  const gaps = [];
-
-  if (entries.length >= 1) {
-    qualityScore += 20;
-    strengths.push("Flight records present");
-  } else {
-    gaps.push("No flight records");
-  }
-
-  if ((profile?.endorsements?.length || 0) > 0) {
-    qualityScore += 10;
-    strengths.push("Endorsements recorded");
-  } else {
-    gaps.push("No endorsements recorded");
-  }
-
-  if (profile?.medical?.kind && profile.medical.kind !== "None") {
-    qualityScore += 10;
-    strengths.push("Medical recorded");
-  } else {
-    gaps.push("Medical not recorded");
-  }
-
-  if (profile?.proficiency?.flightReviewDate) {
-    qualityScore += 10;
-    strengths.push("Flight review recorded");
-  } else {
-    gaps.push("Flight review missing");
-  }
-
-  if (activeAircraftRecord) {
-    qualityScore += 15;
-    strengths.push("Aircraft record present");
-  } else {
-    gaps.push("Aircraft record missing");
-  }
-
-  if (annualDue || transponderDue || pitotStaticDue || eltBatteryDue) {
-    qualityScore += 15;
-    strengths.push("Maintenance due dates recorded");
-  } else {
-    gaps.push("Maintenance dates missing");
-  }
-
-  if (maintenanceRecords.length > 0) {
-    qualityScore += 10;
-    strengths.push("Maintenance history recorded");
-  } else {
-    gaps.push("No maintenance history");
-  }
-
-  if (verification?.anchored) {
-    qualityScore += 20;
-    strengths.push("Record anchored");
-  } else if (logHash) {
-    qualityScore += 10;
-    strengths.push("Record hashed locally");
-  } else {
-    gaps.push("No integrity hash");
-  }     
-
-  // ── Aircraft Record Value Layer ───────────────────────────────────────────────
-  const resaleScore = qualityScore; // out of 110
-  const resaleReadiness =
-    resaleScore >= 85 ? "High" : resaleScore >= 55 ? "Medium" : "Low";
-
-  const resaleExplanation =
-    resaleReadiness === "High"
-      ? [
-          "This aircraft's records are complete and verifiable.",
-          "→ Likely to pass pre-buy without delays",
-          "→ Reduces buyer uncertainty",
-          "→ Supports stronger resale pricing",
-        ]
-      : resaleReadiness === "Medium"
-        ? [
-            "This aircraft has solid records with some gaps.",
-            "→ May require additional documentation at pre-buy",
-            "→ Minor delays possible during buyer review",
-            "→ Closing gaps will improve resale pricing",
-          ]
-        : [
-            "This aircraft's records have significant gaps.",
-            "→ Pre-buy may surface documentation issues",
-            "→ Buyer may request a price discount",
-            "→ Strengthening records will improve resale value",
-          ];
-
-  const resaleColor =
-    resaleReadiness === "High"
-      ? "#6ee7b7"
-      : resaleReadiness === "Medium"
-        ? "#fbbf24"
-        : "#f87171";
-
-  const fmt = (n) => Number(n || 0).toFixed(1);
-  const landings =
-    Number(totals.dayLandings || 0) + Number(totals.nightLandings || 0);
-  const inst =
-    Number(totals.actualInstrument || 0) +
-    Number(totals.simulatedInstrument || 0);
-
-  const badge = (ok) =>
-    ok
-      ? '<span class="ok">Current</span>'
-      : '<span class="warn">Needs attention</span>';
+  const aircraftRows = Object.entries(aircraftStats)
+    .sort((a, b) => String(b[1].lastFlight).localeCompare(String(a[1].lastFlight)))
+    .map(([ident, s]) => `
+      <tr>
+        <td>${ident}</td>
+        <td class="muted">${s.type}</td>
+        <td>${s.flights}</td>
+        <td>${fmt(s.hours)} hrs</td>
+        <td class="muted">${String(s.lastFlight || "").slice(0, 10)}</td>
+      </tr>
+    `).join("");
 
   res.type("html").send(`<!doctype html>
 <html>
@@ -539,293 +342,103 @@ app.get("/", (_req, res) => {
   <style>
   body { font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif; background:#0b0f18; color:#fff; margin:0; }
   .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 20px; }
-  .top { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; flex-wrap:wrap; }
-  .big { font-size: 56px; font-weight: 800; letter-spacing: -1px; }
-  .sub { color:#b6b9c6; margin-top: 6px; }
-  .header-left {display:flex; flex-direction: column;gap: 6px; }
-
-  .grid {
-    display:grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 12px;
-    margin-top: 18px;
-  }
-
-  .card { background:#121624; border:1px solid #222843; border-radius: 14px; padding: 14px; }
-  .label { color:#b6b9c6; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
-  .val { font-size: 22px; font-weight: 700; margin-top: 6px; }
-  .small { color:#b6b9c6; font-size: 14px; margin-top: 8px; line-height: 1.5; }
-
-  .table { margin-top: 18px; background:#121624; border:1px solid #222843; border-radius: 14px; overflow:hidden; }
-  table { width:100%; border-collapse: collapse; }
-  th, td { padding: 10px 12px; border-bottom: 1px solid #1f2440; text-align:left; font-size:14px; }
+  .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:28px; flex-wrap:wrap; gap:12px; }
+  .brand { font-size:20px; font-weight:800; letter-spacing:-0.5px; }
+  .nav a { color:#9aa3ff; text-decoration:none; font-size:14px; margin-left:16px; }
+  .nav a:hover { color:#fff; }
+  .hero { margin-bottom:24px; }
+  .big { font-size:56px; font-weight:800; letter-spacing:-1px; }
+  .sub { color:#b6b9c6; margin-top:6px; font-size:15px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin-top:20px; }
+  .card { background:#121624; border:1px solid #222843; border-radius:14px; padding:16px; }
+  .label { color:#b6b9c6; font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
+  .val { font-size:28px; font-weight:700; margin-top:8px; }
+  .table { margin-top:24px; background:#121624; border:1px solid #222843; border-radius:14px; overflow:hidden; }
+  .table-title { padding:14px 16px 0; font-size:13px; font-weight:700; color:#b6b9c6; text-transform:uppercase; letter-spacing:.06em; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { padding:10px 14px; border-bottom:1px solid #1f2440; text-align:left; font-size:14px; }
   th { background:#0f1320; color:#b6b9c6; font-weight:700; }
   tr:last-child td { border-bottom:none; }
-
   .muted { color:#b6b9c6; }
-  .ok { color:#6ee7b7; font-weight:700; }
-  .warn { color:#fbbf24; font-weight:700; }
-  .bad { color:#f87171; font-weight:700; }
-
-  @media (max-width: 820px) {
-    .big { font-size: 42px; }
-  }
-</style>   
+  .btn { display:inline-block; padding:10px 20px; background:#1a3a8f; color:#fff; border-radius:8px; font-size:14px; font-weight:700; text-decoration:none; }
+  .btn:hover { background:#1e46b0; }
+  .btn-outline { background:transparent; border:1px solid #222843; color:#9aa3ff; }
+  .actions { display:flex; gap:12px; margin-top:20px; flex-wrap:wrap; align-items:center; }
+  @media(max-width:820px) { .big { font-size:40px; } }
+  </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="top">
-      <div>
-        <div>
-  <div class="big">${fmt(totals.total)} hrs</div>
-  <div class="sub">
-    ${pilotName} · PIC ${fmt(totals.pic)} · Dual ${fmt(totals.dual)} · XC ${fmt(totals.xc)} · Night ${fmt(totals.night)}
-   </div>
-  </div>
-
-  <div>
-          <a href="/report" style="display:inline-block;padding:8px 18px;background:#1a3a8f;color:#fff;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none;margin-top:10px;">
-            Get your Record Report →
-          </a>
-          <div class="muted" style="margin-top:10px;font-size:13px;">
-            <a href="/export/summary/download" style="color:#9aa3ff;text-decoration:none;">Download Summary</a>
-            &nbsp;·&nbsp;
-            <a href="/verify/hash/${logHash}" style="color:#9aa3ff;text-decoration:none;">Verify Report</a>
-          </div>
-        </div>
-      </div>
-     </div>
-
-    <div class="grid">
-      <div class="card">
-        <div class="label">Instrument</div>
-        <div class="val">${fmt(inst)} hrs</div>
-      </div>
-      <div class="card">
-        <div class="label">Landings</div>
-        <div class="val">${landings}</div>
-      </div>
-      <div class="card">
-        <div class="label">Approaches / Holds / Intercepts</div>
-        <div class="val">${Number(totals.approaches || 0)} / ${Number(totals.holds || 0)} / ${Number(totals.intercepts || 0)}</div>
-      </div>
-    </div>
-
-    <div class="grid">
-      <div class="card">
-        <div class="label">Pilot Profile</div>
-        <div class="small">
-          Name: <span class="muted">${pilotName}</span><br />
-          Medical: <span class="muted">${medicalLabel}</span><br />
-          Endorsements: <span class="muted">${endorsementCount}</span><br />
-          IPC Date: <span class="muted">${profile?.proficiency?.ipcDate || "Not set"}</span> 
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="label">Currency Status</div>
-        <div class="small">
-          Passenger Day: ${badge(land90.day >= 3)}<br />
-          Passenger Night: ${badge(land90.night >= 3)}<br />
-          IFR: ${badge(ifrCurrent)}
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="label">Compliance Status</div>
-        <div class="small">
-          Medical: ${badge(medicalCurrent)}<br />
-          Medical Type: <span class="muted">${medical.kind || "None"}</span><br />
-          Flight Review: ${badge(flightReviewCurrent)}<br />
-          Flight Review Date: <span class="muted">${flightReviewDate || "Not set"}</span>
-        </div>
-      </div>
-
-    <div class="card">
-      <div class="label">Next Due</div>
-      <div class="small">
-        Passenger Day:
-        <span class="${dueClass(asOf, passengerDayDue)}">${dueLabel(asOf, passengerDayDue)}</span><br />
-        Flight Review:
-        <span class="${dueClass(asOf, flightReviewDue)}">${dueLabel(asOf, flightReviewDue)}</span><br />
-        Medical:
-        <span class="${dueClass(asOf, medicalDue)}">${dueLabel(asOf, medicalDue)}</span>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="label">Aircraft</div>
-      <div class="small">
-        Ident: <span class="muted">${aircraft?.[0] || "—"}</span><br />
-        Flights: <span class="muted">${aircraft?.[1]?.flights || 0}</span><br />
-        Hours: <span class="muted">${fmt(aircraft?.[1]?.hours || 0)} hrs</span><br />
-        Last Flight: <span class="muted">${formatDateShort(aircraft?.[1]?.lastFlight)}</span>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="label">Passenger Currency Progress</div>
-      <div class="small">
-        Day Landings:
-        <span class="muted">${land90.day} / 3</span>
-        ${passengerDayNeeded > 0 ? `<span class="warn">(${passengerDayNeeded} needed)</span>` : `<span class="ok">✓</span>`}
-        <br />
-
-        Night Landings:
-        <span class="muted">${land90.night} / 3</span>
-        ${passengerNightNeeded > 0 ? `<span class="warn">(${passengerNightNeeded} needed)</span>` : `<span class="ok">✓</span>`}
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="label">IFR Progress</div>
-      <div class="small">
-        Approaches:
-        <span class="muted">${ifr.approaches} / 6</span>
-        ${ifrApproachesNeeded > 0 ? `<span class="warn">(${ifrApproachesNeeded} needed)</span>` : `<span class="ok">✓</span>`}
-        <br />
-
-        Holds:
-        <span class="muted">${ifr.holds} / 1</span>
-        ${ifrHoldsNeeded > 0 ? `<span class="warn">(${ifrHoldsNeeded} needed)</span>` : `<span class="ok">✓</span>`}
-        <br />
-
-        Intercepts:
-        <span class="muted">${ifr.intercepts} / 1</span>
-        ${ifrInterceptsNeeded > 0 ? `<span class="warn">(${ifrInterceptsNeeded} needed)</span>` : `<span class="ok">✓</span>`}
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="label">IFR Window</div>
-      <div class="small">
-        Approaches Logged: <span class="muted">${ifr.approaches}</span><br />
-        Holds Logged: <span class="muted">${ifr.holds}</span><br />
-        Intercepts Logged: <span class="muted">${ifr.intercepts}</span><br />
-        Oldest Expires: <span class="muted">${nextApproachExpiry ? formatDateShort(nextApproachExpiry) : "No approaches logged"}</span>
-      </div>
-    </div>
-
-  <div class="card">
-    <div class="label">Aircraft Maintenance</div>
-    <div class="small">
-      Annual:
-      <span class="${dueClass(asOf, annualDue)}">${dueLabel(asOf, annualDue)}</span><br />
-
-      Transponder:
-      <span class="${dueClass(asOf, transponderDue)}">${dueLabel(asOf, transponderDue)}</span><br />
-
-      Pitot Static:
-      <span class="${dueClass(asOf, pitotStaticDue)}">${dueLabel(asOf, pitotStaticDue)}</span><br />
-
-      ELT Battery:
-      <span class="${dueClass(asOf, eltBatteryDue)}">${dueLabel(asOf, eltBatteryDue)}</span>
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">PilotLog</div>
+    <div class="nav">
+      <a href="/report">Aircraft Record Report →</a>
     </div>
   </div>
 
-  <div class="card">
-    <div class="label">Maintenance Alerts</div>
-    <div class="small">
-      ${
-        maintenanceAlerts.length > 0
-          ? maintenanceAlerts.map((a) => `<span class="warn">${a}</span>`).join("<br />")
-          : '<span class="ok">No upcoming maintenance alerts</span>'
-      }
+  <div class="hero">
+    <div class="big">${fmt(totals.total)} hrs</div>
+    <div class="sub">${pilotName} · PIC ${fmt(totals.pic)} · XC ${fmt(totals.xc)} · Night ${fmt(totals.night)}</div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="label">Total Flights</div>
+      <div class="val">${totalFlights}</div>
+    </div>
+    <div class="card">
+      <div class="label">Total Time</div>
+      <div class="val">${fmt(totals.total)} hrs</div>
+    </div>
+    <div class="card">
+      <div class="label">Last Flight</div>
+      <div class="val" style="font-size:20px;margin-top:10px;">${lastFlightDate}</div>
+    </div>
+    <div class="card">
+      <div class="label">Landings</div>
+      <div class="val">${landings}</div>
     </div>
   </div>
 
-  <div class="card">
-    <div class="label">Record Integrity</div>
-    <div class="small">
-      SHA256: <span class="muted">${logHash.slice(0,16)}...</span><br />
-      Entries: <span class="muted">${entries.length}</span><br />
-
-      Status:
-      ${
-        verification?.anchored
-          ? '<span class="ok">Anchored</span>'
-          : '<span class="warn">Ready to anchor</span>'
-      }
-
-      ${verification?.anchorNetwork ? `<br />Network: ${verification.anchorNetwork}` : ""}
-      ${verification?.anchorTime ? `<br />Time: ${formatDateShort(verification.anchorTime)}` : ""}
-    </div>
+  <div class="actions">
+    <span class="btn btn-outline" style="cursor:default;opacity:0.6;">+ Log Flight <span style="font-size:11px;font-weight:400;">(coming soon)</span></span>
+    <a href="/report" class="btn">View Aircraft Record Report →</a>
   </div>
 
+  ${aircraftRows ? `
+  <div class="table">
+    <div class="table-title">Aircraft</div>
+    <table>
+      <thead><tr><th>Ident</th><th>Type</th><th>Flights</th><th>Hours</th><th>Last Flight</th></tr></thead>
+      <tbody>${aircraftRows}</tbody>
+    </table>
+  </div>
+  ` : ""}
+
+  <div class="table">
+    <div class="table-title">Recent Flights</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th><th>Aircraft</th><th>Route</th><th>Total</th><th>PIC</th><th class="muted">Remarks</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${recent.map(e => `
+          <tr>
+            <td>${String(e.date || "").slice(0, 10)}</td>
+            <td>${e.aircraftIdent || e.aircraftId || ""} <span class="muted">${e.aircraftType ? `(${e.aircraftType})` : ""}</span></td>
+            <td>${e.from || ""} → ${e.to || ""}</td>
+            <td>${e.totalTime ?? e.total ?? ""}</td>
+            <td>${e.pic ?? ""}</td>
+            <td class="muted">${(e.remarks || "").replaceAll("<","&lt;").replaceAll(">","&gt;")}</td>
+          </tr>
+        `).join("")}
+        ${recent.length === 0 ? '<tr><td colspan="6" class="muted">No flights logged yet.</td></tr>' : ""}
+      </tbody>
+    </table>
+  </div>
 </div>
-
-  <div class="card" style="margin-top:18px; border-color:#2a3060;">
-    <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
-      <div>
-        <div class="label">Aircraft Record Value</div>
-        <div style="display:flex; align-items:baseline; gap:10px; margin-top:6px;">
-          <span style="font-size:28px; font-weight:800; color:${resaleColor};">${resaleReadiness}</span>
-          <span class="muted" style="font-size:13px;">Resale Readiness</span>
-        </div>
-      </div>
-    </div>
-    <div class="small" style="margin-top:12px; line-height:1.8; color:#d1d5db;">
-      ${resaleExplanation.map((line, i) => i === 0 ? `<span style="color:#fff; font-weight:600;">${line}</span>` : `<span class="muted">${line}</span>`).join("<br />")}
-    </div>
-  </div>
-
-    <div class="table">
-      <table>
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Aircraft</th>
-            <th>Route</th>
-            <th>Total</th>
-            <th>PIC</th>
-            <th class="muted">Remarks</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${recent.map(e => `
-            <tr>
-              <td>${String(e.date || "").slice(0, 10)}</td>
-              <td>${e.aircraftIdent || ""} <span class="muted">(${e.aircraftType || ""})</span></td>
-              <td>${e.from || ""} → ${e.to || ""}</td>
-              <td>${e.total ?? ""}</td>
-              <td>${e.pic ?? ""}</td>
-              <td class="muted">${(e.remarks || "").replaceAll("<","&lt;").replaceAll(">","&gt;")}</td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    </div>
-
-    ${maintenanceRecords.length > 0 ? `
-    <div class="table" style="margin-top:24px;">
-      <div class="label" style="padding:12px 0 8px;">Maintenance History</div>
-      <table>
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Category</th>
-            <th>Description</th>
-            <th>Performed By</th>
-            <th>Airframe Hrs</th>
-            <th class="muted">RTS</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${maintenanceRecords.map(m => `
-            <tr>
-              <td>${String(m.date || "").slice(0, 10)}</td>
-              <td>${(m.category || "").replace(/-/g, " ")}</td>
-              <td>${(m.description || "").replaceAll("<","&lt;").replaceAll(">","&gt;")}</td>
-              <td>${(m.performedBy || "").replaceAll("<","&lt;").replaceAll(">","&gt;")}</td>
-              <td>${m.totalAirframeHours ?? ""}</td>
-              <td>${m.returnToService ? '<span class="ok">Yes</span>' : '<span class="warn">No</span>'}</td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    </div>
-    ` : ""}
-  </div>
 </body>
 </html>`);
 });
@@ -838,6 +451,51 @@ app.get("/maintenance", (_req, res) => {
 app.get("/entries", (_req, res) => {
   const entries = sortNewestFirst(readEntries());
   res.json({ count: entries.length, entries });
+});
+
+app.post("/entries", (req, res) => {
+  const { date, aircraftId, totalTime, dayLandings, nightLandings } = req.body || {};
+  if (!aircraftId) {
+    return res.status(400).json({ error: "aircraftId is required" });
+  }
+  const entry = {
+    id: randomBytes(8).toString("hex"),
+    date: date || new Date().toISOString().slice(0, 10),
+    aircraftId: String(aircraftId).toUpperCase().trim(),
+    totalTime: Number(totalTime) || 0,
+    dayLandings: Number(dayLandings) || 0,
+    nightLandings: Number(nightLandings) || 0,
+  };
+  const entries = readEntries();
+  entries.push(entry);
+  fs.writeFileSync(ENTRIES_PATH, JSON.stringify(entries, null, 2));
+  res.status(201).json(entry);
+});
+
+app.get("/dashboard", (_req, res) => {
+  const entries = readEntries();
+  // Pilot totals
+  const totalTime = entries.reduce((s, e) => s + Number(e.totalTime || e.total || 0), 0);
+  const totalFlights = entries.length;
+  const lastFlightDate = entries.reduce((latest, e) => {
+    const d = String(e.date || "");
+    return d > latest ? d : latest;
+  }, "");
+  // Aircraft profiles computed from entries
+  const aircraftMap = {};
+  for (const e of entries) {
+    const id = e.aircraftId || e.aircraftIdent || null;
+    if (!id) continue;
+    if (!aircraftMap[id]) aircraftMap[id] = { aircraftId: id, totalTime: 0, totalFlights: 0, lastFlown: "" };
+    aircraftMap[id].totalTime += Number(e.totalTime || e.total || 0);
+    aircraftMap[id].totalFlights += 1;
+    const d = String(e.date || "");
+    if (d > aircraftMap[id].lastFlown) aircraftMap[id].lastFlown = d;
+  }
+  res.json({
+    pilot: { totalTime: Math.round(totalTime * 10) / 10, totalFlights, lastFlightDate },
+    aircraft: Object.values(aircraftMap).map(a => ({ ...a, totalTime: Math.round(a.totalTime * 10) / 10 })),
+  });
 });
 
 app.get("/recent", (req, res) => {
