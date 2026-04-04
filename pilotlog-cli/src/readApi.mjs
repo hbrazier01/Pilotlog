@@ -393,23 +393,6 @@ app.get("/", (_req, res) => {
   const lastFlightDate = entries[0]?.date ? String(entries[0].date).slice(0, 10) : "—";
   const landings = Number(totals.dayLandings || 0) + Number(totals.nightLandings || 0);
 
-  // Passenger currency
-  const now = new Date().toISOString();
-  const dayCurrency = computePassengerCurrency(entries, 'day', now);
-  const nightCurrency = computePassengerCurrency(entries, 'night', now);
-
-  const worstStatus = (a, b) => {
-    const rank = { red: 0, yellow: 1, green: 2 };
-    return rank[a] <= rank[b] ? a : b;
-  };
-  const overallStatus = worstStatus(dayCurrency.status, nightCurrency.status);
-  const readinessLabel = overallStatus === 'green' ? 'Good to Fly' : overallStatus === 'yellow' ? 'Needs Attention' : 'Not Current';
-  const readinessColor = overallStatus === 'green' ? '#22c55e' : overallStatus === 'yellow' ? '#f59e0b' : '#ef4444';
-  const readinessBg = overallStatus === 'green' ? '#052e16' : overallStatus === 'yellow' ? '#1c1203' : '#1c0505';
-
-  const statusDot = (s) => s === 'green' ? '#22c55e' : s === 'yellow' ? '#f59e0b' : '#ef4444';
-  const statusLabel = (s) => s === 'green' ? 'Current' : s === 'yellow' ? 'Expiring Soon' : 'Not Current';
-
   // Aircraft summary from entries
   const aircraftStats = {};
   for (const e of entries) {
@@ -423,8 +406,10 @@ app.get("/", (_req, res) => {
       aircraftStats[ident].lastFlight = e.date;
     }
   }
-  const aircraftRows = Object.entries(aircraftStats)
-    .sort((a, b) => String(b[1].lastFlight).localeCompare(String(a[1].lastFlight)))
+  const sortedAircraft = Object.entries(aircraftStats)
+    .sort((a, b) => String(b[1].lastFlight).localeCompare(String(a[1].lastFlight)));
+  const lastUsedAircraft = sortedAircraft.length > 0 ? sortedAircraft[0][0] : "";
+  const aircraftRows = sortedAircraft
     .map(([ident, s]) => `
       <tr>
         <td>${ident}</td>
@@ -529,29 +514,12 @@ app.get("/", (_req, res) => {
 
   <div class="assistant-section">
     <div class="section-title">Flight Readiness</div>
-    <div class="readiness-chip" style="background:${readinessBg};color:${readinessColor};">
-      <span style="width:8px;height:8px;border-radius:50%;background:${readinessColor};display:inline-block;"></span>
-      ${readinessLabel}
+    <div id="readiness-chip" class="readiness-chip" style="background:#1a1f30;color:#b6b9c6;">
+      <span id="readiness-dot" style="width:8px;height:8px;border-radius:50%;background:#b6b9c6;display:inline-block;"></span>
+      <span id="readiness-label">Loading…</span>
     </div>
-    <div class="currency-cards">
-      <div class="currency-card">
-        <div class="currency-card-header">
-          <span class="currency-dot" style="background:${statusDot(dayCurrency.status)};"></span>
-          <span class="currency-type">Day</span>
-          <span class="currency-status-label" style="color:${statusDot(dayCurrency.status)};">${statusLabel(dayCurrency.status)}</span>
-        </div>
-        <div class="currency-message">${dayCurrency.message}</div>
-        <div class="currency-action">${dayCurrency.action}</div>
-      </div>
-      <div class="currency-card">
-        <div class="currency-card-header">
-          <span class="currency-dot" style="background:${statusDot(nightCurrency.status)};"></span>
-          <span class="currency-type">Night</span>
-          <span class="currency-status-label" style="color:${statusDot(nightCurrency.status)};">${statusLabel(nightCurrency.status)}</span>
-        </div>
-        <div class="currency-message">${nightCurrency.message}</div>
-        <div class="currency-action">${nightCurrency.action}</div>
-      </div>
+    <div class="currency-cards" id="readiness-cards">
+      <div class="currency-card" style="color:#b6b9c6;font-size:13px;">Checking readiness…</div>
     </div>
   </div>
 
@@ -609,12 +577,82 @@ app.get("/", (_req, res) => {
   <div class="toast" id="toast"></div>
 
   <script>
+    const lastUsedAircraft = ${JSON.stringify(lastUsedAircraft)};
+
+    // Load all readiness domains from /assistant/readiness
+    (async function loadReadiness() {
+      const DOMAIN_LABELS = {
+        passengerCurrency: 'Passenger Currency',
+        nightCurrency: 'Night Currency',
+        ifrCurrency: 'IFR Currency',
+        pilotReadiness: 'Pilot Readiness',
+        aircraftReadiness: 'Aircraft Readiness',
+      };
+      const COLOR = { green: '#22c55e', yellow: '#f59e0b', red: '#ef4444' };
+      const BG = { green: '#052e16', yellow: '#1c1203', red: '#1c0505' };
+      const LABEL = { green: 'Good to Fly', yellow: 'Needs Attention', red: 'Not Current' };
+      const STATUS_LABEL = { green: 'Current', yellow: 'Expiring Soon', red: 'Not Current' };
+      const DOMAIN_ORDER = ['passengerCurrency', 'nightCurrency', 'ifrCurrency', 'pilotReadiness', 'aircraftReadiness'];
+      const rank = { red: 0, yellow: 1, green: 2 };
+
+      try {
+        const res = await fetch('/assistant/readiness');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+
+        let worst = 'green';
+        for (const key of DOMAIN_ORDER) {
+          const s = data[key]?.status;
+          if (s && rank[s] < rank[worst]) worst = s;
+        }
+
+        const chip = document.getElementById('readiness-chip');
+        chip.style.background = BG[worst];
+        chip.style.color = COLOR[worst];
+        document.getElementById('readiness-dot').style.background = COLOR[worst];
+        document.getElementById('readiness-label').textContent = LABEL[worst];
+
+        const container = document.getElementById('readiness-cards');
+        container.innerHTML = DOMAIN_ORDER.map(key => {
+          const d = data[key];
+          if (!d) return '';
+          const color = COLOR[d.status] || '#b6b9c6';
+          return \`<div class="currency-card">
+            <div class="currency-card-header">
+              <span class="currency-dot" style="background:\${color};"></span>
+              <span class="currency-type">\${DOMAIN_LABELS[key]}</span>
+              <span class="currency-status-label" style="color:\${color};">\${STATUS_LABEL[d.status] || d.status}</span>
+            </div>
+            <div class="currency-message">\${d.message || ''}</div>
+            <div class="currency-action">\${d.action || ''}</div>
+          </div>\`;
+        }).join('');
+      } catch (err) {
+        document.getElementById('readiness-label').textContent = 'Unavailable';
+        document.getElementById('readiness-cards').innerHTML =
+          '<div class="currency-card" style="color:#ef4444;font-size:13px;">Could not load readiness data.</div>';
+      }
+    })();
+
     function toggleForm() {
       const form = document.getElementById('logForm');
       const btn = document.getElementById('openLogBtn');
       const open = form.classList.toggle('open');
       btn.textContent = open ? '✕ Cancel' : '+ Log Flight';
       if (open) form.querySelector('input[name="aircraftId"]').focus();
+    }
+    function openLogForm() {
+      const form = document.getElementById('logForm');
+      if (!form.classList.contains('open')) {
+        form.classList.add('open');
+        document.getElementById('openLogBtn').textContent = '✕ Cancel';
+      }
+      if (lastUsedAircraft) {
+        const acInput = form.querySelector('input[name="aircraftId"]');
+        if (!acInput.value) acInput.value = lastUsedAircraft;
+      }
+      form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      form.querySelector('input[name="totalTime"]').focus();
     }
     async function submitFlight(e) {
       e.preventDefault();
@@ -3118,6 +3156,229 @@ app.get("/report", (_req, res) => {
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(html);
+});
+
+// ─── Readiness Engine v1 ──────────────────────────────────────────────────────
+// GET /assistant/readiness
+// Returns all 5 readiness domains in one response.
+// Each domain: { status, explanation, timeline, operationalImpact, confidence }
+// status: "current" | "needs_attention" | "not_current"
+
+function readinessStatus(ok, warn) {
+  if (ok) return "current";
+  if (warn) return "needs_attention";
+  return "not_current";
+}
+
+function computePassengerCurrencyDomain(entries, asOf) {
+  const cutoffMs = new Date(asOf).getTime() - 90 * 24 * 60 * 60 * 1000;
+  const last90 = entries.filter(e => new Date(e.date).getTime() >= cutoffMs);
+  const dayCount = last90.reduce((s, e) => s + Number(e.dayLandings || 0), 0);
+  const current = dayCount >= 3;
+  const needed = Math.max(0, 3 - dayCount);
+  // Days until 3rd-oldest landing expires
+  const dayLandingTimes = [];
+  for (const e of last90) {
+    const n = Number(e.dayLandings || 0);
+    for (let i = 0; i < n; i++) dayLandingTimes.push(new Date(e.date).getTime());
+  }
+  dayLandingTimes.sort((a, b) => a - b);
+  let daysLeft = null;
+  if (dayLandingTimes.length >= 3) {
+    const oldest3 = dayLandingTimes[dayLandingTimes.length - 3];
+    daysLeft = Math.ceil((oldest3 + 90 * 86400000 - new Date(asOf).getTime()) / 86400000);
+  }
+
+  return {
+    status: readinessStatus(current, !current && dayCount > 0),
+    explanation: current
+      ? `${dayCount} day landings in the last 90 days. FAA requires 3 to carry passengers.`
+      : `Only ${dayCount} day landing${dayCount === 1 ? '' : 's'} in the last 90 days. Need ${needed} more.`,
+    timeline: current
+      ? `Currency expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.`
+      : needed === 3
+        ? "No qualifying landings on record in the last 90 days."
+        : `${dayCount} of 3 required landings on record.`,
+    operationalImpact: current
+      ? "Cleared to carry passengers during the day."
+      : "Cannot carry passengers during daylight hours until currency is restored.",
+    confidence: "high"
+  };
+}
+
+function computeNightCurrencyDomain(entries, asOf) {
+  const cutoffMs = new Date(asOf).getTime() - 90 * 24 * 60 * 60 * 1000;
+  const last90 = entries.filter(e => new Date(e.date).getTime() >= cutoffMs);
+  const nightCount = last90.reduce((s, e) => s + Number(e.nightLandings || 0), 0);
+  const current = nightCount >= 3;
+  const needed = Math.max(0, 3 - nightCount);
+  const nightLandingTimes = [];
+  for (const e of last90) {
+    const n = Number(e.nightLandings || 0);
+    for (let i = 0; i < n; i++) nightLandingTimes.push(new Date(e.date).getTime());
+  }
+  nightLandingTimes.sort((a, b) => a - b);
+  let daysLeft = null;
+  if (nightLandingTimes.length >= 3) {
+    const oldest3 = nightLandingTimes[nightLandingTimes.length - 3];
+    daysLeft = Math.ceil((oldest3 + 90 * 86400000 - new Date(asOf).getTime()) / 86400000);
+  }
+
+  return {
+    status: readinessStatus(current, !current && nightCount > 0),
+    explanation: current
+      ? `${nightCount} night landings in the last 90 days. FAA requires 3 to carry passengers at night.`
+      : `Only ${nightCount} night landing${nightCount === 1 ? '' : 's'} in the last 90 days. Need ${needed} more.`,
+    timeline: current
+      ? `Currency expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.`
+      : nightCount === 0
+        ? "No qualifying night landings on record in the last 90 days."
+        : `${nightCount} of 3 required night landings on record.`,
+    operationalImpact: current
+      ? "Cleared to carry passengers at night."
+      : "Cannot carry passengers at night until currency is restored.",
+    confidence: "high"
+  };
+}
+
+function computeIfrCurrencyDomain(entries, asOf) {
+  const cutoff6mo = new Date(asOf);
+  cutoff6mo.setMonth(cutoff6mo.getMonth() - 6);
+  const last6mo = entries.filter(e => {
+    const d = new Date(e.date);
+    return d >= cutoff6mo && d <= new Date(asOf);
+  });
+  const approaches = last6mo.reduce((s, e) => s + Number(e.approaches || 0), 0);
+  const holds = last6mo.reduce((s, e) => s + Number(e.holds || 0), 0);
+  const intercepts = last6mo.reduce((s, e) => s + Number(e.intercepts || 0), 0);
+  const current = approaches >= 6 && holds >= 1 && intercepts >= 1;
+  const warnings = [];
+  if (approaches < 6) warnings.push(`${6 - approaches} more approach${6 - approaches === 1 ? '' : 'es'} needed`);
+  if (holds < 1) warnings.push("1 hold needed");
+  if (intercepts < 1) warnings.push("1 intercept needed");
+
+  return {
+    status: readinessStatus(current, !current && (approaches > 0 || holds > 0 || intercepts > 0)),
+    explanation: current
+      ? `${approaches} approaches, ${holds} hold${holds === 1 ? '' : 's'}, ${intercepts} intercept${intercepts === 1 ? '' : 's'} in the last 6 months.`
+      : `IFR currency not met in last 6 months. ${warnings.join('; ')}.`,
+    timeline: current
+      ? "Currency valid for the remainder of the 6-month window."
+      : "Must complete required tasks within a 6-calendar-month window.",
+    operationalImpact: current
+      ? "Cleared for IFR flight in IMC."
+      : "Not current for IFR flight in IMC. May fly under IFR in VMC with passengers only if day/night passenger currency also met.",
+    confidence: "high"
+  };
+}
+
+function computePilotReadinessDomain(profile, asOf) {
+  const flightReviewDate = profile?.proficiency?.flightReviewDate ?? null;
+  const ipcDate = profile?.proficiency?.ipcDate ?? null;
+  const medical = profile?.medical ?? { kind: "None" };
+
+  // Flight review: valid 24 calendar months
+  const frCurrent = flightReviewDate ? isWithinMonths(asOf, flightReviewDate, 24) : false;
+  const frExpiry = flightReviewDate ? (() => {
+    const d = new Date(flightReviewDate);
+    d.setMonth(d.getMonth() + 24);
+    return d.toISOString();
+  })() : null;
+
+  // Medical
+  let medCurrent = false;
+  let medDetail = "No medical on file.";
+  if (medical.kind === "Medical" && medical.expires) {
+    medCurrent = isFuture(asOf, medical.expires);
+    medDetail = `Class ${medical.class} medical ${medCurrent ? 'expires' : 'expired'} ${formatDateShort(medical.expires)}.`;
+  } else if (medical.kind === "BasicMed") {
+    const cmecOk = !!medical?.basicMed?.cmecDate;
+    const courseOk = !!medical?.basicMed?.onlineCourseDate;
+    medCurrent = cmecOk && courseOk;
+    medDetail = `BasicMed: CMEC ${cmecOk ? 'on file' : 'missing'}, online course ${courseOk ? 'on file' : 'missing'}.`;
+  }
+
+  const pilotCurrent = frCurrent && medCurrent;
+  const issues = [];
+  if (!frCurrent) issues.push(flightReviewDate ? `Flight review expired ${formatDateShort(frExpiry)}` : "No flight review on file");
+  if (!medCurrent) issues.push(medDetail);
+
+  return {
+    status: readinessStatus(pilotCurrent, !pilotCurrent && (frCurrent || medCurrent)),
+    explanation: pilotCurrent
+      ? `Flight review current (${formatDateShort(frExpiry)}). ${medDetail}`
+      : issues.join(". "),
+    timeline: pilotCurrent
+      ? `Flight review valid until ${formatDateShort(frExpiry)}.`
+      : frCurrent
+        ? `Medical issue blocks operations. Flight review valid until ${formatDateShort(frExpiry)}.`
+        : "Flight review required before any solo or passenger flight.",
+    operationalImpact: pilotCurrent
+      ? "Cleared to act as PIC."
+      : "Cannot act as PIC. Both a valid flight review and current medical are required.",
+    confidence: "high"
+  };
+}
+
+function computeAircraftReadinessDomain(aircraft, maintenance, asOf) {
+  const ac = Array.isArray(aircraft) ? aircraft[0] : null;
+  if (!ac) {
+    return {
+      status: "not_current",
+      explanation: "No aircraft record found.",
+      timeline: "Add an aircraft to enable readiness checks.",
+      operationalImpact: "Cannot verify aircraft airworthiness.",
+      confidence: "low"
+    };
+  }
+
+  const checks = [
+    { label: "Annual inspection", due: ac.annualDue },
+    { label: "Transponder check", due: ac.transponderDue },
+    { label: "Pitot-static check", due: ac.pitotStaticDue },
+    { label: "ELT battery", due: ac.eltBatteryDue }
+  ];
+
+  const expired = checks.filter(c => c.due && !isFuture(asOf, c.due));
+  const expiringSoon = checks.filter(c => c.due && isFuture(asOf, c.due) && daysUntil(asOf, c.due) <= 30);
+  const current = expired.length === 0;
+
+  return {
+    status: readinessStatus(current && expiringSoon.length === 0, current && expiringSoon.length > 0),
+    explanation: expired.length > 0
+      ? `Overdue: ${expired.map(c => `${c.label} (${formatDateShort(c.due)})`).join(', ')}.`
+      : expiringSoon.length > 0
+        ? `All checks current. Expiring within 30 days: ${expiringSoon.map(c => `${c.label} (${formatDateShort(c.due)})`).join(', ')}.`
+        : `All required inspections current for ${ac.ident} (${ac.make} ${ac.model}).`,
+    timeline: expired.length > 0
+      ? "Aircraft is not airworthy until overdue items are completed."
+      : expiringSoon.length > 0
+        ? `Schedule maintenance soon. ${expiringSoon[0].label} due ${formatDateShort(expiringSoon[0].due)}.`
+        : `Next due: ${checks.filter(c => c.due).sort((a, b) => new Date(a.due) - new Date(b.due))[0]?.label} on ${formatDateShort(checks.filter(c => c.due).sort((a, b) => new Date(a.due) - new Date(b.due))[0]?.due)}.`,
+    operationalImpact: expired.length > 0
+      ? "Aircraft may not be operated until overdue inspections are completed."
+      : "Aircraft is airworthy and approved for flight.",
+    confidence: "high"
+  };
+}
+
+app.get("/assistant/readiness", (req, res) => {
+  const asOf = String(req.query.asOf || new Date().toISOString());
+  const entries = readEntries();
+  const profile = readProfile();
+  const aircraft = readAircraft();
+  const maintenance = readMaintenance();
+
+  res.json({
+    asOf,
+    domains: {
+      passengerCurrency: computePassengerCurrencyDomain(entries, asOf),
+      nightCurrency: computeNightCurrencyDomain(entries, asOf),
+      ifrCurrency: computeIfrCurrencyDomain(entries, asOf),
+      pilotReadiness: computePilotReadinessDomain(profile, asOf),
+      aircraftReadiness: computeAircraftReadinessDomain(aircraft, maintenance, asOf)
+    }
+  });
 });
 
 app.listen(PORT, "0.0.0.0", () => {
