@@ -3740,12 +3740,7 @@ async function connectWallet() {
 
     // DApp Connector API: provider.connect(networkId) → ConnectedAPI
     connectedApi = await selectedProvider.connect(NETWORK_ID);
-
-    // Verify connection status
-    const status = await connectedApi.getConnectionStatus();
-    if (status.status !== 'connected') {
-      throw new Error('Wallet reported disconnected status after connect()');
-    }
+    if (!connectedApi) throw new Error('provider.connect() returned null — wallet rejected connection');
 
     // Get unshielded address (bech32m)
     const { unshieldedAddress } = await connectedApi.getUnshieldedAddress();
