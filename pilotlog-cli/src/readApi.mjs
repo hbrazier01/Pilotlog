@@ -3694,7 +3694,7 @@ async function detectProvider() {
       const walletName = picked.api.name || picked.key;
 
       dot.className = 'dot disconnected';
-      label.textContent = (picked.key === '1am' ? '1AM wallet detected' : walletName + ' detected') + ' — not connected';
+      label.textContent = (picked.key === '1am' ? '1AM wallet detected' : walletName + ' detected') + ' - not connected';
       spinner.style.display = 'none';
       btnConnect.textContent = 'Connect ' + walletName;
       btnConnect.disabled = false;
@@ -3733,14 +3733,14 @@ async function connectWallet() {
 
   btnConnect.disabled = true;
   spinner.style.display = 'inline-block';
-  label.textContent = 'Connecting…';
+  label.textContent = 'Connecting...';
 
   try {
     if (!selectedProvider) throw new Error('No wallet provider selected');
 
     // DApp Connector API: provider.connect(networkId) → ConnectedAPI
     connectedApi = await selectedProvider.connect(NETWORK_ID);
-    if (!connectedApi) throw new Error('provider.connect() returned null — wallet rejected connection');
+    if (!connectedApi) throw new Error('provider.connect() returned null - wallet rejected connection');
 
     // Get unshielded address (bech32m)
     const { unshieldedAddress } = await connectedApi.getUnshieldedAddress();
@@ -3757,7 +3757,7 @@ async function connectWallet() {
 
     // Update UI
     dot.className = 'dot connected';
-    label.textContent = (selectedProvider.name || 'Wallet') + ' — Connected';
+    label.textContent = (selectedProvider.name || 'Wallet') + ' - Connected';
     addressBox.textContent = unshieldedAddress;
     addressBox.style.display = 'block';
     spinner.style.display = 'none';
@@ -3809,7 +3809,7 @@ async function signTestTx() {
   const btn = document.getElementById('btn-tx');
   const result = document.getElementById('tx-result');
   btn.disabled = true;
-  btn.textContent = 'Signing…';
+  btn.textContent = 'Signing...';
   result.style.cssText = '';
   result.className = 'tx-result';
 
@@ -3836,15 +3836,15 @@ async function signTestTx() {
     const data = await resp.json();
 
     result.textContent =
-      '✓ Test passed\n' +
-      'Wallet:  ' + unshieldedAddress + '\n' +
-      'Network: ' + (config.networkId || NETWORK_ID) + '\n' +
+      'OK Test passed\\n' +
+      'Wallet:  ' + unshieldedAddress + '\\n' +
+      'Network: ' + (config.networkId || NETWORK_ID) + '\\n' +
       (data.txId ? 'Anchor tx: ' + data.txId : 'Response: ' + JSON.stringify(data, null, 2));
     result.className = 'tx-result show';
-    btn.textContent = '✓ Done';
+    btn.textContent = 'Done';
 
   } catch (err) {
-    result.textContent = '✗ ' + (err.message || String(err));
+    result.textContent = 'Error: ' + (err.message || String(err));
     result.className = 'tx-result show';
     result.style.background = '#1c0a03';
     result.style.borderColor = '#7c2d12';
