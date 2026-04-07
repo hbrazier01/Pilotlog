@@ -3646,12 +3646,49 @@ app.get("/wallet", (_req, res) => {
 </div>
 
 <script>
-// ── 1AM Wallet DApp Connector ────────────────────────────────────────────────
-// Midnight Lace injects window.midnight.mnLace
-// Ref: https://docs.midnight.network/develop/tutorial/
+// ── 1AM Wallet — Midnight DApp Connector API ─────────────────────────────────
+// Spec: @midnight-ntwrk/dapp-connector-api
+//
+// window.midnight is a map: { [walletKey: string]: InitialAPI }
+// Each wallet registers under its own key with an rdns identifier.
+// We enumerate all entries and prefer the 1AM wallet by rdns.
+// Provider detection is wallet-agnostic; 1AM is selected by rdns pattern.
 
-const PREPROD_NETWORK = 'preprod';
-let walletApi = null;
+const NETWORK_ID = 'preprod';
+// 1AM wallet rdns patterns to prefer (case-insensitive substring match)
+const ONE_AM_RDNS_PATTERNS = ['1am', 'io.1am', 'com.1am', 'one.am'];
+
+let connectedApi = null;   // ConnectedAPI (from provider.connect())
+let selectedProvider = null; // InitialAPI
+
+// ── Wallet enumeration ────────────────────────────────────────────────────────
+
+function enumerateWallets() {
+  const midnight = window.midnight;
+  if (!midnight || typeof midnight !== 'object') return [];
+  return Object.entries(midnight)
+    .map(([key, api]) => ({ key, api }))
+    .filter(({ api }) => api && typeof api.connect === 'function');
+}
+
+function pick1AMWallet(wallets) {
+  // Prefer wallet whose rdns matches 1AM patterns
+  for (const pattern of ONE_AM_RDNS_PATTERNS) {
+    const match = wallets.find(({ api }) =>
+      typeof api.rdns === 'string' && api.rdns.toLowerCase().includes(pattern)
+    );
+    if (match) return match;
+  }
+  // Also check name
+  const byName = wallets.find(({ api }) =>
+    typeof api.name === 'string' && api.name.toLowerCase().includes('1am')
+  );
+  if (byName) return byName;
+  // Fall back to first available wallet
+  return wallets[0] || null;
+}
+
+// ── Provider detection ────────────────────────────────────────────────────────
 
 async function detectProvider() {
   const dot = document.getElementById('status-dot');
@@ -3660,33 +3697,44 @@ async function detectProvider() {
   const spinner = document.getElementById('connect-spinner');
   const notFound = document.getElementById('not-found-box');
 
-  // Poll for up to 3s — extension may inject after page load
-  let attempts = 0;
-  while (attempts < 6) {
-    const provider = window?.midnight?.mnLace;
-    if (provider) {
+  // Poll up to 3s — extension injects after page load
+  for (let i = 0; i < 6; i++) {
+    const wallets = enumerateWallets();
+    if (wallets.length > 0) {
+      const picked = pick1AMWallet(wallets);
+      selectedProvider = picked.api;
+      const walletName = picked.api.name || picked.key;
+      const rdns = picked.api.rdns || '—';
+
       dot.className = 'dot disconnected';
-      label.textContent = 'Wallet found — not connected';
+      label.textContent = walletName + ' detected — not connected';
       spinner.style.display = 'none';
-      btnConnect.textContent = 'Connect Wallet';
+      btnConnect.textContent = 'Connect ' + walletName;
       btnConnect.disabled = false;
       btnConnect.onclick = connectWallet;
+
+      // Show all available wallets if more than one
+      if (wallets.length > 1) {
+        document.getElementById('wallet-note').textContent =
+          wallets.length + ' wallets found. Using: ' + walletName + ' (' + rdns + ')';
+      }
       return;
     }
     await new Promise(r => setTimeout(r, 500));
-    attempts++;
   }
 
-  // Provider not found
+  // Not found
   dot.className = 'dot disconnected';
   dot.style.background = '#ef4444';
-  label.textContent = 'Wallet not found';
+  label.textContent = 'No Midnight wallet detected';
   spinner.style.display = 'none';
   btnConnect.textContent = 'Retry';
   btnConnect.disabled = false;
   btnConnect.onclick = () => location.reload();
   notFound.classList.add('show');
 }
+
+// ── Connect flow ──────────────────────────────────────────────────────────────
 
 async function connectWallet() {
   const dot = document.getElementById('status-dot');
@@ -3701,25 +3749,33 @@ async function connectWallet() {
   label.textContent = 'Connecting…';
 
   try {
-    const provider = window.midnight.mnLace;
+    if (!selectedProvider) throw new Error('No wallet provider selected');
 
-    // Enable returns wallet API
-    walletApi = await provider.enable(PREPROD_NETWORK);
+    // DApp Connector API: provider.connect(networkId) → ConnectedAPI
+    connectedApi = await selectedProvider.connect(NETWORK_ID);
 
-    const state = await walletApi.state();
+    // Verify connection status
+    const status = await connectedApi.getConnectionStatus();
+    if (status.status !== 'connected') {
+      throw new Error('Wallet reported disconnected status after connect()');
+    }
 
-    const address = state?.unshielded?.address
-      || state?.address
-      || (typeof state === 'string' ? state : null);
+    // Get unshielded address (bech32m)
+    const { unshieldedAddress } = await connectedApi.getUnshieldedAddress();
 
-    const balance = state?.unshielded?.balance
-      || state?.balance
-      || null;
+    // Get tNight balance (unshielded)
+    const unshieldedBalances = await connectedApi.getUnshieldedBalances();
+    // Native token key is hex of the token type; sum all for display
+    const totalBalance = Object.values(unshieldedBalances)
+      .reduce((acc, v) => acc + BigInt(v), 0n);
+
+    // Get wallet-configured network endpoints
+    const config = await connectedApi.getConfiguration();
 
     // Update UI
     dot.className = 'dot connected';
-    label.textContent = 'Connected';
-    addressBox.textContent = address || 'Address unavailable';
+    label.textContent = (selectedProvider.name || 'Wallet') + ' — Connected';
+    addressBox.textContent = unshieldedAddress;
     addressBox.style.display = 'block';
     spinner.style.display = 'none';
     btnConnect.textContent = 'Disconnect';
@@ -3727,20 +3783,21 @@ async function connectWallet() {
     btnConnect.onclick = disconnectWallet;
     btnConnect.className = 'btn btn-danger';
 
-    // Show network + tx cards
+    // Show network card
     document.getElementById('network-card').style.display = 'block';
-    document.getElementById('net-address').textContent = address || '—';
-    document.getElementById('net-balance').textContent =
-      balance !== null ? balance + ' tNight' : 'Syncing…';
+    document.getElementById('net-name').textContent = config.networkId || NETWORK_ID;
+    document.getElementById('net-address').textContent = unshieldedAddress;
+    document.getElementById('net-balance').textContent = totalBalance.toString() + ' units';
+
+    // Show test tx card
     document.getElementById('tx-card').style.display = 'block';
+    walletNote.textContent = 'Wallet connected. Network: ' + (config.networkId || NETWORK_ID);
 
-    walletNote.textContent = 'Wallet connected. You can now anchor records on Midnight.';
-
-    // Persist address to server session
+    // Persist to server session
     await fetch('/wallet/connect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address })
+      body: JSON.stringify({ address: unshieldedAddress })
     });
 
   } catch (err) {
@@ -3757,35 +3814,49 @@ async function connectWallet() {
 }
 
 async function disconnectWallet() {
-  walletApi = null;
+  connectedApi = null;
+  selectedProvider = null;
   await fetch('/wallet/disconnect', { method: 'POST' });
   location.reload();
 }
+
+// ── Test transaction ──────────────────────────────────────────────────────────
 
 async function signTestTx() {
   const btn = document.getElementById('btn-tx');
   const result = document.getElementById('tx-result');
   btn.disabled = true;
   btn.textContent = 'Signing…';
+  result.style.cssText = '';
   result.className = 'tx-result';
-  result.style.display = 'none';
 
   try {
-    if (!walletApi) throw new Error('Wallet not connected');
+    if (!connectedApi) throw new Error('Wallet not connected');
 
-    // Phase 1: confirm wallet API is responsive
-    const state = await walletApi.state();
-    const address = state?.unshielded?.address || state?.address || 'unknown';
+    // Confirm wallet API is live and read address
+    const { unshieldedAddress } = await connectedApi.getUnshieldedAddress();
 
-    // Trigger server-side anchor (uses dev wallet for proof generation,
-    // but the user's wallet address is recorded as the signer)
-    const resp = await fetch('/verify/anchor', { method: 'POST' });
+    // Get wallet-preferred indexer/prover config
+    const config = await connectedApi.getConfiguration();
+
+    // Trigger server-side anchor, passing wallet config so server can use
+    // the wallet's preferred endpoints if desired
+    const resp = await fetch('/verify/anchor', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        walletAddress: unshieldedAddress,
+        indexerUri: config.indexerUri,
+        proverServerUri: config.proverServerUri
+      })
+    });
     const data = await resp.json();
 
     result.textContent =
       '✓ Test passed\n' +
-      'Wallet address: ' + address + '\n' +
-      (data.txId ? 'Anchor tx: ' + data.txId : 'Server response: ' + JSON.stringify(data, null, 2));
+      'Wallet:  ' + unshieldedAddress + '\n' +
+      'Network: ' + (config.networkId || NETWORK_ID) + '\n' +
+      (data.txId ? 'Anchor tx: ' + data.txId : 'Response: ' + JSON.stringify(data, null, 2));
     result.className = 'tx-result show';
     btn.textContent = '✓ Done';
 
@@ -3800,7 +3871,7 @@ async function signTestTx() {
   }
 }
 
-// Boot: detect provider
+// Boot
 detectProvider();
 </script>
 </body>
