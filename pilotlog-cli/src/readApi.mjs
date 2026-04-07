@@ -3650,13 +3650,10 @@ app.get("/wallet", (_req, res) => {
 // Spec: @midnight-ntwrk/dapp-connector-api
 //
 // window.midnight is a map: { [walletKey: string]: InitialAPI }
-// Each wallet registers under its own key with an rdns identifier.
-// We enumerate all entries and prefer the 1AM wallet by rdns.
-// Provider detection is wallet-agnostic; 1AM is selected by rdns pattern.
+// Detection: enumerate all entries, prefer "1am" key, fall back to first entry.
+// Do NOT filter by rdns or api.connect — provider may not expose these at detection time.
 
 const NETWORK_ID = 'preprod';
-// 1AM wallet rdns patterns to prefer (case-insensitive substring match)
-const ONE_AM_RDNS_PATTERNS = ['1am', 'io.1am', 'com.1am', 'one.am'];
 
 let connectedApi = null;   // ConnectedAPI (from provider.connect())
 let selectedProvider = null; // InitialAPI
@@ -3668,22 +3665,13 @@ function enumerateWallets() {
   if (!midnight || typeof midnight !== 'object') return [];
   return Object.entries(midnight)
     .map(([key, api]) => ({ key, api }))
-    .filter(({ api }) => api && typeof api.connect === 'function');
+    .filter(({ api }) => api != null);
 }
 
 function pick1AMWallet(wallets) {
-  // Prefer wallet whose rdns matches 1AM patterns
-  for (const pattern of ONE_AM_RDNS_PATTERNS) {
-    const match = wallets.find(({ api }) =>
-      typeof api.rdns === 'string' && api.rdns.toLowerCase().includes(pattern)
-    );
-    if (match) return match;
-  }
-  // Also check name
-  const byName = wallets.find(({ api }) =>
-    typeof api.name === 'string' && api.name.toLowerCase().includes('1am')
-  );
-  if (byName) return byName;
+  // Prefer explicit "1am" key first
+  const byKey = wallets.find(({ key }) => key === '1am');
+  if (byKey) return byKey;
   // Fall back to first available wallet
   return wallets[0] || null;
 }
@@ -3704,10 +3692,9 @@ async function detectProvider() {
       const picked = pick1AMWallet(wallets);
       selectedProvider = picked.api;
       const walletName = picked.api.name || picked.key;
-      const rdns = picked.api.rdns || '—';
 
       dot.className = 'dot disconnected';
-      label.textContent = walletName + ' detected — not connected';
+      label.textContent = (picked.key === '1am' ? '1AM wallet detected' : walletName + ' detected') + ' — not connected';
       spinner.style.display = 'none';
       btnConnect.textContent = 'Connect ' + walletName;
       btnConnect.disabled = false;
@@ -3716,7 +3703,7 @@ async function detectProvider() {
       // Show all available wallets if more than one
       if (wallets.length > 1) {
         document.getElementById('wallet-note').textContent =
-          wallets.length + ' wallets found. Using: ' + walletName + ' (' + rdns + ')';
+          wallets.length + ' wallets found. Using: ' + walletName;
       }
       return;
     }
