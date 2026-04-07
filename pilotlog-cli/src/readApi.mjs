@@ -3669,8 +3669,8 @@ function enumerateWallets() {
 }
 
 function pick1AMWallet(wallets) {
-  // Prefer explicit "1am" key first
-  const byKey = wallets.find(({ key }) => key === '1am');
+  // Prefer explicit "1AM" key first (case-insensitive match)
+  const byKey = wallets.find(({ key }) => key.toLowerCase() === '1am');
   if (byKey) return byKey;
   // Fall back to first available wallet
   return wallets[0] || null;
@@ -3738,27 +3738,21 @@ async function connectWallet() {
   try {
     if (!selectedProvider) throw new Error('No wallet provider selected');
 
-    // DApp Connector API: provider.connect(networkId) → ConnectedAPI
-    connectedApi = await selectedProvider.connect(NETWORK_ID);
-    if (!connectedApi) throw new Error('provider.connect() returned null - wallet rejected connection');
+    // DApp Connector API: provider.enable() → ConnectedAPI
+    connectedApi = await selectedProvider.enable();
+    if (!connectedApi) throw new Error('provider.enable() returned null - wallet rejected connection');
 
-    // Get unshielded address (bech32m)
-    const { unshieldedAddress } = await connectedApi.getUnshieldedAddress();
-
-    // Get tNight balance (unshielded)
-    const unshieldedBalances = await connectedApi.getUnshieldedBalances();
-    // Native token key is hex of the token type; sum all for display
-    // Using Number() instead of BigInt to avoid SyntaxError on older JS engines
-    const totalBalance = Object.values(unshieldedBalances)
-      .reduce((acc, v) => acc + Number(v), 0);
+    // Get wallet address — prefer shielded (Zswap), fall back to unshielded
+    const shieldedAddresses = await connectedApi.getShieldedAddresses();
+    const walletAddress = (shieldedAddresses && shieldedAddresses[0]) || '(address unavailable)';
 
     // Get wallet-configured network endpoints
-    const config = await connectedApi.getConfiguration();
+    const config = await connectedApi.getConfiguration().catch(() => ({}));
 
     // Update UI
     dot.className = 'dot connected';
     label.textContent = (selectedProvider.name || 'Wallet') + ' - Connected';
-    addressBox.textContent = unshieldedAddress;
+    addressBox.textContent = walletAddress;
     addressBox.style.display = 'block';
     spinner.style.display = 'none';
     btnConnect.textContent = 'Disconnect';
@@ -3769,8 +3763,8 @@ async function connectWallet() {
     // Show network card
     document.getElementById('network-card').style.display = 'block';
     document.getElementById('net-name').textContent = config.networkId || NETWORK_ID;
-    document.getElementById('net-address').textContent = unshieldedAddress;
-    document.getElementById('net-balance').textContent = totalBalance.toString() + ' units';
+    document.getElementById('net-address').textContent = walletAddress;
+    document.getElementById('net-balance').textContent = '—';
 
     // Show test tx card
     document.getElementById('tx-card').style.display = 'block';
@@ -3780,7 +3774,7 @@ async function connectWallet() {
     await fetch('/wallet/connect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address: unshieldedAddress })
+      body: JSON.stringify({ address: walletAddress })
     });
 
   } catch (err) {
@@ -3817,10 +3811,11 @@ async function signTestTx() {
     if (!connectedApi) throw new Error('Wallet not connected');
 
     // Confirm wallet API is live and read address
-    const { unshieldedAddress } = await connectedApi.getUnshieldedAddress();
+    const shieldedAddresses = await connectedApi.getShieldedAddresses();
+    const walletAddress = (shieldedAddresses && shieldedAddresses[0]) || '(address unavailable)';
 
     // Get wallet-preferred indexer/prover config
-    const config = await connectedApi.getConfiguration();
+    const config = await connectedApi.getConfiguration().catch(() => ({}));
 
     // Trigger server-side anchor, passing wallet config so server can use
     // the wallet's preferred endpoints if desired
@@ -3828,7 +3823,7 @@ async function signTestTx() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        walletAddress: unshieldedAddress,
+        walletAddress: walletAddress,
         indexerUri: config.indexerUri,
         proverServerUri: config.proverServerUri
       })
@@ -3837,7 +3832,7 @@ async function signTestTx() {
 
     result.textContent =
       'OK Test passed\\n' +
-      'Wallet:  ' + unshieldedAddress + '\\n' +
+      'Wallet:  ' + walletAddress + '\\n' +
       'Network: ' + (config.networkId || NETWORK_ID) + '\\n' +
       (data.txId ? 'Anchor tx: ' + data.txId : 'Response: ' + JSON.stringify(data, null, 2));
     result.className = 'tx-result show';
