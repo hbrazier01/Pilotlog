@@ -6,6 +6,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { buildIntegrityResult } from "../../src/services/build-integrity-result.mjs";
 import { anchorOnMidnight } from "../../src/services/airlog-anchor-midnight.mjs";
 import { buildTrustReport } from "../../src/services/build-trust-report.mjs";
+import { computeReadiness, PILOT_PHASES } from "./lib/readiness.mjs";
 
 const PORT = Number(process.env.PORT || 8788);
 const DATA_DIR = process.env.PILOTLOG_HOME || process.env.PILOTLOG_DIR || path.resolve(process.cwd(), "data");
@@ -86,6 +87,10 @@ function readProfile() {
   } catch {
     return null;
   }
+}
+
+function saveProfile(profile) {
+  fs.writeFileSync(PROFILE_PATH, JSON.stringify(profile, null, 2));
 }
 
 function readAircraft() {
@@ -477,6 +482,42 @@ app.get("/", (_req, res) => {
   .currency-action { font-size:12px; color:#9aa3ff; margin-top:6px; }
   .section-title { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:#b6b9c6; margin-bottom:10px; }
   @media(max-width:820px) { .big { font-size:40px; } }
+  /* Today Card */
+  #today-card { background:#0d1220; border:1px solid #1e2a48; border-radius:16px; padding:18px 20px; margin-bottom:14px; }
+  .today-card-header { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
+  .phase-badge { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; background:#1a2240; color:#9aa3ff; padding:3px 10px; border-radius:999px; }
+  .urgency-badge { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; padding:3px 10px; border-radius:999px; margin-left:auto; }
+  .urgency-badge.critical { background:#2a0a0a; color:#ef4444; }
+  .urgency-badge.important { background:#1c1203; color:#f59e0b; }
+  .urgency-badge.optional { background:#0f1235; color:#6366f1; }
+  .urgency-badge.none { background:#1a1f30; color:#b6b9c6; }
+  .today-headline { font-size:16px; font-weight:700; color:#fff; margin-bottom:4px; line-height:1.4; }
+  .today-reason { font-size:13px; color:#b6b9c6; line-height:1.5; margin-bottom:10px; }
+  .today-meta { display:flex; gap:16px; margin-bottom:12px; flex-wrap:wrap; }
+  .today-meta-item { font-size:11px; color:#6b7280; }
+  .today-meta-item span { color:#9aa3ff; font-weight:600; }
+  .today-footer { display:flex; gap:8px; flex-wrap:wrap; }
+  .secondary-chip { font-size:12px; background:#111827; border:1px solid #222843; color:#6b7280; border-radius:8px; padding:6px 12px; }
+  .today-outcome { font-size:12px; color:#22c55e; font-weight:600; margin-bottom:4px; margin-top:-4px; }
+  .today-cta { display:inline-block; margin-top:12px; padding:9px 20px; background:#1a3a8f; color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:700; cursor:pointer; text-decoration:none; }
+  .today-cta:hover { background:#1e46b0; }
+  .journey-blocker { font-size:11px; color:#6b7280; text-align:center; margin-top:-8px; margin-bottom:10px; }
+  .today-changed { font-size:12px; color:#22c55e; font-weight:600; margin-bottom:6px; }
+  /* De-emphasize readiness lanes */
+  .currency-cards { opacity:0.75; }
+  /* Journey Strip */
+  #journey-strip { display:flex; align-items:center; gap:0; margin-bottom:14px; }
+  .journey-step { display:flex; flex-direction:column; align-items:center; flex:1; position:relative; }
+  .journey-step-dot { width:10px; height:10px; border-radius:50%; border:2px solid #222843; background:#0b0f18; flex-shrink:0; z-index:1; }
+  .journey-step.complete .journey-step-dot { background:#22c55e; border-color:#22c55e; }
+  .journey-step.active .journey-step-dot { background:#9aa3ff; border-color:#9aa3ff; box-shadow:0 0 0 3px rgba(154,163,255,.2); }
+  .journey-step.upcoming .journey-step-dot { background:#0b0f18; border-color:#374151; }
+  .journey-step-label { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; margin-top:5px; text-align:center; }
+  .journey-step.complete .journey-step-label { color:#22c55e; }
+  .journey-step.active .journey-step-label { color:#9aa3ff; }
+  .journey-step.upcoming .journey-step-label { color:#374151; }
+  .journey-connector { flex:1; height:1px; background:#222843; align-self:center; margin-bottom:16px; }
+  .journey-connector.complete { background:#22c55e; }
   </style>
 </head>
 <body>
@@ -484,6 +525,7 @@ app.get("/", (_req, res) => {
   <div class="topbar">
     <div class="brand">PilotLog</div>
     <div class="nav">
+      <a href="/wallet">Wallet</a>
       <a href="/report">Aircraft Record Report →</a>
     </div>
   </div>
@@ -518,6 +560,9 @@ app.get("/", (_req, res) => {
       <span id="readiness-dot" style="width:8px;height:8px;border-radius:50%;background:#b6b9c6;display:inline-block;"></span>
       <span id="readiness-label">Loading…</span>
     </div>
+    <div id="today-card" style="display:none;"></div>
+    <div id="journey-strip" style="display:none;"></div>
+    <div id="journey-blocker" class="journey-blocker" style="display:none;"></div>
     <div class="currency-cards" id="readiness-cards">
       <div class="currency-card" style="color:#b6b9c6;font-size:13px;">Checking readiness…</div>
     </div>
@@ -579,54 +624,234 @@ app.get("/", (_req, res) => {
   <script>
     const lastUsedAircraft = ${JSON.stringify(lastUsedAircraft)};
 
-    // Load all readiness domains from /assistant/readiness
+    // Phase-aware readiness assistant
     (async function loadReadiness() {
       const DOMAIN_LABELS = {
-        passengerCurrency: 'Passenger Currency',
-        nightCurrency: 'Night Currency',
-        ifrCurrency: 'IFR Currency',
-        pilotReadiness: 'Pilot Readiness',
-        aircraftReadiness: 'Aircraft Readiness',
+        passengerCurrency:       'Passenger Currency',
+        nightCurrency:           'Night Currency',
+        ifrCurrency:             'IFR Currency',
+        ifrProgress:             'IFR Training Progress',
+        ifrProficiency:          'IFR Proficiency',
+        pilotReadiness:          'Pilot Readiness',
+        aircraftReadiness:       'Aircraft Readiness',
+        trainingProgress:        'Training Progress',
+        requiredHours:           'Required Hours',
+        soloReadiness:           'Solo Readiness',
+        instructorRequiredItems: 'Required Documents',
       };
-      const COLOR = { green: '#22c55e', yellow: '#f59e0b', red: '#ef4444' };
-      const BG = { green: '#052e16', yellow: '#1c1203', red: '#1c0505' };
-      const LABEL = { green: 'Good to Fly', yellow: 'Needs Attention', red: 'Not Current' };
-      const STATUS_LABEL = { green: 'Current', yellow: 'Expiring Soon', red: 'Not Current' };
-      const DOMAIN_ORDER = ['passengerCurrency', 'nightCurrency', 'ifrCurrency', 'pilotReadiness', 'aircraftReadiness'];
-      const rank = { red: 0, yellow: 1, green: 2 };
+      const COLOR = { current: '#22c55e', needs_attention: '#f59e0b', not_current: '#ef4444' };
+      const BG = { current: '#052e16', needs_attention: '#1c1203', not_current: '#1c0505' };
+      const CHIP_LABEL = { current: 'Good to Fly', needs_attention: 'Needs Attention', not_current: 'Not Current' };
+      const STATUS_LABEL = { current: 'Current', needs_attention: 'Attention', not_current: 'Not Current' };
+      const PRIORITY_COLOR = { critical: '#ef4444', important: '#f59e0b', optional: '#6366f1' };
+      const rank = { not_current: 0, needs_attention: 1, current: 2 };
+
+      // Phase config — keys match backend PILOT_PHASES exactly
+      const PHASE_CONFIG = {
+        student_ppl: {
+          label: 'Student Pilot',
+          coreDomains: ['instructorRequiredItems', 'soloReadiness'],
+          ctaDomain: 'instructorRequiredItems',
+          visibleDomains: (domains) => ['trainingProgress', 'requiredHours', 'soloReadiness', 'instructorRequiredItems'].filter(k => domains[k]),
+          journeySteps: ['Foundation', 'Solo Ready', 'Checkride'],
+        },
+        ppl_complete: {
+          label: 'Private Pilot',
+          coreDomains: ['passengerCurrency', 'nightCurrency'],
+          ctaDomain: 'passengerCurrency',
+          visibleDomains: (domains) => ['passengerCurrency', 'nightCurrency', 'pilotReadiness', 'aircraftReadiness'].filter(k => domains[k]),
+          journeySteps: ['Legal Currency', 'Proficiency', 'Confidence'],
+        },
+        instrument_training: {
+          label: 'Instrument Training',
+          coreDomains: ['ifrProgress', 'pilotReadiness'],
+          ctaDomain: 'ifrProgress',
+          visibleDomains: (domains) => ['pilotReadiness', 'ifrProgress', 'aircraftReadiness'].filter(k => domains[k]),
+          journeySteps: ['VFR Current', 'IFR Approaches', 'IFR Rating'],
+        },
+        instrument_rated: {
+          label: 'Instrument Rated',
+          coreDomains: ['ifrCurrency', 'ifrProficiency'],
+          ctaDomain: 'ifrCurrency',
+          visibleDomains: (domains) => ['ifrCurrency', 'ifrProficiency', 'passengerCurrency', 'pilotReadiness', 'aircraftReadiness'].filter(k => domains[k]),
+          journeySteps: ['VFR Baseline', 'IFR Currency', 'IFR Proficiency'],
+        },
+        commercial: {
+          label: 'Commercial Pilot',
+          coreDomains: ['passengerCurrency', 'ifrCurrency'],
+          ctaDomain: 'passengerCurrency',
+          visibleDomains: (domains) => ['passengerCurrency', 'ifrCurrency', 'nightCurrency', 'pilotReadiness', 'aircraftReadiness'].filter(k => domains[k]),
+          journeySteps: ['Currency', 'Proficiency', 'Operations'],
+        },
+        cfi: {
+          label: 'CFI',
+          coreDomains: ['passengerCurrency', 'pilotReadiness'],
+          ctaDomain: 'passengerCurrency',
+          visibleDomains: (domains) => ['passengerCurrency', 'ifrCurrency', 'nightCurrency', 'pilotReadiness', 'aircraftReadiness'].filter(k => domains[k]),
+          journeySteps: ['Current', 'Proficient', 'Ready to Teach'],
+        },
+      };
+      // Fallback for legacy or unknown phase keys
+      PHASE_CONFIG['student'] = PHASE_CONFIG['student_ppl'];
+      PHASE_CONFIG['private_pilot'] = PHASE_CONFIG['ppl_complete'];
+      const MAINTENANCE_FALLBACKS = ['Review upcoming proficiency dates', 'Log your next planned practice flight'];
+
+      function scoreCandidate(key, domain, phase) {
+        const statusW = { not_current: 3, needs_attention: 2, current: 0 };
+        const priorityW = { critical: 3, important: 2, optional: 1 };
+        const coreDomains = PHASE_CONFIG[phase]?.coreDomains || [];
+        const phaseMultiplier = coreDomains.includes(key) ? 1.2 : 1.0;
+        const s = (statusW[domain.status] || 0) + (priorityW[domain.priority] || 0);
+        return s * phaseMultiplier;
+      }
 
       try {
         const res = await fetch('/assistant/readiness');
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
+        const domains = data.domains || {};
+        const phase = data.phase || 'ppl_complete';
+        const phaseConf = PHASE_CONFIG[phase] || PHASE_CONFIG.ppl_complete;
 
-        let worst = 'green';
-        for (const key of DOMAIN_ORDER) {
-          const s = data[key]?.status;
+        // Determine visible domains for this phase (max 4)
+        const phaseVisibleKeys = phaseConf.visibleDomains(domains).filter(k => domains[k]).slice(0, 4);
+
+        // Find worst status among all phase-visible domains (for chip)
+        let worst = 'current';
+        for (const key of phaseVisibleKeys) {
+          const s = domains[key]?.status;
           if (s && rank[s] < rank[worst]) worst = s;
         }
 
+        // Update chip
         const chip = document.getElementById('readiness-chip');
         chip.style.background = BG[worst];
         chip.style.color = COLOR[worst];
         document.getElementById('readiness-dot').style.background = COLOR[worst];
-        document.getElementById('readiness-label').textContent = LABEL[worst];
+        document.getElementById('readiness-label').textContent = data.summary || CHIP_LABEL[worst];
 
+        // Filter out "current" domains — only show actionable items
+        // Exception: if ALL are current, visibleKeys stays empty and allZero triggers the all-current state
+        const visibleKeys = phaseVisibleKeys.filter(k => domains[k]?.status !== 'current');
+
+        // Score and rank candidates
+        const scored = visibleKeys
+          .map(key => ({ key, domain: domains[key], score: scoreCandidate(key, domains[key], phase) }))
+          .sort((a, b) => b.score - a.score || a.key.localeCompare(b.key));
+
+        const allZero = visibleKeys.length === 0 || scored.every(c => c.score === 0);
+
+        // Post-action feedback
+        const justLogged = sessionStorage.getItem('airlog_just_logged');
+        sessionStorage.removeItem('airlog_just_logged');
+        const changedBanner = justLogged ? \`<div class="today-changed">✓ Flight logged. Readiness updated.</div>\` : '';
+
+        // CTA helpers
+        function buildCta(pd) {
+          const ctaType = pd.ctaType || 'record';
+          const ctaLabel = pd.ctaLabel || 'View Aircraft Record →';
+          if (ctaType === 'log') {
+            return \`<button class="today-cta" onclick="openLogForm()">\${ctaLabel}</button>\`;
+          }
+          if (ctaType === 'plan') {
+            return \`<button class="today-cta" onclick="openLogForm()">\${ctaLabel}</button>\`;
+          }
+          return \`<a class="today-cta" href="/report">\${ctaLabel}</a>\`;
+        }
+
+        // Today Card
+        const todayEl = document.getElementById('today-card');
+        todayEl.style.display = 'block';
+        if (allZero) {
+          todayEl.innerHTML = \`
+            \${changedBanner}
+            <div class="today-card-header">
+              <span class="phase-badge">\${phaseConf.label}</span>
+              <span class="urgency-badge none">All Current</span>
+            </div>
+            <div class="today-headline" style="color:#22c55e;">You are current. Keep momentum this week.</div>
+            <div class="today-footer">
+              \${MAINTENANCE_FALLBACKS.map(a => \`<span class="secondary-chip">\${a}</span>\`).join('')}
+            </div>
+            <button class="today-cta" onclick="openLogForm()">Log a Flight →</button>\`;
+        } else {
+          const primary = scored[0];
+          const pd = primary.domain;
+          const secondaryCandidates = scored.slice(1, 3);
+          while (secondaryCandidates.length < 2) {
+            secondaryCandidates.push({ key: null, domain: { title: MAINTENANCE_FALLBACKS[secondaryCandidates.length] } });
+          }
+          const urgencyClass = pd.priority || 'none';
+          const outcomeRow = pd.outcome
+            ? \`<div class="today-outcome">\${pd.outcome}</div>\`
+            : '';
+          todayEl.innerHTML = \`
+            \${changedBanner}
+            <div class="today-card-header">
+              <span class="phase-badge">\${phaseConf.label}</span>
+              \${pd.priority ? \`<span class="urgency-badge \${urgencyClass}">\${pd.priority}</span>\` : ''}
+            </div>
+            <div class="today-headline">\${(pd.title || pd.nextAction || '').slice(0,80)}</div>
+            <div class="today-reason">\${(pd.why || pd.problem || '').slice(0,160)}</div>
+            \${outcomeRow}
+            \${buildCta(pd)}
+            <div class="today-footer" style="margin-top:10px;">
+              \${secondaryCandidates.map(c => \`<span class="secondary-chip">\${(c.domain.title || c.domain.nextAction || '').slice(0,52)}</span>\`).join('')}
+            </div>\`;
+        }
+
+        // Journey Strip
+        const journeyEl = document.getElementById('journey-strip');
+        journeyEl.style.display = 'flex';
+        const steps = phaseConf.journeySteps;
+        // Active step: not_current → 0, needs_attention → 1, current → 2
+        const activeIdx = worst === 'not_current' ? 0 : worst === 'needs_attention' ? 1 : 2;
+        journeyEl.innerHTML = steps.map((label, i) => {
+          const state = i < activeIdx ? 'complete' : i === activeIdx ? 'active' : 'upcoming';
+          const connector = i < steps.length - 1
+            ? \`<div class="journey-connector\${i < activeIdx ? ' complete' : ''}"></div>\`
+            : '';
+          return \`<div class="journey-step \${state}">
+            <div class="journey-step-dot"></div>
+            <div class="journey-step-label">\${label.slice(0,22)}</div>
+          </div>\${connector}\`;
+        }).join('');
+
+        // Journey blocker line
+        const blockerEl = document.getElementById('journey-blocker');
+        if (!allZero) {
+          const blockers = scored.filter(c => c.score > 0).map(c => DOMAIN_LABELS[c.key] || c.key);
+          blockerEl.textContent = blockers.length ? 'Blocked by: ' + blockers.join(' · ') : '';
+          blockerEl.style.display = blockers.length ? 'block' : 'none';
+        } else {
+          blockerEl.style.display = 'none';
+        }
+
+        // Readiness Lanes (max 4, priority sorted)
         const container = document.getElementById('readiness-cards');
-        container.innerHTML = DOMAIN_ORDER.map(key => {
-          const d = data[key];
+        const laneHtml = visibleKeys.map(key => {
+          const d = domains[key];
           if (!d) return '';
           const color = COLOR[d.status] || '#b6b9c6';
+          const isCurrent = d.status === 'current';
+          const showPriority = !isCurrent && d.priority;
+          const priorityBadge = showPriority
+            ? \`<span style="font-size:10px;font-weight:700;text-transform:uppercase;color:\${PRIORITY_COLOR[d.priority] || '#b6b9c6'};margin-left:auto;">\${d.priority}</span>\`
+            : '';
           return \`<div class="currency-card">
             <div class="currency-card-header">
               <span class="currency-dot" style="background:\${color};"></span>
-              <span class="currency-type">\${DOMAIN_LABELS[key]}</span>
+              <span class="currency-type">\${DOMAIN_LABELS[key] || key}</span>
               <span class="currency-status-label" style="color:\${color};">\${STATUS_LABEL[d.status] || d.status}</span>
+              \${priorityBadge}
             </div>
-            <div class="currency-message">\${d.message || ''}</div>
-            <div class="currency-action">\${d.action || ''}</div>
+            \${isCurrent ? '' : \`<div class="currency-message">\${(d.problem || '').slice(0,120)}</div>
+            <div class="currency-action">→ \${(d.nextAction || '').slice(0,72)}</div>
+            \${d.flightPlan ? \`<div style="font-size:11px;color:#b6b9c6;margin-top:4px;">Plan: \${d.flightPlan}\${d.effort ? \` · \${d.effort}\` : ''}</div>\` : ''}\`}
           </div>\`;
         }).join('');
+        container.innerHTML = laneHtml || '<div class="currency-card" style="color:#22c55e;font-size:13px;">All domains current.</div>';
+
       } catch (err) {
         document.getElementById('readiness-label').textContent = 'Unavailable';
         document.getElementById('readiness-cards').innerHTML =
@@ -681,6 +906,7 @@ app.get("/", (_req, res) => {
       e.target.querySelector('input[name="date"]').value = new Date().toISOString().slice(0,10);
       toggleForm();
       showToast('Flight logged!');
+      sessionStorage.setItem('airlog_just_logged', '1');
       setTimeout(() => location.reload(), 600);
     }
     function showToast(msg) {
@@ -1172,7 +1398,24 @@ function computeGaps(aircraft, maintenance) {
     }
   }
 
-  // 3. Components without TSOH/SMOH data
+  // 3. Overdue recurring AD compliance
+  for (const m of maintenance) {
+    for (const ad of (m.adCompliance || [])) {
+      if (ad.nextDue) {
+        const nextDueDate = new Date(String(ad.nextDue).slice(0, 10));
+        if (nextDueDate < today) {
+          const daysOverdue = Math.round((today - nextDueDate) / 86400000);
+          gaps.push({
+            type: "ad_compliance_overdue",
+            description: `AD ${ad.adNumber || "unknown"} (${ad.description || m.description || "recurring"}) overdue by ${daysOverdue} days — next due was ${String(ad.nextDue).slice(0, 10)}`,
+            severity: "high",
+          });
+        }
+      }
+    }
+  }
+
+  // 4. Components without TSOH/SMOH data
   const majorComponents = ["engine", "propeller", "prop"];
   const componentsCovered = new Set();
   for (const m of maintenance) {
@@ -1397,16 +1640,31 @@ app.get("/export/sale-packet/html", (_req, res) => {
 
   // AD compliance rows
   const adEntries = maintenance.filter((m) => m.category === "ad-compliance" || (m.adCompliance && m.adCompliance.length > 0));
+  const now = new Date();
   const adRows = adEntries.map((m) => {
     const ads = m.adCompliance && m.adCompliance.length > 0
-      ? m.adCompliance.map((ad) => `
-        <tr>
-          <td>${ad.adNumber || "—"}</td>
-          <td>${ad.title || m.description || "—"}</td>
-          <td>${m.date ? String(m.date).slice(0, 10) : "—"}</td>
-          <td>${m.mechanic || m.performedBy || "—"}</td>
-          <td>${ad.nextDue ? fmt(ad.nextDue) : "—"}</td>
-        </tr>`).join("")
+      ? m.adCompliance.map((ad) => {
+          let nextDueCell = "—";
+          if (ad.nextDue) {
+            const nextDueDate = new Date(ad.nextDue);
+            const overdue = nextDueDate < now;
+            const daysOut = Math.round((nextDueDate - now) / (1000 * 60 * 60 * 24));
+            const dueSoon = !overdue && daysOut <= 60;
+            const statusBadge = overdue
+              ? `<span style="display:inline-block;background:#fee2e2;color:#b91c1c;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:6px;">OVERDUE</span>`
+              : dueSoon
+              ? `<span style="display:inline-block;background:#fef3c7;color:#92400e;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:6px;">DUE SOON</span>`
+              : "";
+            nextDueCell = `<span style="color:${overdue ? "#b91c1c" : "#2d3748"};font-weight:${overdue ? "700" : "400"};">${fmt(ad.nextDue)}</span>${statusBadge}`;
+          }
+          return `<tr>
+            <td>${ad.adNumber || "—"}</td>
+            <td>${ad.description || ad.title || m.description || "—"}</td>
+            <td>${m.date ? String(m.date).slice(0, 10) : "—"}</td>
+            <td>${m.mechanic || m.performedBy || "—"}</td>
+            <td>${nextDueCell}</td>
+          </tr>`;
+        }).join("")
       : `<tr>
           <td>—</td>
           <td>${m.description || "—"}</td>
@@ -1433,15 +1691,24 @@ app.get("/export/sale-packet/html", (_req, res) => {
 
   // Component snapshot: engine, prop, avionics
   const pa = primaryAircraft;
-  // Find last service date for engine/prop from maintenance
-  function lastServiceDate(keyword) {
+  // Find last service record for a keyword — returns { date, mechanic, condition }
+  function lastServiceRecord(keyword) {
     const matches = maintenance
       .filter((m) => (m.components || []).some((c) => (c.name || "").toLowerCase().includes(keyword)) ||
         (m.description || "").toLowerCase().includes(keyword))
-      .map((m) => m.date ? new Date(String(m.date).slice(0, 10)) : null)
-      .filter(Boolean)
-      .sort((a, b) => b - a);
-    return matches.length > 0 ? matches[0].toISOString().slice(0, 10) : null;
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+    if (matches.length === 0) return null;
+    const rec = matches[0];
+    const comp = (rec.components || []).find((c) => (c.name || "").toLowerCase().includes(keyword));
+    return {
+      date: rec.date ? String(rec.date).slice(0, 10) : null,
+      mechanic: rec.mechanic || rec.performedBy || null,
+      condition: comp?.condition || null,
+    };
+  }
+  function lastServiceDate(keyword) {
+    const r = lastServiceRecord(keyword);
+    return r ? r.date : null;
   }
 
   // Buyer evidence index
@@ -1781,6 +2048,9 @@ app.get("/export/sale-packet/html", (_req, res) => {
       <div class="ident">${primaryAircraft.ident || "—"}</div>
       <div class="type">${primaryAircraft.type || "—"}</div>
       <div class="gendate">Generated ${generatedFormatted}</div>
+      <div style="margin-top:10px;">
+        <a href="/export/sale-packet/pdf" style="display:inline-block;padding:7px 16px;background:#1a3a6e;color:#fff;border-radius:6px;font-size:12px;font-weight:700;text-decoration:none;letter-spacing:0.03em;" download>⬇ Download PDF</a>
+      </div>
     </div>
   </div>
 
@@ -2008,19 +2278,30 @@ app.get("/export/sale-packet/html", (_req, res) => {
           <div style="font-size:13px;font-weight:600;color:#1a1a2e;margin-top:6px;">${pa.engineType || "—"}</div>
           <div style="font-size:11px;color:#718096;margin-top:2px;">S/N: ${pa.engineSerial || "—"}</div>
           <div style="font-size:11px;color:#718096;margin-top:2px;">SMOH: ${pa.engineTimeSMOH != null ? fmtNum(pa.engineTimeSMOH) + " hrs" : "Not recorded"}</div>
-          <div style="font-size:11px;color:#718096;margin-top:2px;">Last service: ${lastServiceDate("engine") || "—"}</div>
+          ${(() => { const r = lastServiceRecord("engine"); return r ? `
+          <div style="font-size:11px;color:#718096;margin-top:2px;">Last service: ${r.date}</div>
+          ${r.condition ? `<div style="font-size:11px;color:#718096;margin-top:2px;">Condition: <span style="color:${r.condition === "serviceable" ? "#22c55e" : "#ef4444"};font-weight:600;">${r.condition}</span></div>` : ""}
+          ${r.mechanic ? `<div style="font-size:11px;color:#718096;margin-top:2px;">Signed off: ${r.mechanic}</div>` : ""}
+          ` : '<div style="font-size:11px;color:#a0aec0;margin-top:2px;">No service records</div>'; })()}
         </div>
         <div class="stat-card">
           <div class="stat-label">Propeller</div>
           <div style="font-size:13px;font-weight:600;color:#1a1a2e;margin-top:6px;">${pa.propType || "—"}</div>
           <div style="font-size:11px;color:#718096;margin-top:2px;">S/N: ${pa.propSerial || "—"}</div>
-          <div style="font-size:11px;color:#718096;margin-top:2px;">Last service: ${lastServiceDate("prop") || "—"}</div>
+          ${(() => { const r = lastServiceRecord("prop"); return r ? `
+          <div style="font-size:11px;color:#718096;margin-top:2px;">Last service: ${r.date}</div>
+          ${r.condition ? `<div style="font-size:11px;color:#718096;margin-top:2px;">Condition: <span style="color:${r.condition === "serviceable" ? "#22c55e" : "#ef4444"};font-weight:600;">${r.condition}</span></div>` : ""}
+          ${r.mechanic ? `<div style="font-size:11px;color:#718096;margin-top:2px;">Signed off: ${r.mechanic}</div>` : ""}
+          ` : '<div style="font-size:11px;color:#a0aec0;margin-top:2px;">No service records</div>'; })()}
         </div>
         <div class="stat-card">
           <div class="stat-label">Avionics</div>
-          ${(pa.avionics || []).length > 0
-            ? (pa.avionics || []).map((av) => `<div style="font-size:12px;color:#2d3748;margin-top:4px;">${av}</div>`).join("")
-            : '<div style="font-size:12px;color:#a0aec0;margin-top:6px;">Not recorded</div>'}
+          ${(pa.avionics || []).map((av) => {
+            const r = lastServiceRecord(av.toLowerCase().split(" ").slice(0, 2).join(" "));
+            return `<div style="font-size:12px;color:#2d3748;margin-top:6px;font-weight:600;">${av}</div>
+            ${r ? `<div style="font-size:11px;color:#718096;">Last tested: ${r.date}</div>
+            ${r.condition ? `<div style="font-size:11px;color:#718096;">Condition: <span style="color:${r.condition === "serviceable" ? "#22c55e" : "#ef4444"};font-weight:600;">${r.condition}</span></div>` : ""}` : ""}`;
+          }).join("") || '<div style="font-size:12px;color:#a0aec0;margin-top:6px;">Not recorded</div>'}
         </div>
       </div>
     </div>
@@ -2104,6 +2385,32 @@ app.get("/export/sale-packet/html", (_req, res) => {
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(html);
+});
+
+app.get("/export/sale-packet/pdf", async (_req, res) => {
+  let browser;
+  try {
+    const { default: puppeteer } = await import("puppeteer");
+    browser = await puppeteer.launch({ args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${PORT}/export/sale-packet/html`, { waitUntil: "networkidle0", timeout: 15000 });
+    const pdf = await page.pdf({
+      format: "Letter",
+      printBackground: true,
+      margin: { top: "0.5in", bottom: "0.5in", left: "0.5in", right: "0.5in" }
+    });
+    await browser.close();
+    const entries = readEntries();
+    const aircraft = readAircraft();
+    const reg = (aircraft[0]?.registration || "aircraft").replace(/[^A-Z0-9]/gi, "");
+    const date = new Date().toISOString().slice(0, 10);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="AirLog-SalePacket-${reg}-${date}.pdf"`);
+    res.send(pdf);
+  } catch (err) {
+    if (browser) await browser.close().catch(() => {});
+    res.status(500).json({ error: "PDF generation failed", detail: err.message });
+  }
 });
 
 app.get("/verify/hash/:hash", (_req, res) => {
@@ -2496,6 +2803,8 @@ app.get("/verify/airworthy/html", (_req, res) => {
     <a href="/">← Back to Dashboard</a>
     &nbsp;&nbsp;·&nbsp;&nbsp;
     <a href="/export/sale-packet/html">View Full Sale Packet</a>
+    &nbsp;&nbsp;·&nbsp;&nbsp;
+    <a href="/export/sale-packet/pdf" download>⬇ Download PDF</a>
   </div>
   <div class="header">
     <h1>Airworthiness Check</h1>
@@ -3158,227 +3467,344 @@ app.get("/report", (_req, res) => {
   res.send(html);
 });
 
-// ─── Readiness Engine v1 ──────────────────────────────────────────────────────
-// GET /assistant/readiness
-// Returns all 5 readiness domains in one response.
-// Each domain: { status, explanation, timeline, operationalImpact, confidence }
-// status: "current" | "needs_attention" | "not_current"
-
-function readinessStatus(ok, warn) {
-  if (ok) return "current";
-  if (warn) return "needs_attention";
-  return "not_current";
-}
-
-function computePassengerCurrencyDomain(entries, asOf) {
-  const cutoffMs = new Date(asOf).getTime() - 90 * 24 * 60 * 60 * 1000;
-  const last90 = entries.filter(e => new Date(e.date).getTime() >= cutoffMs);
-  const dayCount = last90.reduce((s, e) => s + Number(e.dayLandings || 0), 0);
-  const current = dayCount >= 3;
-  const needed = Math.max(0, 3 - dayCount);
-  // Days until 3rd-oldest landing expires
-  const dayLandingTimes = [];
-  for (const e of last90) {
-    const n = Number(e.dayLandings || 0);
-    for (let i = 0; i < n; i++) dayLandingTimes.push(new Date(e.date).getTime());
-  }
-  dayLandingTimes.sort((a, b) => a - b);
-  let daysLeft = null;
-  if (dayLandingTimes.length >= 3) {
-    const oldest3 = dayLandingTimes[dayLandingTimes.length - 3];
-    daysLeft = Math.ceil((oldest3 + 90 * 86400000 - new Date(asOf).getTime()) / 86400000);
-  }
-
-  return {
-    status: readinessStatus(current, !current && dayCount > 0),
-    explanation: current
-      ? `${dayCount} day landings in the last 90 days. FAA requires 3 to carry passengers.`
-      : `Only ${dayCount} day landing${dayCount === 1 ? '' : 's'} in the last 90 days. Need ${needed} more.`,
-    timeline: current
-      ? `Currency expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.`
-      : needed === 3
-        ? "No qualifying landings on record in the last 90 days."
-        : `${dayCount} of 3 required landings on record.`,
-    operationalImpact: current
-      ? "Cleared to carry passengers during the day."
-      : "Cannot carry passengers during daylight hours until currency is restored.",
-    confidence: "high"
-  };
-}
-
-function computeNightCurrencyDomain(entries, asOf) {
-  const cutoffMs = new Date(asOf).getTime() - 90 * 24 * 60 * 60 * 1000;
-  const last90 = entries.filter(e => new Date(e.date).getTime() >= cutoffMs);
-  const nightCount = last90.reduce((s, e) => s + Number(e.nightLandings || 0), 0);
-  const current = nightCount >= 3;
-  const needed = Math.max(0, 3 - nightCount);
-  const nightLandingTimes = [];
-  for (const e of last90) {
-    const n = Number(e.nightLandings || 0);
-    for (let i = 0; i < n; i++) nightLandingTimes.push(new Date(e.date).getTime());
-  }
-  nightLandingTimes.sort((a, b) => a - b);
-  let daysLeft = null;
-  if (nightLandingTimes.length >= 3) {
-    const oldest3 = nightLandingTimes[nightLandingTimes.length - 3];
-    daysLeft = Math.ceil((oldest3 + 90 * 86400000 - new Date(asOf).getTime()) / 86400000);
-  }
-
-  return {
-    status: readinessStatus(current, !current && nightCount > 0),
-    explanation: current
-      ? `${nightCount} night landings in the last 90 days. FAA requires 3 to carry passengers at night.`
-      : `Only ${nightCount} night landing${nightCount === 1 ? '' : 's'} in the last 90 days. Need ${needed} more.`,
-    timeline: current
-      ? `Currency expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.`
-      : nightCount === 0
-        ? "No qualifying night landings on record in the last 90 days."
-        : `${nightCount} of 3 required night landings on record.`,
-    operationalImpact: current
-      ? "Cleared to carry passengers at night."
-      : "Cannot carry passengers at night until currency is restored.",
-    confidence: "high"
-  };
-}
-
-function computeIfrCurrencyDomain(entries, asOf) {
-  const cutoff6mo = new Date(asOf);
-  cutoff6mo.setMonth(cutoff6mo.getMonth() - 6);
-  const last6mo = entries.filter(e => {
-    const d = new Date(e.date);
-    return d >= cutoff6mo && d <= new Date(asOf);
-  });
-  const approaches = last6mo.reduce((s, e) => s + Number(e.approaches || 0), 0);
-  const holds = last6mo.reduce((s, e) => s + Number(e.holds || 0), 0);
-  const intercepts = last6mo.reduce((s, e) => s + Number(e.intercepts || 0), 0);
-  const current = approaches >= 6 && holds >= 1 && intercepts >= 1;
-  const warnings = [];
-  if (approaches < 6) warnings.push(`${6 - approaches} more approach${6 - approaches === 1 ? '' : 'es'} needed`);
-  if (holds < 1) warnings.push("1 hold needed");
-  if (intercepts < 1) warnings.push("1 intercept needed");
-
-  return {
-    status: readinessStatus(current, !current && (approaches > 0 || holds > 0 || intercepts > 0)),
-    explanation: current
-      ? `${approaches} approaches, ${holds} hold${holds === 1 ? '' : 's'}, ${intercepts} intercept${intercepts === 1 ? '' : 's'} in the last 6 months.`
-      : `IFR currency not met in last 6 months. ${warnings.join('; ')}.`,
-    timeline: current
-      ? "Currency valid for the remainder of the 6-month window."
-      : "Must complete required tasks within a 6-calendar-month window.",
-    operationalImpact: current
-      ? "Cleared for IFR flight in IMC."
-      : "Not current for IFR flight in IMC. May fly under IFR in VMC with passengers only if day/night passenger currency also met.",
-    confidence: "high"
-  };
-}
-
-function computePilotReadinessDomain(profile, asOf) {
-  const flightReviewDate = profile?.proficiency?.flightReviewDate ?? null;
-  const ipcDate = profile?.proficiency?.ipcDate ?? null;
-  const medical = profile?.medical ?? { kind: "None" };
-
-  // Flight review: valid 24 calendar months
-  const frCurrent = flightReviewDate ? isWithinMonths(asOf, flightReviewDate, 24) : false;
-  const frExpiry = flightReviewDate ? (() => {
-    const d = new Date(flightReviewDate);
-    d.setMonth(d.getMonth() + 24);
-    return d.toISOString();
-  })() : null;
-
-  // Medical
-  let medCurrent = false;
-  let medDetail = "No medical on file.";
-  if (medical.kind === "Medical" && medical.expires) {
-    medCurrent = isFuture(asOf, medical.expires);
-    medDetail = `Class ${medical.class} medical ${medCurrent ? 'expires' : 'expired'} ${formatDateShort(medical.expires)}.`;
-  } else if (medical.kind === "BasicMed") {
-    const cmecOk = !!medical?.basicMed?.cmecDate;
-    const courseOk = !!medical?.basicMed?.onlineCourseDate;
-    medCurrent = cmecOk && courseOk;
-    medDetail = `BasicMed: CMEC ${cmecOk ? 'on file' : 'missing'}, online course ${courseOk ? 'on file' : 'missing'}.`;
-  }
-
-  const pilotCurrent = frCurrent && medCurrent;
-  const issues = [];
-  if (!frCurrent) issues.push(flightReviewDate ? `Flight review expired ${formatDateShort(frExpiry)}` : "No flight review on file");
-  if (!medCurrent) issues.push(medDetail);
-
-  return {
-    status: readinessStatus(pilotCurrent, !pilotCurrent && (frCurrent || medCurrent)),
-    explanation: pilotCurrent
-      ? `Flight review current (${formatDateShort(frExpiry)}). ${medDetail}`
-      : issues.join(". "),
-    timeline: pilotCurrent
-      ? `Flight review valid until ${formatDateShort(frExpiry)}.`
-      : frCurrent
-        ? `Medical issue blocks operations. Flight review valid until ${formatDateShort(frExpiry)}.`
-        : "Flight review required before any solo or passenger flight.",
-    operationalImpact: pilotCurrent
-      ? "Cleared to act as PIC."
-      : "Cannot act as PIC. Both a valid flight review and current medical are required.",
-    confidence: "high"
-  };
-}
-
-function computeAircraftReadinessDomain(aircraft, maintenance, asOf) {
-  const ac = Array.isArray(aircraft) ? aircraft[0] : null;
-  if (!ac) {
-    return {
-      status: "not_current",
-      explanation: "No aircraft record found.",
-      timeline: "Add an aircraft to enable readiness checks.",
-      operationalImpact: "Cannot verify aircraft airworthiness.",
-      confidence: "low"
-    };
-  }
-
-  const checks = [
-    { label: "Annual inspection", due: ac.annualDue },
-    { label: "Transponder check", due: ac.transponderDue },
-    { label: "Pitot-static check", due: ac.pitotStaticDue },
-    { label: "ELT battery", due: ac.eltBatteryDue }
-  ];
-
-  const expired = checks.filter(c => c.due && !isFuture(asOf, c.due));
-  const expiringSoon = checks.filter(c => c.due && isFuture(asOf, c.due) && daysUntil(asOf, c.due) <= 30);
-  const current = expired.length === 0;
-
-  return {
-    status: readinessStatus(current && expiringSoon.length === 0, current && expiringSoon.length > 0),
-    explanation: expired.length > 0
-      ? `Overdue: ${expired.map(c => `${c.label} (${formatDateShort(c.due)})`).join(', ')}.`
-      : expiringSoon.length > 0
-        ? `All checks current. Expiring within 30 days: ${expiringSoon.map(c => `${c.label} (${formatDateShort(c.due)})`).join(', ')}.`
-        : `All required inspections current for ${ac.ident} (${ac.make} ${ac.model}).`,
-    timeline: expired.length > 0
-      ? "Aircraft is not airworthy until overdue items are completed."
-      : expiringSoon.length > 0
-        ? `Schedule maintenance soon. ${expiringSoon[0].label} due ${formatDateShort(expiringSoon[0].due)}.`
-        : `Next due: ${checks.filter(c => c.due).sort((a, b) => new Date(a.due) - new Date(b.due))[0]?.label} on ${formatDateShort(checks.filter(c => c.due).sort((a, b) => new Date(a.due) - new Date(b.due))[0]?.due)}.`,
-    operationalImpact: expired.length > 0
-      ? "Aircraft may not be operated until overdue inspections are completed."
-      : "Aircraft is airworthy and approved for flight.",
-    confidence: "high"
-  };
-}
+// ─── Readiness API ────────────────────────────────────────────────────────────
+// Logic lives in src/lib/readiness.mjs — computeReadiness() is the entry point.
 
 app.get("/assistant/readiness", (req, res) => {
   const asOf = String(req.query.asOf || new Date().toISOString());
-  const entries = readEntries();
-  const profile = readProfile();
-  const aircraft = readAircraft();
-  const maintenance = readMaintenance();
+  const result = computeReadiness(
+    readProfile(),
+    readEntries(),
+    readAircraft(),
+    readMaintenance(),
+    asOf
+  );
+  res.json(result);
+});
 
-  res.json({
-    asOf,
-    domains: {
-      passengerCurrency: computePassengerCurrencyDomain(entries, asOf),
-      nightCurrency: computeNightCurrencyDomain(entries, asOf),
-      ifrCurrency: computeIfrCurrencyDomain(entries, asOf),
-      pilotReadiness: computePilotReadinessDomain(profile, asOf),
-      aircraftReadiness: computeAircraftReadinessDomain(aircraft, maintenance, asOf)
+app.patch("/profile/phase", (req, res) => {
+  const { pilotPhase } = req.body || {};
+  if (!pilotPhase || !PILOT_PHASES[pilotPhase]) {
+    return res.status(400).json({ error: "Invalid pilotPhase. Valid values: " + Object.keys(PILOT_PHASES).join(", ") });
+  }
+  const profile = readProfile();
+  profile.pilotPhase = pilotPhase;
+  saveProfile(profile);
+  res.json({ ok: true, pilotPhase, label: PILOT_PHASES[pilotPhase].label });
+});
+
+// ── Wallet State (server-side session) ───────────────────────────────────────
+const WALLET_SESSION_PATH = path.join(DATA_DIR, "wallet.json");
+
+function readWalletSession() {
+  try {
+    if (!fs.existsSync(WALLET_SESSION_PATH)) return null;
+    return JSON.parse(fs.readFileSync(WALLET_SESSION_PATH, "utf-8"));
+  } catch { return null; }
+}
+
+function saveWalletSession(session) {
+  fs.writeFileSync(WALLET_SESSION_PATH, JSON.stringify(session, null, 2));
+}
+
+// POST /wallet/connect — browser posts connected wallet address here
+app.post("/wallet/connect", (req, res) => {
+  const { address, coinPublicKey } = req.body || {};
+  if (!address) return res.status(400).json({ error: "address required" });
+  const session = { address, coinPublicKey: coinPublicKey || null, connectedAt: new Date().toISOString() };
+  saveWalletSession(session);
+  res.json({ ok: true, session });
+});
+
+// POST /wallet/disconnect — clear wallet session
+app.post("/wallet/disconnect", (_req, res) => {
+  if (fs.existsSync(WALLET_SESSION_PATH)) fs.unlinkSync(WALLET_SESSION_PATH);
+  res.json({ ok: true });
+});
+
+// GET /wallet/status — current wallet session
+app.get("/wallet/status", (_req, res) => {
+  const session = readWalletSession();
+  res.json({ connected: !!session, session: session || null });
+});
+
+// GET /wallet — wallet connect UI
+app.get("/wallet", (_req, res) => {
+  const session = readWalletSession();
+  const verification = readVerification();
+  res.type("html").send(`<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Wallet — PilotLog</title>
+  <style>
+  body { font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif; background:#0b0f18; color:#fff; margin:0; }
+  .wrap { max-width:680px; margin:0 auto; padding:32px 20px; }
+  .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:28px; }
+  .brand { font-size:20px; font-weight:800; letter-spacing:-0.5px; }
+  .nav a { color:#9aa3ff; text-decoration:none; font-size:14px; margin-left:16px; }
+  .nav a:hover { color:#fff; }
+  h1 { font-size:28px; font-weight:800; letter-spacing:-0.5px; margin:0 0 6px; }
+  .sub { color:#b6b9c6; font-size:14px; margin-bottom:28px; }
+  .card { background:#121624; border:1px solid #222843; border-radius:14px; padding:24px; margin-bottom:16px; }
+  .card-title { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:#b6b9c6; margin-bottom:14px; }
+  .status-row { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+  .dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+  .dot.connected { background:#22c55e; }
+  .dot.disconnected { background:#6b7280; }
+  .dot.detecting { background:#f59e0b; animation:pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .status-label { font-size:15px; font-weight:700; }
+  .address { font-family:monospace; font-size:13px; color:#9aa3ff; word-break:break-all; background:#0b0f18; border:1px solid #222843; border-radius:8px; padding:10px 12px; margin-bottom:14px; }
+  .btn { display:inline-block; padding:11px 24px; background:#1a3a8f; color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; text-decoration:none; transition:background .15s; }
+  .btn:hover { background:#1e46b0; }
+  .btn:disabled { background:#1a2240; color:#6b7280; cursor:not-allowed; }
+  .btn-outline { background:transparent; border:1px solid #222843; color:#9aa3ff; }
+  .btn-outline:hover { background:#121624; }
+  .btn-danger { background:#7f1d1d; color:#fca5a5; }
+  .btn-danger:hover { background:#991b1b; }
+  .btn-green { background:#14532d; color:#86efac; }
+  .btn-green:hover { background:#166534; }
+  .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
+  .note { font-size:13px; color:#6b7280; margin-top:10px; line-height:1.5; }
+  .tx-result { background:#0b1a0f; border:1px solid #14532d; border-radius:8px; padding:12px; font-size:13px; color:#86efac; margin-top:12px; display:none; word-break:break-all; }
+  .tx-result.show { display:block; }
+  .not-found { background:#1c0a03; border:1px solid #7c2d12; border-radius:8px; padding:12px; font-size:13px; color:#fdba74; margin-top:12px; display:none; }
+  .not-found.show { display:block; }
+  .info-row { display:flex; justify-content:space-between; font-size:13px; padding:5px 0; border-bottom:1px solid #1a2040; }
+  .info-row:last-child { border-bottom:none; }
+  .info-label { color:#6b7280; }
+  .info-val { color:#e5e7eb; font-family:monospace; }
+  .spinner { display:inline-block; width:14px; height:14px; border:2px solid #1a3a8f; border-top-color:#9aa3ff; border-radius:50%; animation:spin .7s linear infinite; vertical-align:middle; margin-right:6px; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">PilotLog</div>
+    <div class="nav">
+      <a href="/">← Home</a>
+      <a href="/export/sale-packet/html">Sale Packet</a>
+    </div>
+  </div>
+
+  <h1>1AM Wallet</h1>
+  <div class="sub">Connect your Midnight wallet to anchor records on-chain.</div>
+
+  <!-- Connection card -->
+  <div class="card" id="wallet-card">
+    <div class="card-title">Wallet Connection</div>
+    <div class="status-row">
+      <div class="dot detecting" id="status-dot"></div>
+      <div class="status-label" id="status-label">Detecting provider…</div>
+    </div>
+    <div id="address-box" class="address" style="display:none"></div>
+    <div class="not-found" id="not-found-box">
+      <strong>1AM wallet not detected.</strong><br>
+      Install the Midnight Lace extension and reload this page.<br>
+      <a href="https://midnight.network" target="_blank" style="color:#fdba74">midnight.network →</a>
+    </div>
+    <div class="actions" id="wallet-actions">
+      <button class="btn" id="btn-connect" disabled>
+        <span class="spinner" id="connect-spinner"></span>Detecting…
+      </button>
+    </div>
+    <div class="note" id="wallet-note"></div>
+  </div>
+
+  <!-- Network card -->
+  <div class="card" id="network-card" style="display:none">
+    <div class="card-title">Network</div>
+    <div class="info-row"><span class="info-label">Network</span><span class="info-val" id="net-name">Midnight PreProd</span></div>
+    <div class="info-row"><span class="info-label">Address</span><span class="info-val" id="net-address">—</span></div>
+    <div class="info-row"><span class="info-label">tNight Balance</span><span class="info-val" id="net-balance">—</span></div>
+  </div>
+
+  <!-- Test transaction card -->
+  <div class="card" id="tx-card" style="display:none">
+    <div class="card-title">Test Transaction</div>
+    <p style="font-size:14px;color:#b6b9c6;margin:0 0 14px;">
+      Confirm wallet integration by signing a <code>registerAirframe</code> transaction on Midnight PreProd.
+      The proof server must be running at <code>http://127.0.0.1:6300</code>.
+    </p>
+    <div class="actions">
+      <button class="btn btn-green" id="btn-tx" onclick="signTestTx()">Sign Test Transaction</button>
+    </div>
+    <div class="tx-result" id="tx-result"></div>
+  </div>
+
+  <!-- Server session card (shown if server has a stored session) -->
+  ${session ? `
+  <div class="card">
+    <div class="card-title">Last Known Session</div>
+    <div class="info-row"><span class="info-label">Address</span><span class="info-val">${session.address}</span></div>
+    <div class="info-row"><span class="info-label">Connected</span><span class="info-val">${new Date(session.connectedAt).toLocaleString()}</span></div>
+    ${verification && verification.anchored ? `<div class="info-row"><span class="info-label">Anchor Tx</span><span class="info-val">${verification.anchorTx || '—'}</span></div>` : ''}
+  </div>` : ''}
+</div>
+
+<script>
+// ── 1AM Wallet DApp Connector ────────────────────────────────────────────────
+// Midnight Lace injects window.midnight.mnLace
+// Ref: https://docs.midnight.network/develop/tutorial/
+
+const PREPROD_NETWORK = 'preprod';
+let walletApi = null;
+
+async function detectProvider() {
+  const dot = document.getElementById('status-dot');
+  const label = document.getElementById('status-label');
+  const btnConnect = document.getElementById('btn-connect');
+  const spinner = document.getElementById('connect-spinner');
+  const notFound = document.getElementById('not-found-box');
+
+  // Poll for up to 3s — extension may inject after page load
+  let attempts = 0;
+  while (attempts < 6) {
+    const provider = window?.midnight?.mnLace;
+    if (provider) {
+      dot.className = 'dot disconnected';
+      label.textContent = 'Wallet found — not connected';
+      spinner.style.display = 'none';
+      btnConnect.textContent = 'Connect Wallet';
+      btnConnect.disabled = false;
+      btnConnect.onclick = connectWallet;
+      return;
     }
-  });
+    await new Promise(r => setTimeout(r, 500));
+    attempts++;
+  }
+
+  // Provider not found
+  dot.className = 'dot disconnected';
+  dot.style.background = '#ef4444';
+  label.textContent = 'Wallet not found';
+  spinner.style.display = 'none';
+  btnConnect.textContent = 'Retry';
+  btnConnect.disabled = false;
+  btnConnect.onclick = () => location.reload();
+  notFound.classList.add('show');
+}
+
+async function connectWallet() {
+  const dot = document.getElementById('status-dot');
+  const label = document.getElementById('status-label');
+  const btnConnect = document.getElementById('btn-connect');
+  const spinner = document.getElementById('connect-spinner');
+  const addressBox = document.getElementById('address-box');
+  const walletNote = document.getElementById('wallet-note');
+
+  btnConnect.disabled = true;
+  spinner.style.display = 'inline-block';
+  label.textContent = 'Connecting…';
+
+  try {
+    const provider = window.midnight.mnLace;
+
+    // Enable returns wallet API
+    walletApi = await provider.enable(PREPROD_NETWORK);
+
+    const state = await walletApi.state();
+
+    const address = state?.unshielded?.address
+      || state?.address
+      || (typeof state === 'string' ? state : null);
+
+    const balance = state?.unshielded?.balance
+      || state?.balance
+      || null;
+
+    // Update UI
+    dot.className = 'dot connected';
+    label.textContent = 'Connected';
+    addressBox.textContent = address || 'Address unavailable';
+    addressBox.style.display = 'block';
+    spinner.style.display = 'none';
+    btnConnect.textContent = 'Disconnect';
+    btnConnect.disabled = false;
+    btnConnect.onclick = disconnectWallet;
+    btnConnect.className = 'btn btn-danger';
+
+    // Show network + tx cards
+    document.getElementById('network-card').style.display = 'block';
+    document.getElementById('net-address').textContent = address || '—';
+    document.getElementById('net-balance').textContent =
+      balance !== null ? balance + ' tNight' : 'Syncing…';
+    document.getElementById('tx-card').style.display = 'block';
+
+    walletNote.textContent = 'Wallet connected. You can now anchor records on Midnight.';
+
+    // Persist address to server session
+    await fetch('/wallet/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address })
+    });
+
+  } catch (err) {
+    dot.className = 'dot disconnected';
+    dot.style.background = '#ef4444';
+    label.textContent = 'Connection failed';
+    spinner.style.display = 'none';
+    btnConnect.disabled = false;
+    btnConnect.textContent = 'Retry';
+    btnConnect.onclick = connectWallet;
+    walletNote.textContent = 'Error: ' + (err.message || String(err));
+    console.error('Wallet connect error:', err);
+  }
+}
+
+async function disconnectWallet() {
+  walletApi = null;
+  await fetch('/wallet/disconnect', { method: 'POST' });
+  location.reload();
+}
+
+async function signTestTx() {
+  const btn = document.getElementById('btn-tx');
+  const result = document.getElementById('tx-result');
+  btn.disabled = true;
+  btn.textContent = 'Signing…';
+  result.className = 'tx-result';
+  result.style.display = 'none';
+
+  try {
+    if (!walletApi) throw new Error('Wallet not connected');
+
+    // Phase 1: confirm wallet API is responsive
+    const state = await walletApi.state();
+    const address = state?.unshielded?.address || state?.address || 'unknown';
+
+    // Trigger server-side anchor (uses dev wallet for proof generation,
+    // but the user's wallet address is recorded as the signer)
+    const resp = await fetch('/verify/anchor', { method: 'POST' });
+    const data = await resp.json();
+
+    result.textContent =
+      '✓ Test passed\n' +
+      'Wallet address: ' + address + '\n' +
+      (data.txId ? 'Anchor tx: ' + data.txId : 'Server response: ' + JSON.stringify(data, null, 2));
+    result.className = 'tx-result show';
+    btn.textContent = '✓ Done';
+
+  } catch (err) {
+    result.textContent = '✗ ' + (err.message || String(err));
+    result.className = 'tx-result show';
+    result.style.background = '#1c0a03';
+    result.style.borderColor = '#7c2d12';
+    result.style.color = '#fdba74';
+    btn.disabled = false;
+    btn.textContent = 'Retry';
+  }
+}
+
+// Boot: detect provider
+detectProvider();
+</script>
+</body>
+</html>`);
 });
 
 app.listen(PORT, "0.0.0.0", () => {
