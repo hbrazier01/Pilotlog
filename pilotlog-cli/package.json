@@ -7,7 +7,11 @@
     "build": "rm -rf dist && tsc --project tsconfig.build.json",
     "start-undeployed-local": "yarn build && node --experimental-specifier-resolution=node --loader ts-node/esm src/undeployed-local.ts",
     "deployed": "TS_NODE_TRANSPILE_ONLY=true node --experimental-specifier-resolution=node --loader ts-node/esm src/cli/deployed.ts",
-    "deployed:nvm": "export NVM_DIR=\"$HOME/.nvm\" && . \"$NVM_DIR/nvm.sh\" && nvm use 22 && TS_NODE_TRANSPILE_ONLY=true node --experimental-specifier-resolution=node --loader ts-node/esm src/cli/deployed.ts"
+    "deployed:nvm": "export NVM_DIR=\"$HOME/.nvm\" && . \"$NVM_DIR/nvm.sh\" && nvm use 22 && TS_NODE_TRANSPILE_ONLY=true node --experimental-specifier-resolution=node --loader ts-node/esm src/cli/deployed.ts",
+    "demo": "TS_NODE_TRANSPILE_ONLY=true node --experimental-specifier-resolution=node --loader ts-node/esm src/cli/deployed.ts",
+    "wallet:connect": "TS_NODE_TRANSPILE_ONLY=true node --experimental-specifier-resolution=node --loader ts-node/esm src/cli/wallet-connect.ts",
+    "wallet:disconnect": "TS_NODE_TRANSPILE_ONLY=true node --experimental-specifier-resolution=node --loader ts-node/esm src/cli/wallet-connect.ts -- --disconnect",
+    "wallet:test-tx": "TS_NODE_TRANSPILE_ONLY=true node --experimental-specifier-resolution=node --loader ts-node/esm src/cli/wallet-connect.ts -- --test-tx"
   },
   "dependencies": {
     "@repo/airlog-contract": "file:../compact/contracts/airlog",

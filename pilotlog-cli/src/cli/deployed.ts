@@ -1,16 +1,18 @@
 /**
- * deployed.ts — AirLog on-chain transaction flow (Midnight PreProd)
+ * deployed.ts — AirLog on-chain demo flow (Midnight PreProd)
  *
- * Proves end-to-end: deploy AirLog contract → call addEntry → get real tx hash.
+ * Goal:
+ *   deploy AirLog contract → registerAirframe → authorizeIssuer → addEntry
+ *   prints contract address and tx hash for each step
  *
  * Prerequisites:
- *   1. Proof server running at http://127.0.0.1:6300
- *      docker run -p 6300:6300 midnightntwrk/proof-server:latest
- *   2. Wallet funded with tNight on PreProd:
- *      https://faucet.preprod.midnight.network/
+ *   1. Node v22  (nvm use 22)
+ *   2. Proof server running at http://127.0.0.1:6300
+ *   3. Wallet funded with tNight on Midnight PreProd
+ *      Faucet: https://faucet.preprod.midnight.network/
  *
- * Run:
- *   node --experimental-specifier-resolution=node --loader ts-node/esm src/cli/deployed.ts
+ * Run from pilotlog-cli/:
+ *   npm run demo
  */
 
 import path from "node:path";
@@ -20,18 +22,23 @@ import { createHash } from "node:crypto";
 import { Buffer } from "buffer";
 import { WebSocket } from "ws";
 
-// Midnight core
+import { loadWalletSession } from "../walletSession.js";
+
 import { CompiledContract } from "@midnight-ntwrk/compact-js";
-import { deployContract, findDeployedContract } from "@midnight-ntwrk/midnight-js-contracts";
+import {
+  deployContract,
+  findDeployedContract,
+} from "@midnight-ntwrk/midnight-js-contracts";
 import { httpClientProofProvider } from "@midnight-ntwrk/midnight-js-http-client-proof-provider";
 import { indexerPublicDataProvider } from "@midnight-ntwrk/midnight-js-indexer-public-data-provider";
 import { NodeZkConfigProvider } from "@midnight-ntwrk/midnight-js-node-zk-config-provider";
 import { levelPrivateStateProvider } from "@midnight-ntwrk/midnight-js-level-private-state-provider";
-import { type MidnightProvider, type WalletProvider } from "@midnight-ntwrk/midnight-js-types";
-import { getNetworkId, setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
+import {
+  getNetworkId,
+  setNetworkId,
+} from "@midnight-ntwrk/midnight-js-network-id";
 import { toHex } from "@midnight-ntwrk/midnight-js-utils";
 
-// Wallet SDK
 import * as ledger from "@midnight-ntwrk/ledger-v8";
 import { unshieldedToken } from "@midnight-ntwrk/ledger-v8";
 import { WalletFacade } from "@midnight-ntwrk/wallet-sdk-facade";
@@ -46,30 +53,22 @@ import {
 import { DustWallet } from "@midnight-ntwrk/wallet-sdk-dust-wallet";
 import * as Rx from "rxjs";
 
-// AirLog contract
 import { Airlog, createAirlogPrivateState } from "@repo/airlog-contract";
 
 // Required for GraphQL subscriptions in Node.js
-// @ts-expect-error: global WebSocket polyfill for apollo
+// @ts-expect-error global WebSocket polyfill for apollo usage
 globalThis.WebSocket = WebSocket;
-
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Base directory for ZK assets — must contain keys/ and zkir/ subdirectories
 const ZK_KEYS_PATH = path.resolve(
   __dirname,
-  "../../../../compact/contracts/airlog/src/managed/airlog"
+  "../../../compact/contracts/airlog/src/managed/airlog"
 );
 
-// Deployment state persisted between runs
-const DEPLOYMENT_JSON = path.resolve(__dirname, "../../../../deployment.json");
+const DEPLOYMENT_JSON = path.resolve(__dirname, "../../../deployment.json");
 
-// Midnight PreProd network endpoints
 const PREPROD_CONFIG = {
   indexer: "https://indexer.preprod.midnight.network/api/v4/graphql",
   indexerWS: "wss://indexer.preprod.midnight.network/api/v4/graphql/ws",
@@ -77,59 +76,77 @@ const PREPROD_CONFIG = {
   proofServer: "http://127.0.0.1:6300",
 };
 
-// ---------------------------------------------------------------------------
-// Hardcoded dev seed (hex). DO NOT use in production.
-// Replace with your own seed generated from generateRandomSeed() on first run.
-// ---------------------------------------------------------------------------
+// Wallet seed resolution:
+//   1. AIRLOG_SEED env var (set by 1AM wallet / CI)
+//   2. DEV_SEED fallback (local dev only)
+// Run `npm run wallet:connect` first to connect the 1AM wallet.
 const DEV_SEED =
   "a1b2c3d4e5f60718293a4b5c6d7e8f9001112131415161718191a1b1c1d1e1f20";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+function resolveWalletSeed(): string {
+  if (process.env.AIRLOG_SEED) return process.env.AIRLOG_SEED;
+  const session = loadWalletSession();
+  if (session) {
+    // Session exists — seed must come from env; warn and fall through to DEV_SEED
+    console.log(`  Wallet: using session (${session.address.slice(0, 20)}…)`);
+    console.log(`  Note: set AIRLOG_SEED env var to use the session seed directly.`);
+  }
+  return DEV_SEED;
+}
 
 function loadDeployment(): { contractAddress: string } | null {
-  if (fs.existsSync(DEPLOYMENT_JSON)) {
-    return JSON.parse(fs.readFileSync(DEPLOYMENT_JSON, "utf8"));
-  }
-  return null;
+  if (!fs.existsSync(DEPLOYMENT_JSON)) return null;
+  return JSON.parse(fs.readFileSync(DEPLOYMENT_JSON, "utf8"));
 }
 
 function saveDeployment(contractAddress: string): void {
-  fs.writeFileSync(DEPLOYMENT_JSON, JSON.stringify({ contractAddress }, null, 2));
-  console.log(`  Deployment saved → ${DEPLOYMENT_JSON}`);
+  fs.writeFileSync(
+    DEPLOYMENT_JSON,
+    JSON.stringify({ contractAddress }, null, 2)
+  );
+  console.log(`Deployment saved -> ${DEPLOYMENT_JSON}`);
 }
 
 function deriveKeysFromSeed(seed: string) {
   const hdWallet = HDWallet.fromSeed(Buffer.from(seed, "hex"));
-  if (hdWallet.type !== "seedOk") throw new Error("HDWallet init failed");
+  if (hdWallet.type !== "seedOk") {
+    throw new Error("HDWallet init failed");
+  }
+
   const result = hdWallet.hdWallet
     .selectAccount(0)
     .selectRoles([Roles.Zswap, Roles.NightExternal, Roles.Dust])
     .deriveKeysAt(0);
-  if (result.type !== "keysDerived") throw new Error("Key derivation failed");
+
+  if (result.type !== "keysDerived") {
+    throw new Error("Key derivation failed");
+  }
+
   hdWallet.hdWallet.clear();
   return result.keys;
 }
 
 async function buildWallet(seed: string) {
   const keys = deriveKeysFromSeed(seed);
+
   const shieldedSecretKeys = ledger.ZswapSecretKeys.fromSeed(keys[Roles.Zswap]);
   const dustSecretKey = ledger.DustSecretKey.fromSeed(keys[Roles.Dust]);
-  const unshieldedKeystore = createKeystore(keys[Roles.NightExternal], getNetworkId());
+  const unshieldedKeystore = createKeystore(
+    keys[Roles.NightExternal],
+    getNetworkId()
+  );
 
-  const config = PREPROD_CONFIG;
   const sharedCfg = {
     networkId: getNetworkId(),
     indexerClientConnection: {
-      indexerHttpUrl: config.indexer,
-      indexerWsUrl: config.indexerWS,
+      indexerHttpUrl: PREPROD_CONFIG.indexer,
+      indexerWsUrl: PREPROD_CONFIG.indexerWS,
     },
-    provingServerUrl: new URL(config.proofServer),
-    relayURL: new URL(config.node.replace(/^http/, "ws")),
+    provingServerUrl: new URL(PREPROD_CONFIG.proofServer),
+    relayURL: new URL(PREPROD_CONFIG.node.replace(/^http/, "ws")),
     txHistoryStorage: new InMemoryTransactionHistoryStorage(),
     costParameters: {
-      additionalFeeOverhead: 300_000_000_000_000n,
+      additionalFeeOverhead: 0n,
       feeBlocksMargin: 5,
     },
   };
@@ -138,69 +155,19 @@ async function buildWallet(seed: string) {
     configuration: sharedCfg,
     shielded: (cfg) => ShieldedWallet(cfg).startWithSecretKeys(shieldedSecretKeys),
     unshielded: (cfg) =>
-      UnshieldedWallet(cfg).startWithPublicKey(PublicKey.fromKeyStore(unshieldedKeystore)),
+      UnshieldedWallet(cfg).startWithPublicKey(
+        PublicKey.fromKeyStore(unshieldedKeystore)
+      ),
     dust: (cfg) =>
       DustWallet(cfg).startWithSecretKey(
         dustSecretKey,
         ledger.LedgerParameters.initialParameters().dust
       ),
   });
+
   await wallet.start(shieldedSecretKeys, dustSecretKey);
 
   return { wallet, shieldedSecretKeys, dustSecretKey, unshieldedKeystore };
-}
-
-async function createProviders(
-  walletCtx: Awaited<ReturnType<typeof buildWallet>>
-): Promise<WalletProvider & MidnightProvider & { publicDataProvider: any; zkConfigProvider: any; proofProvider: any; privateStateProvider: any }> {
-  const { wallet, shieldedSecretKeys, dustSecretKey, unshieldedKeystore } = walletCtx;
-
-  const state = await Rx.firstValueFrom(
-    wallet.state().pipe(Rx.filter((s) => s.isSynced))
-  );
-
-  const walletAndMidnight: WalletProvider & MidnightProvider = {
-    getCoinPublicKey() {
-      return state.shielded.coinPublicKey.toHexString();
-    },
-    getEncryptionPublicKey() {
-      return state.shielded.encryptionPublicKey.toHexString();
-    },
-    async balanceTx(tx, ttl?) {
-      const recipe = await wallet.balanceUnboundTransaction(
-        tx,
-        { shieldedSecretKeys, dustSecretKey },
-        { ttl: ttl ?? new Date(Date.now() + 30 * 60 * 1000) }
-      );
-      // Sign unshielded intents manually (works around wallet-sdk bug with 'pre-proof' marker)
-      const signFn = (payload: Uint8Array) => unshieldedKeystore.signData(payload);
-      signIntents(recipe.baseTransaction, signFn, "proof");
-      if (recipe.balancingTransaction) signIntents(recipe.balancingTransaction, signFn, "pre-proof");
-      return wallet.finalizeRecipe(recipe);
-    },
-    submitTx(tx) {
-      return wallet.submitTransaction(tx) as any;
-    },
-  };
-
-  const coinPublicKey = walletAndMidnight.getCoinPublicKey();
-  const storagePassword = `${coinPublicKey}!A`;
-  const zkConfigProvider = new NodeZkConfigProvider(ZK_KEYS_PATH);
-
-  return {
-    ...walletAndMidnight,
-    publicDataProvider: indexerPublicDataProvider(
-      PREPROD_CONFIG.indexer,
-      PREPROD_CONFIG.indexerWS
-    ),
-    zkConfigProvider,
-    proofProvider: httpClientProofProvider(PREPROD_CONFIG.proofServer, zkConfigProvider),
-    privateStateProvider: levelPrivateStateProvider({
-      privateStateStoreName: "airlog-private-state",
-      accountId: coinPublicKey,
-      privateStoragePasswordProvider: () => storagePassword,
-    }),
-  };
 }
 
 function signIntents(
@@ -209,130 +176,262 @@ function signIntents(
   proofMarker: "proof" | "pre-proof"
 ): void {
   if (!tx.intents || tx.intents.size === 0) return;
+
   for (const segment of tx.intents.keys()) {
     const intent = tx.intents.get(segment);
     if (!intent) continue;
-    const cloned = ledger.Intent.deserialize<ledger.SignatureEnabled, ledger.Proofish, ledger.PreBinding>(
-      "signature", proofMarker, "pre-binding", intent.serialize()
-    );
+
+    const cloned = ledger.Intent.deserialize<
+      ledger.SignatureEnabled,
+      ledger.Proofish,
+      ledger.PreBinding
+    >("signature", proofMarker, "pre-binding", intent.serialize());
+
     const sigData = cloned.signatureData(segment);
     const signature = signFn(sigData);
+
     if (cloned.fallibleUnshieldedOffer) {
       const sigs = cloned.fallibleUnshieldedOffer.inputs.map(
-        (_: any, i: number) => cloned.fallibleUnshieldedOffer!.signatures.at(i) ?? signature
+        (_: unknown, i: number) =>
+          cloned.fallibleUnshieldedOffer!.signatures.at(i) ?? signature
       );
-      cloned.fallibleUnshieldedOffer = cloned.fallibleUnshieldedOffer.addSignatures(sigs);
+      cloned.fallibleUnshieldedOffer =
+        cloned.fallibleUnshieldedOffer.addSignatures(sigs);
     }
+
     if (cloned.guaranteedUnshieldedOffer) {
       const sigs = cloned.guaranteedUnshieldedOffer.inputs.map(
-        (_: any, i: number) => cloned.guaranteedUnshieldedOffer!.signatures.at(i) ?? signature
+        (_: unknown, i: number) =>
+          cloned.guaranteedUnshieldedOffer!.signatures.at(i) ?? signature
       );
-      cloned.guaranteedUnshieldedOffer = cloned.guaranteedUnshieldedOffer.addSignatures(sigs);
+      cloned.guaranteedUnshieldedOffer =
+        cloned.guaranteedUnshieldedOffer.addSignatures(sigs);
     }
+
     tx.intents.set(segment, cloned);
   }
 }
 
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
+async function createProviders(
+  walletCtx: Awaited<ReturnType<typeof buildWallet>>
+) {
+  const { wallet, shieldedSecretKeys, dustSecretKey, unshieldedKeystore } =
+    walletCtx;
+
+  const state = await Rx.firstValueFrom(
+    wallet.state().pipe(Rx.filter((s) => s.isSynced))
+  );
+
+  const walletAndMidnight = {
+    getCoinPublicKey() {
+      return state.shielded.coinPublicKey.toHexString();
+    },
+    getEncryptionPublicKey() {
+      return state.shielded.encryptionPublicKey.toHexString();
+    },
+    async balanceTx(tx: unknown, ttl?: Date) {
+      const recipe = await wallet.balanceUnboundTransaction(
+        tx as any,
+        { shieldedSecretKeys, dustSecretKey },
+        { ttl: ttl ?? new Date(Date.now() + 30 * 60 * 1000) }
+      );
+
+      const signFn = (payload: Uint8Array) => unshieldedKeystore.signData(payload);
+
+      signIntents(recipe.baseTransaction, signFn, "proof");
+      if (recipe.balancingTransaction) {
+        signIntents(recipe.balancingTransaction, signFn, "pre-proof");
+      }
+
+      return wallet.finalizeRecipe(recipe);
+    },
+    submitTx(tx: unknown) {
+      return wallet.submitTransaction(tx as any) as any;
+    },
+  };
+
+  const coinPublicKey = walletAndMidnight.getCoinPublicKey();
+  const storagePassword = `${coinPublicKey}!A`;
+  const zkConfigProvider = new NodeZkConfigProvider(ZK_KEYS_PATH);
+
+  return {
+    walletProvider: walletAndMidnight,
+    midnightProvider: walletAndMidnight,
+    publicDataProvider: indexerPublicDataProvider(
+      PREPROD_CONFIG.indexer,
+      PREPROD_CONFIG.indexerWS
+    ),
+    zkConfigProvider,
+    proofProvider: httpClientProofProvider(
+      PREPROD_CONFIG.proofServer,
+      zkConfigProvider
+    ),
+    privateStateProvider: levelPrivateStateProvider({
+      privateStateStoreName: "airlog-private-state",
+      accountId: coinPublicKey,
+      privateStoragePasswordProvider: () => storagePassword,
+    }),
+  };
+}
+
+function step(n: number, label: string) {
+  console.log(`\n[${n}] ${label}`);
+  console.log("─".repeat(50));
+}
+
+function ok(msg: string) {
+  console.log(`  ✓ ${msg}`);
+}
+
+function fail(msg: string) {
+  console.error(`  ✗ ${msg}`);
+}
 
 async function main() {
-  console.log("=== AirLog on-chain transaction flow (Midnight PreProd) ===\n");
+  console.log("╔══════════════════════════════════════════════════╗");
+  console.log("║      AirLog — Midnight PreProd Demo Flow         ║");
+  console.log("╚══════════════════════════════════════════════════╝");
 
-  // Set network to PreProd
   setNetworkId("preprod");
-  console.log(`Network: ${getNetworkId()}`);
-  console.log(`ZK keys: ${ZK_KEYS_PATH}`);
-  console.log(`Proof server: ${PREPROD_CONFIG.proofServer}\n`);
+  console.log(`\nNetwork:      ${getNetworkId()}`);
+  console.log(`ZK keys:      ${ZK_KEYS_PATH}`);
+  console.log(`Proof server: ${PREPROD_CONFIG.proofServer}`);
 
-  // Compile the AirLog contract with ZK assets
-  const airlogCompiledContract = CompiledContract.make("airlog", Airlog.Contract).pipe(
+  const airlogCompiledContract = CompiledContract.make(
+    "airlog",
+    Airlog.Contract
+  ).pipe(
     CompiledContract.withVacantWitnesses,
     CompiledContract.withCompiledFileAssets(ZK_KEYS_PATH)
   );
 
-  // Build wallet from hardcoded dev seed
-  console.log("Building wallet from seed...");
-  const walletCtx = await buildWallet(DEV_SEED);
-  console.log("Wallet built.\n");
+  step(1, "Build wallet");
+  const seed = resolveWalletSeed();
+  const walletCtx = await buildWallet(seed);
+  ok(`Wallet ready`);
+  console.log(`  Address (fund with tNight): ${walletCtx.unshieldedKeystore.getBech32Address()}`);
+  console.log(`  Faucet: https://faucet.preprod.midnight.network/`);
 
-  // Show unshielded address for funding
-  console.log(`Unshielded address (fund with tNight): ${walletCtx.unshieldedKeystore.getBech32Address()}`);
-  console.log("Faucet: https://faucet.preprod.midnight.network/\n");
-
-  // Wait for sync
-  console.log("Syncing with PreProd network (this may take a minute)...");
+  step(2, "Sync with PreProd");
   const syncedState = await Rx.firstValueFrom(
     walletCtx.wallet.state().pipe(
       Rx.throttleTime(5_000),
       Rx.filter((s) => s.isSynced)
     )
   );
-  console.log("Synced.\n");
+  ok("Synced");
 
-  // Check for tNight balance
   const balance = syncedState.unshielded.balances[unshieldedToken().raw] ?? 0n;
-  console.log(`tNight balance: ${balance}`);
+  console.log(`  tNight balance: ${balance}`);
+
   if (balance === 0n) {
-    console.error(
-      "\nERROR: Wallet has no tNight. Fund it at https://faucet.preprod.midnight.network/ then re-run."
-    );
+    fail("Wallet has no tNight. Fund it at https://faucet.preprod.midnight.network/ then re-run.");
     process.exit(1);
   }
 
-  // Configure all providers
-  console.log("\nConfiguring providers...");
-  const providers = await createProviders(walletCtx);
-  console.log("Providers ready.\n");
+  // Dust bootstrap
+  const dustState = await walletCtx.wallet.dust.waitForSyncedState();
+  console.log(`  Dust coins (UTXOs): ${dustState.totalCoins.length}`);
 
-  // Deploy or reuse contract
+  if (dustState.totalCoins.length === 0) {
+    const unshieldedState = await walletCtx.wallet.unshielded.waitForSyncedState();
+    const nightUtxos = unshieldedState.availableCoins;
+    console.log(`  Dust wallet empty. Registering ${nightUtxos.length} Night UTXO(s) for dust generation...`);
+
+    if (nightUtxos.length === 0) {
+      fail("No unshielded Night UTXOs to register. Wallet cannot pay fees.");
+      process.exit(1);
+    }
+
+    const nightVerifyingKey = walletCtx.unshieldedKeystore.getPublicKey();
+    const signFn = (payload: Uint8Array) => walletCtx.unshieldedKeystore.signData(payload);
+
+    const registrationRecipe = await walletCtx.wallet.registerNightUtxosForDustGeneration(
+      nightUtxos,
+      nightVerifyingKey,
+      signFn
+    );
+
+    const finalizedRegistration = await walletCtx.wallet.finalizeRecipe(registrationRecipe);
+    const regTxId = await walletCtx.wallet.submitTransaction(finalizedRegistration);
+    ok(`Dust registration submitted: ${regTxId}`);
+    console.log("  Waiting 30s for dust generation to begin...");
+    await new Promise((r) => setTimeout(r, 30_000));
+  }
+
+  step(3, "Configure providers");
+  const providers = await createProviders(walletCtx);
+  ok("Providers ready");
+
   let deployedContract: any;
+  let isNewDeploy = false;
   const existing = loadDeployment();
 
+  step(4, existing ? "Join existing contract" : "Deploy AirLog contract");
+
   if (existing) {
-    console.log(`Joining existing contract at ${existing.contractAddress}...`);
-    deployedContract = await findDeployedContract(providers, {
+    console.log(`  Contract address: ${existing.contractAddress}`);
+    deployedContract = await findDeployedContract(providers as any, {
       contractAddress: existing.contractAddress,
       compiledContract: airlogCompiledContract,
       privateStateId: "airlogPrivateState",
       initialPrivateState: createAirlogPrivateState(),
     });
-    console.log("Contract joined.\n");
+    ok("Contract joined");
   } else {
-    console.log("Deploying AirLog contract to PreProd...");
-    deployedContract = await deployContract(providers, {
+    isNewDeploy = true;
+    deployedContract = await deployContract(providers as any, {
       compiledContract: airlogCompiledContract,
       privateStateId: "airlogPrivateState",
       initialPrivateState: createAirlogPrivateState(),
     });
     const contractAddress = deployedContract.deployTxData.public.contractAddress;
-    console.log(`Contract deployed at: ${contractAddress}\n`);
+    ok(`Contract deployed`);
+    console.log(`  Contract address: ${contractAddress}`);
+    console.log(`  Deploy tx:        ${deployedContract.deployTxData.public.txId}`);
     saveDeployment(contractAddress);
   }
 
-  // Build addEntry arguments
+  const contractAddress = deployedContract.deployTxData.public.contractAddress;
+
   const airframeId = new Uint8Array(32);
   const tail = Buffer.from("N12345", "utf8");
   airframeId.set(tail.subarray(0, Math.min(tail.length, 32)));
 
-  const entryType = Airlog.EntryType.ANNUAL; // ANNUAL inspection
-
+  const entryType = Airlog.EntryType.ANNUAL;
   const dateUtc = BigInt(Math.floor(new Date("2026-04-02").getTime() / 1000));
-  const tachOrTT = BigInt(1234); // 1234 tach hours
-
+  const tachOrTT = 1234n;
   const docHash = new Uint8Array(
     createHash("sha256").update("annual-inspection-report-2026.pdf").digest()
   );
-  const docRef = new Uint8Array(32); // empty ref for now
+  const docRef = new Uint8Array(32);
 
-  // Call addEntry — the key transaction
-  console.log("Calling addEntry on-chain...");
-  console.log(`  airframeId: N12345 (padded to 32 bytes)`);
-  console.log(`  entryType: ANNUAL`);
-  console.log(`  dateUtc: ${dateUtc} (2026-04-02)`);
-  console.log(`  tachOrTT: ${tachOrTT}`);
-  console.log(`  docHash: ${toHex(docHash)}`);
+  if (isNewDeploy) {
+    step(5, "registerAirframe");
+    console.log("  airframeId: N12345 (padded to 32 bytes)");
+    const registerTxData = await deployedContract.callTx.registerAirframe(airframeId);
+    ok(`SUCCESS`);
+    console.log(`  tx: ${registerTxData.public.txId}`);
+
+    step(6, "authorizeIssuer");
+    const walletState = await Rx.firstValueFrom(
+      walletCtx.wallet.state().pipe(Rx.filter((s: any) => s.isSynced))
+    );
+    const coinPkHex = (walletState as any).shielded.coinPublicKey.toHexString();
+    const coinPkBytes = new Uint8Array(Buffer.from(coinPkHex, "hex"));
+    const issuerPk = { bytes: coinPkBytes };
+
+    const authTxData = await deployedContract.callTx.authorizeIssuer(airframeId, issuerPk);
+    ok(`SUCCESS`);
+    console.log(`  tx: ${authTxData.public.txId}`);
+  }
+
+  step(isNewDeploy ? 7 : 5, "addEntry");
+  console.log("  airframeId: N12345");
+  console.log("  entryType:  ANNUAL");
+  console.log(`  date:       2026-04-02 (${dateUtc} unix)`);
+  console.log(`  tachOrTT:   ${tachOrTT}`);
+  console.log(`  docHash:    ${toHex(docHash)}`);
 
   const finalizedTxData = await deployedContract.callTx.addEntry(
     airframeId,
@@ -343,11 +442,16 @@ async function main() {
     docRef
   );
 
-  // Output
-  console.log("\n=== SUCCESS ===");
-  console.log(`Transaction hash: ${finalizedTxData.public.txId}`);
-  console.log(`Block height:     ${finalizedTxData.public.blockHeight}`);
-  console.log(`Contract address: ${deployedContract.deployTxData.public.contractAddress}`);
+  ok(`SUCCESS`);
+  console.log(`  tx:       ${finalizedTxData.public.txId}`);
+  console.log(`  block:    ${finalizedTxData.public.blockHeight}`);
+
+  console.log("\n╔══════════════════════════════════════════════════╗");
+  console.log("║  DEMO COMPLETE                                   ║");
+  console.log("╠══════════════════════════════════════════════════╣");
+  console.log(`║  Contract: ${contractAddress.slice(0, 38)}  ║`);
+  console.log(`║  addEntry: ${finalizedTxData.public.txId.slice(0, 38)}  ║`);
+  console.log("╚══════════════════════════════════════════════════╝");
   console.log("\nAirLog entry anchored on Midnight PreProd.");
 
   process.exit(0);
