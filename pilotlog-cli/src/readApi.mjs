@@ -3753,8 +3753,9 @@ async function connectWallet() {
     // Get tNight balance (unshielded)
     const unshieldedBalances = await connectedApi.getUnshieldedBalances();
     // Native token key is hex of the token type; sum all for display
+    // Using Number() instead of BigInt to avoid SyntaxError on older JS engines
     const totalBalance = Object.values(unshieldedBalances)
-      .reduce((acc, v) => acc + BigInt(v), 0n);
+      .reduce((acc, v) => acc + Number(v), 0);
 
     // Get wallet-configured network endpoints
     const config = await connectedApi.getConfiguration();
