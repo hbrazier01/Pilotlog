@@ -3608,7 +3608,7 @@ app.get("/wallet", (_req, res) => {
     </div>
     <div class="actions" id="wallet-actions">
       <button class="btn" id="btn-connect" disabled>
-        <span class="spinner" id="connect-spinner"></span>Detecting…
+        <span class="spinner" id="connect-spinner"></span><span id="btn-label">Detecting…</span>
       </button>
     </div>
     <div class="note" id="wallet-note"></div>
@@ -3678,12 +3678,19 @@ function pick1AMWallet(wallets) {
 
 // ── Provider detection ────────────────────────────────────────────────────────
 
+function setBtnLabel(text) {
+  const el = document.getElementById('btn-label');
+  if (el) el.textContent = text;
+}
+
 async function detectProvider() {
   const dot = document.getElementById('status-dot');
   const label = document.getElementById('status-label');
   const btnConnect = document.getElementById('btn-connect');
   const spinner = document.getElementById('connect-spinner');
   const notFound = document.getElementById('not-found-box');
+
+  console.log('[wallet] detectProvider started');
 
   // Poll up to 3s — extension injects after page load
   for (let i = 0; i < 6; i++) {
@@ -3695,10 +3702,11 @@ async function detectProvider() {
 
       dot.className = 'dot disconnected';
       label.textContent = (picked.key === '1am' ? '1AM wallet detected' : walletName + ' detected') + ' - not connected';
-      spinner.style.display = 'none';
-      btnConnect.textContent = 'Connect ' + walletName;
+      if (spinner) spinner.style.display = 'none';
+      setBtnLabel('Connect ' + walletName);
       btnConnect.disabled = false;
       btnConnect.onclick = connectWallet;
+      console.log('[wallet] provider detected:', walletName);
 
       // Show all available wallets if more than one
       if (wallets.length > 1) {
@@ -3711,11 +3719,12 @@ async function detectProvider() {
   }
 
   // Not found
+  console.log('[wallet] no provider detected');
   dot.className = 'dot disconnected';
   dot.style.background = '#ef4444';
   label.textContent = 'No Midnight wallet detected';
-  spinner.style.display = 'none';
-  btnConnect.textContent = 'Retry';
+  if (spinner) spinner.style.display = 'none';
+  setBtnLabel('Retry');
   btnConnect.disabled = false;
   btnConnect.onclick = () => location.reload();
   notFound.classList.add('show');
@@ -3724,6 +3733,7 @@ async function detectProvider() {
 // ── Connect flow ──────────────────────────────────────────────────────────────
 
 async function connectWallet() {
+  console.log('[wallet] connectWallet triggered');
   const dot = document.getElementById('status-dot');
   const label = document.getElementById('status-label');
   const btnConnect = document.getElementById('btn-connect');
@@ -3731,44 +3741,53 @@ async function connectWallet() {
   const addressBox = document.getElementById('address-box');
   const walletNote = document.getElementById('wallet-note');
 
-  btnConnect.disabled = true;
-  spinner.style.display = 'inline-block';
-  label.textContent = 'Connecting...';
+  if (btnConnect) btnConnect.disabled = true;
+  if (spinner) spinner.style.display = 'inline-block';
+  if (label) label.textContent = 'Connecting...';
 
   try {
     if (!selectedProvider) throw new Error('No wallet provider selected');
+    console.log('[wallet] provider found, calling enable()');
 
     // DApp Connector API: provider.enable() → ConnectedAPI
     connectedApi = await selectedProvider.enable();
     if (!connectedApi) throw new Error('provider.enable() returned null - wallet rejected connection');
+    console.log('[wallet] enable() succeeded');
 
     // Get wallet address — prefer shielded (Zswap), fall back to unshielded
     const shieldedAddresses = await connectedApi.getShieldedAddresses();
     const walletAddress = (shieldedAddresses && shieldedAddresses[0]) || '(address unavailable)';
+    console.log('[wallet] address:', walletAddress);
 
     // Get wallet-configured network endpoints
     const config = await connectedApi.getConfiguration().catch(() => ({}));
 
     // Update UI
-    dot.className = 'dot connected';
-    label.textContent = (selectedProvider.name || 'Wallet') + ' - Connected';
-    addressBox.textContent = walletAddress;
-    addressBox.style.display = 'block';
-    spinner.style.display = 'none';
-    btnConnect.textContent = 'Disconnect';
-    btnConnect.disabled = false;
-    btnConnect.onclick = disconnectWallet;
-    btnConnect.className = 'btn btn-danger';
+    if (dot) dot.className = 'dot connected';
+    if (label) label.textContent = (selectedProvider.name || 'Wallet') + ' - Connected';
+    if (addressBox) { addressBox.textContent = walletAddress; addressBox.style.display = 'block'; }
+    if (spinner) spinner.style.display = 'none';
+    setBtnLabel('Disconnect');
+    if (btnConnect) {
+      btnConnect.disabled = false;
+      btnConnect.onclick = disconnectWallet;
+      btnConnect.className = 'btn btn-danger';
+    }
 
     // Show network card
-    document.getElementById('network-card').style.display = 'block';
-    document.getElementById('net-name').textContent = config.networkId || NETWORK_ID;
-    document.getElementById('net-address').textContent = walletAddress;
-    document.getElementById('net-balance').textContent = '—';
+    const networkCard = document.getElementById('network-card');
+    if (networkCard) networkCard.style.display = 'block';
+    const netName = document.getElementById('net-name');
+    if (netName) netName.textContent = config.networkId || NETWORK_ID;
+    const netAddress = document.getElementById('net-address');
+    if (netAddress) netAddress.textContent = walletAddress;
+    const netBalance = document.getElementById('net-balance');
+    if (netBalance) netBalance.textContent = '—';
 
     // Show test tx card
-    document.getElementById('tx-card').style.display = 'block';
-    walletNote.textContent = 'Wallet connected. Network: ' + (config.networkId || NETWORK_ID);
+    const txCard = document.getElementById('tx-card');
+    if (txCard) txCard.style.display = 'block';
+    if (walletNote) walletNote.textContent = 'Wallet connected. Network: ' + (config.networkId || NETWORK_ID);
 
     // Persist to server session
     await fetch('/wallet/connect', {
@@ -3776,17 +3795,16 @@ async function connectWallet() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ address: walletAddress })
     });
+    console.log('[wallet] connection success');
 
   } catch (err) {
-    dot.className = 'dot disconnected';
-    dot.style.background = '#ef4444';
-    label.textContent = 'Connection failed';
-    spinner.style.display = 'none';
-    btnConnect.disabled = false;
-    btnConnect.textContent = 'Retry';
-    btnConnect.onclick = connectWallet;
-    walletNote.textContent = 'Error: ' + (err.message || String(err));
-    console.error('Wallet connect error:', err);
+    console.error('[wallet] connect error:', err);
+    if (dot) { dot.className = 'dot disconnected'; dot.style.background = '#ef4444'; }
+    if (label) label.textContent = 'Connection failed';
+    if (spinner) spinner.style.display = 'none';
+    if (btnConnect) { btnConnect.disabled = false; btnConnect.onclick = connectWallet; }
+    setBtnLabel('Retry');
+    if (walletNote) walletNote.textContent = 'Error: ' + (err.message || String(err));
   }
 }
 
