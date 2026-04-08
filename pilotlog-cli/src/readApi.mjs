@@ -5,7 +5,9 @@ import express from "express";
 import { createHash, randomBytes } from "node:crypto";
 import { buildIntegrityResult } from "../../src/services/build-integrity-result.mjs";
 import { anchorOnMidnight } from "../../src/services/airlog-anchor-midnight.mjs";
+import { canonicalizeFlightEntry } from "../../src/lib/canonicalize-entry.mjs";
 import { buildTrustReport } from "../../src/services/build-trust-report.mjs";
+import { buildPilotReport } from "../../src/services/build-pilot-report.mjs";
 import { computeReadiness, PILOT_PHASES } from "./lib/readiness.mjs";
 
 const PORT = Number(process.env.PORT || 8788);
@@ -15,6 +17,7 @@ const PROFILE_PATH = path.join(DATA_DIR, "profile.json");
 const AIRCRAFT_PATH = path.join(DATA_DIR, "aircraft.json");
 const VERIFICATION_PATH = path.join(DATA_DIR, "verification.json");
 const MAINTENANCE_PATH = path.join(DATA_DIR, "maintenance.json");
+const WALLET_PATH = path.join(DATA_DIR, "wallet.json");
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(ENTRIES_PATH)) fs.writeFileSync(ENTRIES_PATH, "[]");
@@ -76,6 +79,85 @@ function readEntries() {
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
+  }
+}
+
+function readWalletSession() {
+  try {
+    if (!fs.existsSync(WALLET_PATH)) return null;
+    const raw = fs.readFileSync(WALLET_PATH, "utf-8");
+    const parsed = JSON.parse(raw);
+    return parsed && parsed.address ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveWalletSession(session) {
+  fs.writeFileSync(WALLET_PATH, JSON.stringify(session, null, 2));
+}
+
+function updateEntryAnchorFields(entryId, fields) {
+  try {
+    const entries = readEntries();
+    const idx = entries.findIndex((e) => e.id === entryId);
+    if (idx === -1) return;
+    entries[idx] = { ...entries[idx], ...fields };
+    fs.writeFileSync(ENTRIES_PATH, JSON.stringify(entries, null, 2));
+  } catch (err) {
+    console.error("[anchor] failed to update entry anchor fields:", err.message);
+  }
+}
+
+async function anchorEntryInBackground(entryId, aircraftId) {
+  try {
+    const entries = readEntries();
+    const entry = entries.find((e) => e.id === entryId);
+    if (!entry) return;
+    // Use pre-computed canonical hash stored at save time
+    const recordHash = entry.anchorHash;
+    if (!recordHash) return;
+    const aircraftList = readAircraft();
+    const aircraft = aircraftList.find((a) => a.ident === aircraftId || a.id === aircraftId) || aircraftList[0];
+    const airframeId = aircraft
+      ? createHash("sha256").update(String(aircraft.ident || aircraftId).toUpperCase()).digest("hex")
+      : createHash("sha256").update(String(aircraftId).toUpperCase()).digest("hex");
+    const result = await anchorOnMidnight({
+      anchorHash: recordHash,
+      airframeId,
+      hours: Number(entry.totalTime || entry.total || 0),
+    });
+    if (result.anchored) {
+      const anchoredAt = result.anchoredAt || new Date().toISOString();
+      updateEntryAnchorFields(entryId, {
+        anchorStatus: "anchored",
+        anchored: true,
+        anchoredAt,
+        anchorTx: result.anchorId || null,
+        anchorHash: recordHash,
+        anchor: {
+          hash: recordHash,
+          walletAddress: entry.anchor?.walletAddress || null,
+          anchoredAt,
+          status: "anchored",
+        },
+      });
+    } else {
+      updateEntryAnchorFields(entryId, {
+        anchorStatus: "anchor_failed",
+        anchored: false,
+        anchorHash: recordHash,
+        anchor: {
+          hash: recordHash,
+          walletAddress: entry.anchor?.walletAddress || null,
+          anchoredAt: entry.anchor?.anchoredAt || new Date().toISOString(),
+          status: "hashed",
+        },
+      });
+    }
+  } catch (err) {
+    console.error("[anchor] background anchor error:", err.message);
+    updateEntryAnchorFields(entryId, { anchorStatus: "anchor_failed", anchored: false });
   }
 }
 
@@ -526,7 +608,7 @@ app.get("/", (_req, res) => {
     <div class="brand">PilotLog</div>
     <div class="nav">
       <a href="/wallet">Wallet</a>
-      <a href="/report">Aircraft Record Report →</a>
+      <a href="/pilot-report">Pilot Report →</a>
     </div>
   </div>
 
@@ -570,7 +652,7 @@ app.get("/", (_req, res) => {
 
   <div class="actions">
     <button class="btn btn-outline" id="openLogBtn" onclick="toggleForm()">+ Log Flight</button>
-    <a href="/report" class="btn">View Aircraft Record Report →</a>
+    <a href="/pilot-report" class="btn">View Pilot Report →</a>
   </div>
 
   <div class="log-form" id="logForm">
@@ -749,14 +831,14 @@ app.get("/", (_req, res) => {
         // CTA helpers
         function buildCta(pd) {
           const ctaType = pd.ctaType || 'record';
-          const ctaLabel = pd.ctaLabel || 'View Aircraft Record →';
+          const ctaLabel = pd.ctaLabel || 'View Pilot Report →';
           if (ctaType === 'log') {
             return \`<button class="today-cta" onclick="openLogForm()">\${ctaLabel}</button>\`;
           }
           if (ctaType === 'plan') {
             return \`<button class="today-cta" onclick="openLogForm()">\${ctaLabel}</button>\`;
           }
-          return \`<a class="today-cta" href="/report">\${ctaLabel}</a>\`;
+          return \`<a class="today-cta" href="/pilot-report">\${ctaLabel}</a>\`;
         }
 
         // Today Card
@@ -902,10 +984,14 @@ app.get("/", (_req, res) => {
         showToast('Error: ' + (err.error || res.status));
         return;
       }
+      const saved = await res.json();
       e.target.reset();
       e.target.querySelector('input[name="date"]').value = new Date().toISOString().slice(0,10);
       toggleForm();
-      showToast('Flight logged!');
+      const toastMsg = saved.walletConnected
+        ? 'Flight saved · Anchored to wallet'
+        : 'Flight saved · Saved with local hash only';
+      showToast(toastMsg);
       sessionStorage.setItem('airlog_just_logged', '1');
       setTimeout(() => location.reload(), 600);
     }
@@ -932,11 +1018,23 @@ app.get("/", (_req, res) => {
     <table>
       <thead>
         <tr>
-          <th>Date</th><th>Aircraft</th><th>Route</th><th>Total</th><th>PIC</th><th class="muted">Remarks</th>
+          <th>Date</th><th>Aircraft</th><th>Route</th><th>Total</th><th>PIC</th><th class="muted">Remarks</th><th>Status</th>
         </tr>
       </thead>
       <tbody>
-        ${recent.map(e => `
+        ${recent.map(e => {
+          const anchorObj = e.anchor || null;
+          const status = anchorObj?.status || e.anchorStatus || (e.anchored ? "anchored" : null);
+          const statusBadge = status === "anchored"
+            ? '<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Anchored</span>'
+            : status === "anchor_failed"
+            ? '<span style="color:#ef4444;font-size:11px;font-weight:600;">&#x2717; Failed</span>'
+            : status === "pending_anchor"
+            ? '<span style="color:#f59e0b;font-size:11px;font-weight:600;">&#x29D7; Pending</span>'
+            : status === "hashed" || status === "not_anchored"
+            ? '<span style="color:#718096;font-size:11px;" title="Local hash only — connect wallet to anchor">&#x29B2; Hashed</span>'
+            : '<span style="color:#718096;font-size:11px;">—</span>';
+          return `
           <tr>
             <td>${String(e.date || "").slice(0, 10)}</td>
             <td>${e.aircraftIdent || e.aircraftId || ""} <span class="muted">${e.aircraftType ? `(${e.aircraftType})` : ""}</span></td>
@@ -944,9 +1042,10 @@ app.get("/", (_req, res) => {
             <td>${e.totalTime ?? e.total ?? ""}</td>
             <td>${e.pic ?? ""}</td>
             <td class="muted">${(e.remarks || "").replaceAll("<","&lt;").replaceAll(">","&gt;")}</td>
-          </tr>
-        `).join("")}
-        ${recent.length === 0 ? '<tr><td colspan="6" class="muted">No flights logged yet.</td></tr>' : ""}
+            <td>${statusBadge}</td>
+          </tr>`;
+        }).join("")}
+        ${recent.length === 0 ? '<tr><td colspan="7" class="muted">No flights logged yet.</td></tr>' : ""}
       </tbody>
     </table>
   </div>
@@ -970,8 +1069,11 @@ app.post("/entries", (req, res) => {
   if (!aircraftId) {
     return res.status(400).json({ error: "aircraftId is required" });
   }
-  const entry = {
-    id: randomBytes(8).toString("hex"),
+  const walletSession = readWalletSession();
+  const walletConnected = !!walletSession;
+  const entryId = randomBytes(8).toString("hex");
+  const entryBase = {
+    id: entryId,
     date: date || new Date().toISOString().slice(0, 10),
     aircraftId: String(aircraftId).toUpperCase().trim(),
     totalTime: Number(totalTime) || 0,
@@ -981,10 +1083,39 @@ app.post("/entries", (req, res) => {
     to: to ? String(to).toUpperCase().trim() : "",
     remarks: remarks ? String(remarks).trim() : "",
   };
+  // Compute canonical hash at save time — deterministic, sorted-key SHA-256
+  const { recordId, recordHash, canonical } = canonicalizeFlightEntry(
+    { ...entryBase, total: entryBase.totalTime },
+    entryBase.aircraftId
+  );
+  const walletAddress = walletSession?.address || null;
+  const anchorStatus = walletConnected ? "pending_anchor" : "not_anchored";
+  const anchoredAt = new Date().toISOString();
+  const entry = {
+    ...entryBase,
+    recordId,
+    createdAt: anchoredAt,
+    anchored: false,
+    anchorStatus,
+    anchoredAt: null,
+    anchorTx: null,
+    anchorHash: recordHash,
+    canonicalPayload: canonical,
+    anchor: {
+      hash: recordHash,
+      walletAddress,
+      anchoredAt,
+      status: walletConnected ? "anchored" : "hashed",
+    },
+  };
   const entries = readEntries();
   entries.push(entry);
   fs.writeFileSync(ENTRIES_PATH, JSON.stringify(entries, null, 2));
-  res.status(201).json(entry);
+  // Kick off background anchor if wallet is connected
+  if (walletConnected) {
+    setImmediate(() => anchorEntryInBackground(entry.id, entry.aircraftId));
+  }
+  res.status(201).json({ ...entry, walletConnected });
 });
 
 app.get("/dashboard", (_req, res) => {
@@ -3554,18 +3685,6 @@ app.patch("/profile/phase", (req, res) => {
 });
 
 // ── Wallet State (server-side session) ───────────────────────────────────────
-const WALLET_SESSION_PATH = path.join(DATA_DIR, "wallet.json");
-
-function readWalletSession() {
-  try {
-    if (!fs.existsSync(WALLET_SESSION_PATH)) return null;
-    return JSON.parse(fs.readFileSync(WALLET_SESSION_PATH, "utf-8"));
-  } catch { return null; }
-}
-
-function saveWalletSession(session) {
-  fs.writeFileSync(WALLET_SESSION_PATH, JSON.stringify(session, null, 2));
-}
 
 // POST /wallet/connect — browser posts connected wallet address here
 app.post("/wallet/connect", (req, res) => {
@@ -3578,7 +3697,7 @@ app.post("/wallet/connect", (req, res) => {
 
 // POST /wallet/disconnect — clear wallet session
 app.post("/wallet/disconnect", (_req, res) => {
-  if (fs.existsSync(WALLET_SESSION_PATH)) fs.unlinkSync(WALLET_SESSION_PATH);
+  if (fs.existsSync(WALLET_PATH)) fs.unlinkSync(WALLET_PATH);
   res.json({ ok: true });
 });
 
@@ -3872,6 +3991,8 @@ async function connectWallet() {
 
 async function disconnectWallet() {
   connectedApi = null;
+  localStorage.removeItem('pilotlog:address');
+  localStorage.removeItem('pilotlog:lastConnected');
   await fetch('/wallet/disconnect', { method: 'POST' });
   location.reload();
 }
@@ -3950,6 +4071,268 @@ detectProvider();
 </script>
 </body>
 </html>`);
+});
+
+// ─── Pilot Report (JSON) ──────────────────────────────────────────────────────
+app.get("/pilot-report/json", (_req, res) => {
+  const entries = readEntries();
+  const profile = readProfile();
+  const aircraft = readAircraft();
+  const maintenance = readMaintenance();
+  const verification = readVerification();
+  const report = buildPilotReport({ profile, entries, aircraft, maintenance, verification });
+  res.json(report);
+});
+
+// ─── Pilot Report (HTML) ──────────────────────────────────────────────────────
+app.get("/pilot-report", (_req, res) => {
+  const entries = readEntries();
+  const profile = readProfile();
+  const aircraft = readAircraft();
+  const maintenance = readMaintenance();
+  const verification = readVerification();
+  const report = buildPilotReport({ profile, entries, aircraft, maintenance, verification });
+
+  const r = report;
+  const id = r.pilotIdentity;
+  const cert = r.certificateSnapshot;
+  const currency = r.currencySummary;
+  const activity = r.flightActivity;
+  const integrity = r.integrityStatus;
+  const generatedFormatted = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+
+  function badge(color, label) {
+    const map = { green: "badge-green", red: "badge-red", yellow: "badge-yellow", gray: "badge-gray" };
+    return `<span class="badge ${map[color] || "badge-gray"}">${label}</span>`;
+  }
+
+  function row(label, value, extra) {
+    return `<tr><td>${label}</td><td>${value || "—"}${extra ? ` <span style="color:#6b7280;font-size:11px;">${extra}</span>` : ""}</td></tr>`;
+  }
+
+  // Certificate / ratings block
+  const certListHtml = id.certificates.length
+    ? id.certificates.map(c => `<li>${c}</li>`).join("")
+    : "<li style='color:#6b7280;'>None on file</li>";
+
+  // Medical block
+  const med = cert.medical;
+  const medBadge = badge(med.status.color, med.status.label);
+  const medRows = [
+    row("Type", med.kind),
+    row("Class", med.class),
+    row("Issued", med.issued),
+    row("Expires", med.expires, med.daysLeft !== null ? `(${med.daysLeft > 0 ? med.daysLeft + " days left" : Math.abs(med.daysLeft) + " days ago"})` : ""),
+    row("Status", medBadge),
+  ].join("");
+
+  // Flight review
+  const fr = cert.flightReview;
+  const frBadge = badge(fr.status.color, fr.status.label);
+  const frRows = [
+    row("Last Review", fr.lastDate),
+    row("Expires", fr.expiryDate, fr.daysLeft !== null ? `(${fr.daysLeft > 0 ? fr.daysLeft + " days left" : Math.abs(fr.daysLeft) + " days ago"})` : ""),
+    row("Status", frBadge),
+  ].join("");
+
+  // Currency rows
+  const currencies = [
+    currency.passengerDay,
+    currency.passengerNight,
+    currency.ifr,
+  ];
+  const currencyRows = currencies.map(c => {
+    const detail = c.approaches !== undefined
+      ? `${c.approaches} approaches, ${c.holds} holds (${c.window})`
+      : `${c.count}/${c.required} landings (${c.window})`;
+    return `<tr><td>${c.label}</td><td>${detail}</td><td>${badge(c.status.color, c.status.label)}</td></tr>`;
+  }).join("");
+
+  // Activity rows
+  const activityRows = [
+    row("Total Entries", activity.totalEntries),
+    row("Total Hours", activity.totalHours + " hrs"),
+    row("PIC Hours", activity.picHours + " hrs"),
+    row("Dual Received", activity.dualReceivedHours + " hrs"),
+    row("Cross-Country", activity.crossCountryHours + " hrs"),
+    row("Night", activity.nightHours + " hrs"),
+    row("IFR (sim + actual)", activity.ifrHours + " hrs"),
+    row("Last 90 Days", activity.last90Hours + " hrs"),
+  ].join("");
+
+  // Recent flights
+  const recentRows = activity.recentFlights.length
+    ? activity.recentFlights.map(f =>
+        `<tr><td>${f.date || "—"}</td><td>${f.route || "—"}</td><td>${f.aircraft || "—"}</td><td>${f.hours} hrs</td><td>${f.remarks || "—"}</td></tr>`
+      ).join("")
+    : `<tr><td colspan="5" style="color:#6b7280;">No flights logged yet.</td></tr>`;
+
+  // Integrity
+  const intBadge = badge(integrity.status.color, integrity.status.label);
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pilot Report — ${id.name || "Pilot"}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 13px; color: #1a1a2e; background: #f5f7fa; line-height: 1.5; }
+    @media print { body { background: #fff; font-size: 11px; } .no-print { display: none !important; } section { break-inside: avoid; } }
+    .container { max-width: 960px; margin: 0 auto; padding: 24px 20px 48px; }
+    .header { background: linear-gradient(135deg, #0d1b4b 0%, #1a3a8f 100%); color: #fff; padding: 32px 36px; border-radius: 8px; margin-bottom: 28px; display: flex; justify-content: space-between; align-items: flex-start; }
+    .header-brand { font-size: 22px; font-weight: 700; letter-spacing: 0.04em; }
+    .header-brand span { color: #7aa7ff; }
+    .header-sub { font-size: 12px; color: #b0c4ff; margin-top: 4px; }
+    .header-ident .name { font-size: 28px; font-weight: 800; letter-spacing: 0.02em; text-align: right; }
+    .header-ident .gendate { font-size: 11px; color: #8099cc; margin-top: 6px; text-align: right; }
+    section { background: #fff; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 20px; overflow: hidden; }
+    .section-title { background: #f8fafc; border-bottom: 1px solid #e2e8f0; padding: 12px 20px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #4a5568; }
+    .section-body { padding: 16px 20px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { background: #f8fafc; color: #4a5568; font-weight: 600; text-align: left; padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+    td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .badge-green { background: #dcfce7; color: #166534; }
+    .badge-red { background: #fee2e2; color: #991b1b; }
+    .badge-yellow { background: #fef9c3; color: #854d0e; }
+    .badge-gray { background: #f1f5f9; color: #475569; }
+    ul.cert-list { list-style: none; padding: 0; margin: 0; }
+    ul.cert-list li { padding: 5px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+    ul.cert-list li:last-child { border-bottom: none; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 640px) { .two-col { grid-template-columns: 1fr; } .header { flex-direction: column; gap: 12px; } .header-ident .name { text-align: left; } .header-ident .gendate { text-align: left; } }
+    .no-print-actions { display: flex; gap: 12px; margin-bottom: 20px; }
+    .btn { display: inline-block; padding: 9px 18px; background: #1a3a8f; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; }
+    .btn:hover { background: #1e46b0; }
+    .btn-outline { background: transparent; border: 1px solid #cbd5e1; color: #1a3a8f; }
+    .btn-outline:hover { background: #f8fafc; }
+    .integrity-row { display: flex; gap: 24px; flex-wrap: wrap; }
+    .integrity-item { flex: 1; min-width: 180px; }
+    .integrity-label { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+    .integrity-val { font-size: 13px; font-weight: 600; font-family: monospace; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div>
+      <div class="header-brand">Air<span>Log</span></div>
+      <div class="header-sub">Pilot Report</div>
+    </div>
+    <div class="header-ident">
+      <div class="name">${id.name || "Pilot"}</div>
+      <div class="gendate">Generated ${generatedFormatted}</div>
+    </div>
+  </div>
+
+  <div class="no-print no-print-actions">
+    <a href="/" class="btn btn-outline">← Dashboard</a>
+    <a href="/pilot-report/json" class="btn btn-outline">View JSON</a>
+    <button class="btn" onclick="window.print()">Print / PDF</button>
+  </div>
+
+  <!-- Pilot Identity -->
+  <section>
+    <div class="section-title">Pilot Identity</div>
+    <div class="section-body">
+      <table>
+        <tbody>
+          ${row("Full Name", id.name)}
+          ${row("Email", id.email)}
+          ${row("Phone", id.phone)}
+          ${row("Pilot Phase", id.pilotPhase)}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Certificates & Ratings -->
+  <section>
+    <div class="section-title">Certificates &amp; Ratings</div>
+    <div class="section-body">
+      <ul class="cert-list">${certListHtml}</ul>
+    </div>
+  </section>
+
+  <!-- Medical & Flight Review -->
+  <div class="two-col">
+    <section>
+      <div class="section-title">Medical Certificate</div>
+      <div class="section-body">
+        <table><tbody>${medRows}</tbody></table>
+      </div>
+    </section>
+    <section>
+      <div class="section-title">Flight Review</div>
+      <div class="section-body">
+        <table><tbody>${frRows}</tbody></table>
+      </div>
+    </section>
+  </div>
+
+  <!-- Currency -->
+  <section>
+    <div class="section-title">Currency &amp; Readiness</div>
+    <div class="section-body">
+      <table>
+        <thead><tr><th>Item</th><th>Detail</th><th>Status</th></tr></thead>
+        <tbody>${currencyRows}</tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Flight Activity -->
+  <section>
+    <div class="section-title">Flight Activity Summary</div>
+    <div class="section-body">
+      <table><tbody>${activityRows}</tbody></table>
+    </div>
+  </section>
+
+  <!-- Recent Flights -->
+  <section>
+    <div class="section-title">Recent Flight History</div>
+    <div class="section-body">
+      <table>
+        <thead><tr><th>Date</th><th>Route</th><th>Aircraft</th><th>Hours</th><th>Remarks</th></tr></thead>
+        <tbody>${recentRows}</tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Integrity -->
+  <section>
+    <div class="section-title">Verification &amp; Integrity</div>
+    <div class="section-body">
+      <div class="integrity-row">
+        <div class="integrity-item">
+          <div class="integrity-label">Status</div>
+          <div class="integrity-val">${intBadge}</div>
+        </div>
+        <div class="integrity-item">
+          <div class="integrity-label">Record Hash</div>
+          <div class="integrity-val">${integrity.anchorHash || "—"}</div>
+        </div>
+        <div class="integrity-item">
+          <div class="integrity-label">Anchored</div>
+          <div class="integrity-val">${integrity.anchorTime || "—"}</div>
+        </div>
+        <div class="integrity-item">
+          <div class="integrity-label">Network</div>
+          <div class="integrity-val">${integrity.anchorNetwork || "—"}</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>`;
+
+  res.type("html").send(html);
 });
 
 app.listen(PORT, "0.0.0.0", () => {
