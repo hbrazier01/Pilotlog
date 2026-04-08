@@ -3797,6 +3797,9 @@ async function connectWallet() {
         'Provider keys: [' + shape + ']. Check browser console for full object.'
       );
     }
+    console.log('[wallet] selectedProvider:', selectedProvider);
+    console.log('[wallet] resolvedProvider:', callableProvider);
+    console.log('[wallet] resolved keys:', Object.keys(callableProvider || {}));
     console.log('[wallet] calling enable() on resolved provider');
 
     // DApp Connector API: provider.enable() → ConnectedAPI
