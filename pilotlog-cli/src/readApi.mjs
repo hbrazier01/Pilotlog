@@ -3817,25 +3817,40 @@ app.get("/wallet", (_req, res) => {
   <h1>1AM Wallet</h1>
   <div class="sub">Connect your Midnight wallet to anchor records on-chain.</div>
 
-  <!-- Connection card -->
+  <!-- Primary session card — driven by server session -->
   <div class="card" id="wallet-card">
     <div class="card-title">Wallet Connection</div>
     <div class="status-row">
-      <div class="dot detecting" id="status-dot"></div>
-      <div class="status-label" id="status-label">Detecting provider…</div>
+      <div class="dot ${session ? 'connected' : 'detecting'}" id="status-dot"></div>
+      <div class="status-label" id="status-label">${session ? 'Connected' : 'Not connected'}</div>
     </div>
-    <div id="address-box" class="address" style="display:none"></div>
-    <div class="not-found" id="not-found-box">
-      <strong>1AM wallet not detected.</strong><br>
-      Install the Midnight Lace extension and reload this page.<br>
-      <a href="https://midnight.network" target="_blank" style="color:#fdba74">midnight.network →</a>
-    </div>
+    ${session ? `<div id="address-box" class="address">${session.address}</div>` : `<div id="address-box" class="address" style="display:none"></div>`}
+    <!-- Extension note — only shown when no session or extension missing after connect attempt -->
+    <div class="not-found" id="not-found-box"></div>
     <div class="actions" id="wallet-actions">
-      <button class="btn" id="btn-connect" disabled>
-        <span class="spinner" id="connect-spinner"></span><span id="btn-label">Detecting…</span>
-      </button>
+      ${session
+        ? `<button class="btn btn-danger" id="btn-connect" onclick="disconnectWallet()">Disconnect</button>`
+        : `<button class="btn" id="btn-connect" disabled><span class="spinner" id="connect-spinner"></span><span id="btn-label">Detecting…</span></button>`
+      }
     </div>
-    <div class="note" id="wallet-note"></div>
+    <div class="note" id="wallet-note">${session ? 'Session active · Connected at ' + new Date(session.connectedAt || Date.now()).toLocaleString() : ''}</div>
+  </div>
+
+  <!-- Session details card — shown when server session exists -->
+  <div class="card" id="session-card" style="${session ? 'display:block' : 'display:none'}">
+    <div class="card-title">Session</div>
+    <div class="info-row"><span class="info-label">Address</span><span class="info-val" id="session-address">${session ? session.address : '—'}</span></div>
+    <div class="info-row"><span class="info-label">Connected At</span><span class="info-val" id="session-connected">${session ? new Date(session.connectedAt || Date.now()).toLocaleString() : '—'}</span></div>
+    ${verification && verification.anchored ? `<div class="info-row"><span class="info-label">Anchor Tx</span><span class="info-val">${verification.anchorTx || '—'}</span></div>` : ''}
+  </div>
+
+  <!-- Extension status — secondary debug info -->
+  <div class="card" id="ext-card" style="display:none">
+    <div class="card-title">Extension Status</div>
+    <div class="info-row"><span class="info-label">1AM Extension</span><span class="info-val" id="ext-status">Checking…</span></div>
+    <div id="ext-connect-actions" style="margin-top:12px;display:none">
+      <button class="btn" id="btn-ext-connect" onclick="connectWallet()">Connect Extension</button>
+    </div>
   </div>
 
   <!-- Network card -->
@@ -3858,29 +3873,20 @@ app.get("/wallet", (_req, res) => {
     </div>
     <div class="tx-result" id="tx-result"></div>
   </div>
-
-  <!-- Last Known Session card — populated by localStorage on page load -->
-  <div class="card" id="session-card" style="display:none">
-    <div class="card-title">Last Known Session</div>
-    <div class="info-row"><span class="info-label">Address</span><span class="info-val" id="session-address">—</span></div>
-    <div class="info-row"><span class="info-label">Connected</span><span class="info-val" id="session-connected">—</span></div>
-    ${verification && verification.anchored ? `<div class="info-row"><span class="info-label">Anchor Tx</span><span class="info-val">${verification.anchorTx || '—'}</span></div>` : ''}
-  </div>
 </div>
 
 <script>
 // ── 1AM Wallet — Midnight DApp Connector API ─────────────────────────────────
-// Spec: @midnight-ntwrk/dapp-connector-api
-//
-// window.midnight is a map: { [walletKey: string]: InitialAPI }
-// Detection: enumerate all entries, prefer "1am" key, fall back to first entry.
-// Do NOT filter by rdns or api.connect — provider may not expose these at detection time.
+// Server session is source of truth for connected state.
+// Extension detection is secondary — needed only for signing new transactions.
 
 const NETWORK_ID = 'preview';
+const SERVER_SESSION_EXISTS = ${session ? 'true' : 'false'};
 
 let connectedApi = null;   // ConnectedAPI (from wallet.connect())
 
-// ── Provider detection ────────────────────────────────────────────────────────
+// ── Secondary: extension detection ────────────────────────────────────────────
+// Only updates the extension status card, does NOT override primary connection state.
 
 function setBtnLabel(text) {
   const el = document.getElementById('btn-label');
@@ -3888,42 +3894,60 @@ function setBtnLabel(text) {
 }
 
 async function detectProvider() {
-  const dot = document.getElementById('status-dot');
-  const label = document.getElementById('status-label');
-  const btnConnect = document.getElementById('btn-connect');
-  const spinner = document.getElementById('connect-spinner');
-  const notFound = document.getElementById('not-found-box');
-
-  console.log('[wallet] detectProvider started');
+  const extCard = document.getElementById('ext-card');
+  const extStatus = document.getElementById('ext-status');
+  const extConnectActions = document.getElementById('ext-connect-actions');
 
   // Poll up to 3s — extension injects after page load
   for (let i = 0; i < 6; i++) {
     const wallet = window.midnight?.['1am'];
     if (wallet) {
-      console.log('[wallet] 1AM detected at window.midnight["1am"]');
-      console.log('[wallet] 1AM keys:', Object.keys(wallet));
-
-      dot.className = 'dot disconnected';
-      label.textContent = '1AM wallet detected - not connected';
-      if (spinner) spinner.style.display = 'none';
-      setBtnLabel('Connect 1AM');
-      btnConnect.disabled = false;
-      btnConnect.onclick = connectWallet;
+      console.log('[wallet] 1AM extension detected');
+      if (extStatus) extStatus.textContent = 'Detected — ready to connect';
+      if (extCard) extCard.style.display = 'block';
+      // If no server session, show connect option in extension card
+      if (!SERVER_SESSION_EXISTS && extConnectActions) {
+        extConnectActions.style.display = 'block';
+      }
+      // If no server session, also enable the primary connect button
+      if (!SERVER_SESSION_EXISTS) {
+        const btnConnect = document.getElementById('btn-connect');
+        const spinner = document.getElementById('connect-spinner');
+        if (spinner) spinner.style.display = 'none';
+        setBtnLabel('Connect 1AM');
+        if (btnConnect) { btnConnect.disabled = false; btnConnect.onclick = connectWallet; }
+      }
       return;
     }
     await new Promise(r => setTimeout(r, 500));
   }
 
-  // Not found
-  console.log('[wallet] no 1AM provider detected at window.midnight["1am"]');
-  dot.className = 'dot disconnected';
-  dot.style.background = '#ef4444';
-  label.textContent = 'No Midnight wallet detected';
-  if (spinner) spinner.style.display = 'none';
-  setBtnLabel('Retry');
-  btnConnect.disabled = false;
-  btnConnect.onclick = () => location.reload();
-  notFound.classList.add('show');
+  // Extension not found
+  console.log('[wallet] 1AM extension not detected');
+  if (SERVER_SESSION_EXISTS) {
+    // Session exists — show as secondary warning only
+    const notFound = document.getElementById('not-found-box');
+    if (notFound) {
+      notFound.innerHTML = '<strong>Extension not currently detected.</strong> Reconnect the 1AM extension to sign new transactions.';
+      notFound.classList.add('show');
+    }
+  } else {
+    // No session — show primary error
+    const dot = document.getElementById('status-dot');
+    const label = document.getElementById('status-label');
+    const btnConnect = document.getElementById('btn-connect');
+    const spinner = document.getElementById('connect-spinner');
+    const notFound = document.getElementById('not-found-box');
+    if (dot) { dot.className = 'dot disconnected'; dot.style.background = '#ef4444'; }
+    if (label) label.textContent = 'No Midnight wallet detected';
+    if (spinner) spinner.style.display = 'none';
+    setBtnLabel('Retry');
+    if (btnConnect) { btnConnect.disabled = false; btnConnect.onclick = () => location.reload(); }
+    if (notFound) {
+      notFound.innerHTML = '<strong>1AM wallet not detected.</strong><br>Install the Midnight Lace extension and reload this page.<br><a href="https://midnight.network" target="_blank" style="color:#fdba74">midnight.network →</a>';
+      notFound.classList.add('show');
+    }
+  }
 }
 
 // ── Connect flow ──────────────────────────────────────────────────────────────
@@ -4097,21 +4121,7 @@ async function signTestTx() {
   }
 }
 
-// ── Restore Last Known Session from localStorage ──────────────────────────────
-function restoreSession() {
-  const storedAddress = localStorage.getItem('pilotlog:address');
-  const storedConnected = localStorage.getItem('pilotlog:lastConnected');
-  const card = document.getElementById('session-card');
-  if (storedAddress && card) {
-    document.getElementById('session-address').textContent = storedAddress;
-    document.getElementById('session-connected').textContent =
-      storedConnected ? new Date(storedConnected).toLocaleString() : '—';
-    card.style.display = 'block';
-  }
-}
-
-// Boot
-restoreSession();
+// Boot — session state is SSR'd; only run extension detection (secondary)
 detectProvider();
 </script>
 </body>
