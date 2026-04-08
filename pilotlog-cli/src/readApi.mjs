@@ -3738,8 +3738,11 @@ async function connectWallet() {
     console.log('[wallet] connectedAPI keys:', Object.keys(connectedApi || {}));
 
     // Get wallet address — prefer shielded (Zswap), fall back to unshielded
-    const shieldedAddresses = await connectedApi.getShieldedAddresses();
-    const walletAddress = (shieldedAddresses && shieldedAddresses[0]) || '(address unavailable)';
+    const addresses = await connectedApi.getShieldedAddresses();
+    console.log('[wallet] addresses:', addresses);
+    const shieldedAddress = addresses?.shieldedAddress;
+    console.log('[wallet] shieldedAddress:', shieldedAddress);
+    const walletAddress = shieldedAddress || 'No shielded address returned';
     console.log('[wallet] address:', walletAddress);
 
     // Get wallet-configured network endpoints
@@ -3812,8 +3815,11 @@ async function signTestTx() {
     if (!connectedApi) throw new Error('Wallet not connected');
 
     // Confirm wallet API is live and read address
-    const shieldedAddresses = await connectedApi.getShieldedAddresses();
-    const walletAddress = (shieldedAddresses && shieldedAddresses[0]) || '(address unavailable)';
+    const addresses = await connectedApi.getShieldedAddresses();
+    console.log('[wallet] addresses:', addresses);
+    const shieldedAddress = addresses?.shieldedAddress;
+    console.log('[wallet] shieldedAddress:', shieldedAddress);
+    const walletAddress = shieldedAddress || 'No shielded address returned';
 
     // Get wallet-preferred indexer/prover config
     const config = await connectedApi.getConfiguration().catch(() => ({}));
