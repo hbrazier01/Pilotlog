@@ -3730,6 +3730,46 @@ async function detectProvider() {
   notFound.classList.add('show');
 }
 
+// ── Provider resolver ─────────────────────────────────────────────────────────
+// 1AM (and other Midnight wallets) may inject a descriptor/wrapper object rather
+// than a raw InitialAPI. Try common nesting paths before giving up.
+
+function resolveEnableableProvider(raw) {
+  if (!raw) return null;
+  // Log the raw shape for diagnostics — visible in browser console
+  console.log('[wallet] raw provider type:', typeof raw);
+  console.log('[wallet] raw provider keys:', Object.keys(raw || {}));
+  console.log('[wallet] raw provider:', raw);
+
+  // Path 1: raw itself has enable()
+  if (typeof raw.enable === 'function') {
+    console.log('[wallet] resolveProvider: using raw (enable on top-level)');
+    return raw;
+  }
+  // Path 2: nested under .provider
+  if (raw.provider && typeof raw.provider.enable === 'function') {
+    console.log('[wallet] resolveProvider: using raw.provider');
+    return raw.provider;
+  }
+  // Path 3: nested under .api
+  if (raw.api && typeof raw.api.enable === 'function') {
+    console.log('[wallet] resolveProvider: using raw.api');
+    return raw.api;
+  }
+  // Path 4: nested under .wallet
+  if (raw.wallet && typeof raw.wallet.enable === 'function') {
+    console.log('[wallet] resolveProvider: using raw.wallet');
+    return raw.wallet;
+  }
+  // Path 5: nested under .connector
+  if (raw.connector && typeof raw.connector.enable === 'function') {
+    console.log('[wallet] resolveProvider: using raw.connector');
+    return raw.connector;
+  }
+  console.warn('[wallet] resolveProvider: no enable() found at any known path');
+  return null;
+}
+
 // ── Connect flow ──────────────────────────────────────────────────────────────
 
 async function connectWallet() {
@@ -3747,10 +3787,20 @@ async function connectWallet() {
 
   try {
     if (!selectedProvider) throw new Error('No wallet provider selected');
-    console.log('[wallet] provider found, calling enable()');
+
+    // Resolve the actual callable provider object — 1AM may wrap the InitialAPI
+    const callableProvider = resolveEnableableProvider(selectedProvider);
+    if (!callableProvider) {
+      const shape = Object.keys(selectedProvider || {}).join(', ') || '(empty)';
+      throw new Error(
+        '1AM provider detected, but no compatible enable() API was found. ' +
+        'Provider keys: [' + shape + ']. Check browser console for full object.'
+      );
+    }
+    console.log('[wallet] calling enable() on resolved provider');
 
     // DApp Connector API: provider.enable() → ConnectedAPI
-    connectedApi = await selectedProvider.enable();
+    connectedApi = await callableProvider.enable();
     if (!connectedApi) throw new Error('provider.enable() returned null - wallet rejected connection');
     console.log('[wallet] enable() succeeded');
 
