@@ -3655,26 +3655,7 @@ app.get("/wallet", (_req, res) => {
 
 const NETWORK_ID = 'preprod';
 
-let connectedApi = null;   // ConnectedAPI (from provider.connect())
-let selectedProvider = null; // InitialAPI
-
-// ── Wallet enumeration ────────────────────────────────────────────────────────
-
-function enumerateWallets() {
-  const midnight = window.midnight;
-  if (!midnight || typeof midnight !== 'object') return [];
-  return Object.entries(midnight)
-    .map(([key, api]) => ({ key, api }))
-    .filter(({ api }) => api != null);
-}
-
-function pick1AMWallet(wallets) {
-  // Prefer explicit "1AM" key first (case-insensitive match)
-  const byKey = wallets.find(({ key }) => key.toLowerCase() === '1am');
-  if (byKey) return byKey;
-  // Fall back to first available wallet
-  return wallets[0] || null;
-}
+let connectedApi = null;   // ConnectedAPI (from wallet.connect())
 
 // ── Provider detection ────────────────────────────────────────────────────────
 
@@ -3694,32 +3675,24 @@ async function detectProvider() {
 
   // Poll up to 3s — extension injects after page load
   for (let i = 0; i < 6; i++) {
-    const wallets = enumerateWallets();
-    if (wallets.length > 0) {
-      const picked = pick1AMWallet(wallets);
-      selectedProvider = picked.api;
-      const walletName = picked.api.name || picked.key;
+    const wallet = window.midnight?.['1am'];
+    if (wallet) {
+      console.log('[wallet] 1AM detected at window.midnight["1am"]');
+      console.log('[wallet] 1AM keys:', Object.keys(wallet));
 
       dot.className = 'dot disconnected';
-      label.textContent = (picked.key === '1am' ? '1AM wallet detected' : walletName + ' detected') + ' - not connected';
+      label.textContent = '1AM wallet detected - not connected';
       if (spinner) spinner.style.display = 'none';
-      setBtnLabel('Connect ' + walletName);
+      setBtnLabel('Connect 1AM');
       btnConnect.disabled = false;
       btnConnect.onclick = connectWallet;
-      console.log('[wallet] provider detected:', walletName);
-
-      // Show all available wallets if more than one
-      if (wallets.length > 1) {
-        document.getElementById('wallet-note').textContent =
-          wallets.length + ' wallets found. Using: ' + walletName;
-      }
       return;
     }
     await new Promise(r => setTimeout(r, 500));
   }
 
   // Not found
-  console.log('[wallet] no provider detected');
+  console.log('[wallet] no 1AM provider detected at window.midnight["1am"]');
   dot.className = 'dot disconnected';
   dot.style.background = '#ef4444';
   label.textContent = 'No Midnight wallet detected';
@@ -3728,46 +3701,6 @@ async function detectProvider() {
   btnConnect.disabled = false;
   btnConnect.onclick = () => location.reload();
   notFound.classList.add('show');
-}
-
-// ── Provider resolver ─────────────────────────────────────────────────────────
-// 1AM (and other Midnight wallets) may inject a descriptor/wrapper object rather
-// than a raw InitialAPI. Try common nesting paths before giving up.
-
-function resolveEnableableProvider(raw) {
-  if (!raw) return null;
-  // Log the raw shape for diagnostics — visible in browser console
-  console.log('[wallet] raw provider type:', typeof raw);
-  console.log('[wallet] raw provider keys:', Object.keys(raw || {}));
-  console.log('[wallet] raw provider:', raw);
-
-  // Path 1: raw itself has enable()
-  if (typeof raw.enable === 'function') {
-    console.log('[wallet] resolveProvider: using raw (enable on top-level)');
-    return raw;
-  }
-  // Path 2: nested under .provider
-  if (raw.provider && typeof raw.provider.enable === 'function') {
-    console.log('[wallet] resolveProvider: using raw.provider');
-    return raw.provider;
-  }
-  // Path 3: nested under .api
-  if (raw.api && typeof raw.api.enable === 'function') {
-    console.log('[wallet] resolveProvider: using raw.api');
-    return raw.api;
-  }
-  // Path 4: nested under .wallet
-  if (raw.wallet && typeof raw.wallet.enable === 'function') {
-    console.log('[wallet] resolveProvider: using raw.wallet');
-    return raw.wallet;
-  }
-  // Path 5: nested under .connector
-  if (raw.connector && typeof raw.connector.enable === 'function') {
-    console.log('[wallet] resolveProvider: using raw.connector');
-    return raw.connector;
-  }
-  console.warn('[wallet] resolveProvider: no enable() found at any known path');
-  return null;
 }
 
 // ── Connect flow ──────────────────────────────────────────────────────────────
@@ -3786,26 +3719,23 @@ async function connectWallet() {
   if (label) label.textContent = 'Connecting...';
 
   try {
-    if (!selectedProvider) throw new Error('No wallet provider selected');
+    // Documented 1AM API: window.midnight['1am'].connect(networkId)
+    const wallet = window.midnight?.['1am'];
+    console.log('[wallet] window.midnight[1am]:', wallet);
+    console.log('[wallet] window.midnight[1am] keys:', Object.keys(wallet || {}));
+    console.log('[wallet] connect exists:', typeof (wallet?.connect));
+    console.log('[wallet] networkId:', NETWORK_ID);
 
-    // Resolve the actual callable provider object — 1AM may wrap the InitialAPI
-    const callableProvider = resolveEnableableProvider(selectedProvider);
-    if (!callableProvider) {
-      const shape = Object.keys(selectedProvider || {}).join(', ') || '(empty)';
-      throw new Error(
-        '1AM provider detected, but no compatible enable() API was found. ' +
-        'Provider keys: [' + shape + ']. Check browser console for full object.'
-      );
+    if (!wallet) throw new Error('1AM wallet not installed — install the 1AM extension and reload');
+    if (typeof wallet.connect !== 'function') {
+      throw new Error('1AM detected, but connect(networkId) is unavailable. Keys: [' + Object.keys(wallet).join(', ') + ']');
     }
-    console.log('[wallet] selectedProvider:', selectedProvider);
-    console.log('[wallet] resolvedProvider:', callableProvider);
-    console.log('[wallet] resolved keys:', Object.keys(callableProvider || {}));
-    console.log('[wallet] calling enable() on resolved provider');
 
-    // DApp Connector API: provider.enable() → ConnectedAPI
-    connectedApi = await callableProvider.enable();
-    if (!connectedApi) throw new Error('provider.enable() returned null - wallet rejected connection');
-    console.log('[wallet] enable() succeeded');
+    // Connect using documented API
+    connectedApi = await wallet.connect(NETWORK_ID);
+    if (!connectedApi) throw new Error('wallet.connect() returned null — wallet rejected connection');
+    console.log('[wallet] connect() succeeded');
+    console.log('[wallet] connectedAPI keys:', Object.keys(connectedApi || {}));
 
     // Get wallet address — prefer shielded (Zswap), fall back to unshielded
     const shieldedAddresses = await connectedApi.getShieldedAddresses();
@@ -3817,7 +3747,7 @@ async function connectWallet() {
 
     // Update UI
     if (dot) dot.className = 'dot connected';
-    if (label) label.textContent = (selectedProvider.name || 'Wallet') + ' - Connected';
+    if (label) label.textContent = '1AM Wallet - Connected';
     if (addressBox) { addressBox.textContent = walletAddress; addressBox.style.display = 'block'; }
     if (spinner) spinner.style.display = 'none';
     setBtnLabel('Disconnect');
@@ -3863,7 +3793,6 @@ async function connectWallet() {
 
 async function disconnectWallet() {
   connectedApi = null;
-  selectedProvider = null;
   await fetch('/wallet/disconnect', { method: 'POST' });
   location.reload();
 }
