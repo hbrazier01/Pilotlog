@@ -97,6 +97,46 @@ function saveWalletSession(session) {
   fs.writeFileSync(WALLET_PATH, JSON.stringify(session, null, 2));
 }
 
+// --- Shared wallet nav helpers ---
+
+function truncateWalletAddress(address) {
+  if (!address || address.length < 16) return address || "Connected";
+  return address.slice(0, 8) + "…" + address.slice(-6);
+}
+
+// Returns the wallet nav anchor HTML (SSR). id="wallet-nav-link" is updated by JS after load.
+function walletNavHtml(session) {
+  if (session && session.address) {
+    const short = truncateWalletAddress(session.address);
+    return `<a href="/wallet" id="wallet-nav-link" style="color:#22c55e;" title="${session.address}">&#9679; ${short}</a>`;
+  }
+  return `<a href="/wallet" id="wallet-nav-link">Connect Wallet</a>`;
+}
+
+// Inline script injected into every main page — refreshes wallet nav from server session.
+const walletStatusScript = `
+<script>
+(function() {
+  fetch('/wallet/status').then(r => r.json()).then(data => {
+    const el = document.getElementById('wallet-nav-link');
+    if (!el) return;
+    if (data.connected && data.session && data.session.address) {
+      const addr = data.session.address;
+      const short = addr.length > 16 ? addr.slice(0, 8) + '\\u2026' + addr.slice(-6) : addr;
+      el.textContent = '\\u25CF ' + short;
+      el.style.color = '#22c55e';
+      el.title = addr;
+    } else {
+      el.textContent = 'Connect Wallet';
+      el.style.color = '';
+      el.title = '';
+    }
+  }).catch(() => {});
+})();
+</script>`;
+
+// ---- end wallet nav helpers ----
+
 function updateEntryAnchorFields(entryId, fields) {
   try {
     const entries = readEntries();
@@ -472,6 +512,7 @@ app.get("/", (_req, res) => {
   const totals = computeTotals(entries);
   const recent = entries.slice(0, 10);
   const profile = readProfile();
+  const walletSession = readWalletSession();
 
   const pilotName = profile?.pilot?.fullName || "Pilot";
 
@@ -607,7 +648,7 @@ app.get("/", (_req, res) => {
   <div class="topbar">
     <div class="brand">PilotLog</div>
     <div class="nav">
-      <a href="/wallet">Wallet</a>
+      ${walletNavHtml(walletSession)}
       <a href="/pilot-report">Pilot Report →</a>
     </div>
   </div>
@@ -1002,6 +1043,8 @@ app.get("/", (_req, res) => {
       setTimeout(() => t.classList.remove('show'), 2500);
     }
   </script>
+
+  ${walletStatusScript}
 
   ${aircraftRows ? `
   <div class="table">
@@ -3766,8 +3809,10 @@ app.get("/wallet", (_req, res) => {
     <div class="nav">
       <a href="/">← Home</a>
       <a href="/export/sale-packet/html">Sale Packet</a>
+      <span id="wallet-nav-link" style="font-size:14px;margin-left:16px;color:#b6b9c6;">Checking wallet…</span>
     </div>
   </div>
+  ${walletStatusScript}
 
   <h1>1AM Wallet</h1>
   <div class="sub">Connect your Midnight wallet to anchor records on-chain.</div>
@@ -4232,7 +4277,9 @@ app.get("/pilot-report", (_req, res) => {
     <a href="/" class="btn btn-outline">← Dashboard</a>
     <a href="/pilot-report/json" class="btn btn-outline">View JSON</a>
     <button class="btn" onclick="window.print()">Print / PDF</button>
+    <a href="/wallet" id="wallet-nav-link" style="margin-left:auto;font-size:13px;color:#b6b9c6;text-decoration:none;align-self:center;">Wallet</a>
   </div>
+  ${walletStatusScript}
 
   <!-- Pilot Identity -->
   <section>
