@@ -3653,7 +3653,7 @@ app.get("/wallet", (_req, res) => {
 // Detection: enumerate all entries, prefer "1am" key, fall back to first entry.
 // Do NOT filter by rdns or api.connect — provider may not expose these at detection time.
 
-const NETWORK_ID = 'preprod';
+const NETWORK_ID = 'preview';
 
 let connectedApi = null;   // ConnectedAPI (from wallet.connect())
 
@@ -3744,6 +3744,7 @@ async function connectWallet() {
 
     // Get wallet-configured network endpoints
     const config = await connectedApi.getConfiguration().catch(() => ({}));
+    console.log('[wallet] networkId:', config.networkId);
 
     // Update UI
     if (dot) dot.className = 'dot connected';
