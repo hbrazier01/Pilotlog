@@ -1446,6 +1446,64 @@ function computeGaps(aircraft, maintenance) {
     }
   }
 
+  // 5. Serial number consistency — detect engine/prop serial mismatches between
+  //    aircraft.json master record and component entries in maintenance records.
+  //    A mismatch may indicate an undisclosed engine/prop swap or a data error.
+  for (const a of aircraft) {
+    const engineSerial = (a.engineSerial || "").trim().toUpperCase();
+    const propSerial = (a.propSerial || "").trim().toUpperCase();
+
+    const engineSerialsInMaintenance = new Set();
+    const propSerialsInMaintenance = new Set();
+
+    for (const m of maintenance) {
+      for (const c of m.components || []) {
+        const name = (c.name || "").toLowerCase();
+        const sn = (c.serialNumber || "").trim().toUpperCase();
+        if (!sn) continue;
+        if (name.includes("engine")) engineSerialsInMaintenance.add(sn);
+        if (name.includes("prop")) propSerialsInMaintenance.add(sn);
+      }
+    }
+
+    if (engineSerial && engineSerialsInMaintenance.size > 0 && !engineSerialsInMaintenance.has(engineSerial)) {
+      gaps.push({
+        type: "serial_mismatch",
+        description: `Engine serial number mismatch: aircraft record shows ${a.engineSerial}, but maintenance records reference ${[...engineSerialsInMaintenance].join(", ")}. Possible undisclosed engine swap.`,
+        severity: "high",
+        component: "engine",
+      });
+    }
+
+    if (propSerial && propSerialsInMaintenance.size > 0 && !propSerialsInMaintenance.has(propSerial)) {
+      gaps.push({
+        type: "serial_mismatch",
+        description: `Propeller serial number mismatch: aircraft record shows ${a.propSerial}, but maintenance records reference ${[...propSerialsInMaintenance].join(", ")}. Possible undisclosed prop swap.`,
+        severity: "high",
+        component: "propeller",
+      });
+    }
+
+    // Also flag if maintenance components reference multiple different engine/prop serials
+    if (engineSerialsInMaintenance.size > 1) {
+      gaps.push({
+        type: "serial_mismatch",
+        description: `Multiple engine serial numbers found across maintenance records (${[...engineSerialsInMaintenance].join(", ")}). Verify engine history with IA logbook.`,
+        severity: "high",
+        component: "engine",
+      });
+    }
+
+    if (propSerialsInMaintenance.size > 1) {
+      gaps.push({
+        type: "serial_mismatch",
+        description: `Multiple propeller serial numbers found across maintenance records (${[...propSerialsInMaintenance].join(", ")}). Verify prop history.`,
+        severity: "medium",
+        component: "propeller",
+      });
+    }
+  }
+
   return gaps;
 }
 
@@ -1577,19 +1635,21 @@ app.get("/export/sale-packet/html", (_req, res) => {
   const hashMatch = anchorHash && anchorHash === currentHash;
   const gaps = computeGaps(aircraft, maintenance);
 
-  // Record quality score
+  // Record quality score — weighted by documentation completeness, not blockchain status
+  // On-chain anchoring is shown as a verification badge separately
   const qualityFactors = [];
   let qualityScore = 0;
-  if (maintenance.length > 0) { qualityScore += 25; qualityFactors.push({ label: "Maintenance records present", points: 25, pass: true }); }
-  else { qualityFactors.push({ label: "Maintenance records present", points: 0, pass: false }); }
-  if (aircraft.length > 0 && primaryAircraft.annualDue) { qualityScore += 20; qualityFactors.push({ label: "Annual inspection date on file", points: 20, pass: true }); }
-  else { qualityFactors.push({ label: "Annual inspection date on file", points: 0, pass: false }); }
-  if (entries.length > 0) { qualityScore += 20; qualityFactors.push({ label: "Flight log entries present", points: 20, pass: true }); }
-  else { qualityFactors.push({ label: "Flight log entries present", points: 0, pass: false }); }
-  if (anchored) { qualityScore += 25; qualityFactors.push({ label: "Records anchored on-chain", points: 25, pass: true }); }
-  else { qualityFactors.push({ label: "Records anchored on-chain", points: 0, pass: false }); }
+  const adEntriesForScore = maintenance.filter((m) => m.category === "ad-compliance" || (m.adCompliance && m.adCompliance.length > 0));
+  if (maintenance.length > 0) { qualityScore += 30; qualityFactors.push({ label: "Maintenance records present", points: 30, pass: true }); }
+  else { qualityFactors.push({ label: "Maintenance records present", points: 30, pass: false }); }
+  if (aircraft.length > 0 && primaryAircraft.annualDue) { qualityScore += 25; qualityFactors.push({ label: "Annual inspection date on file", points: 25, pass: true }); }
+  else { qualityFactors.push({ label: "Annual inspection date on file", points: 25, pass: false }); }
+  if (adEntriesForScore.length > 0) { qualityScore += 20; qualityFactors.push({ label: "AD compliance records present", points: 20, pass: true }); }
+  else { qualityFactors.push({ label: "AD compliance records present", points: 20, pass: false }); }
+  if (entries.length > 0) { qualityScore += 15; qualityFactors.push({ label: "Flight log entries present", points: 15, pass: true }); }
+  else { qualityFactors.push({ label: "Flight log entries present", points: 15, pass: false }); }
   if (profile?.pilot?.fullName) { qualityScore += 10; qualityFactors.push({ label: "Pilot profile complete", points: 10, pass: true }); }
-  else { qualityFactors.push({ label: "Pilot profile complete", points: 0, pass: false }); }
+  else { qualityFactors.push({ label: "Pilot profile complete", points: 10, pass: false }); }
 
   const totalLandings = Number(totals.dayLandings || 0) + Number(totals.nightLandings || 0);
   const instrumentTime = Number(totals.actualInstrument || 0) + Number(totals.simulatedInstrument || 0);
@@ -1634,7 +1694,7 @@ app.get("/export/sale-packet/html", (_req, res) => {
     `<tr>
       <td>${f.pass ? "✓" : "✗"}</td>
       <td>${f.label}</td>
-      <td>${f.pass ? f.points : 0} / ${f.points > 0 ? f.points : "25"}</td>
+      <td>${f.pass ? f.points : 0} / ${f.points}</td>
     </tr>`
   ).join("\n");
 
@@ -1736,11 +1796,11 @@ app.get("/export/sale-packet/html", (_req, res) => {
   // Trust summary
   const highGaps = gaps.filter((g) => g.severity === "high").length;
   const medGaps = gaps.filter((g) => g.severity === "medium").length;
-  const trustColor = qualityScore >= 75 ? "#22c55e" : qualityScore >= 45 ? "#f59e0b" : "#ef4444";
-  const trustLabel = qualityScore >= 75 ? "Strong" : qualityScore >= 45 ? "Moderate" : "Weak";
-  const trustExplanation = qualityScore >= 75
+  const trustColor = qualityScore >= 80 ? "#22c55e" : qualityScore >= 55 ? "#f59e0b" : "#ef4444";
+  const trustLabel = qualityScore >= 80 ? "Strong" : qualityScore >= 55 ? "Moderate" : "Weak";
+  const trustExplanation = qualityScore >= 80
     ? "Records are well-documented with maintenance history, compliance dates, and flight log entries present."
-    : qualityScore >= 45
+    : qualityScore >= 55
     ? "Core records are present but some documentation gaps were identified. A pre-buy inspection is recommended."
     : "Significant documentation gaps exist. Independent verification is strongly recommended before purchase.";
 
@@ -2360,7 +2420,7 @@ app.get("/export/sale-packet/html", (_req, res) => {
       <div class="section-title">Record Completeness Score</div>
       <div class="section-body">
         <div class="score-display">${qualityScore}<span style="font-size:20px;color:#a0aec0;">/100</span></div>
-        <div class="score-label">${qualityScore >= 80 ? "Excellent" : qualityScore >= 60 ? "Good" : qualityScore >= 40 ? "Fair" : "Incomplete"}</div>
+        <div class="score-label">${qualityScore >= 90 ? "Excellent" : qualityScore >= 70 ? "Good" : qualityScore >= 45 ? "Fair" : "Incomplete"}</div>
         <div class="score-bar"><div class="score-fill" style="width:${qualityScore}%;"></div></div>
         <table class="data-table" style="margin-top:8px;">
           <thead><tr><th></th><th>Factor</th><th>Points</th></tr></thead>
@@ -3635,14 +3695,13 @@ app.get("/wallet", (_req, res) => {
     <div class="tx-result" id="tx-result"></div>
   </div>
 
-  <!-- Server session card (shown if server has a stored session) -->
-  ${session ? `
-  <div class="card">
+  <!-- Last Known Session card — populated by localStorage on page load -->
+  <div class="card" id="session-card" style="display:none">
     <div class="card-title">Last Known Session</div>
-    <div class="info-row"><span class="info-label">Address</span><span class="info-val">${session.address}</span></div>
-    <div class="info-row"><span class="info-label">Connected</span><span class="info-val">${new Date(session.connectedAt).toLocaleString()}</span></div>
+    <div class="info-row"><span class="info-label">Address</span><span class="info-val" id="session-address">—</span></div>
+    <div class="info-row"><span class="info-label">Connected</span><span class="info-val" id="session-connected">—</span></div>
     ${verification && verification.anchored ? `<div class="info-row"><span class="info-label">Anchor Tx</span><span class="info-val">${verification.anchorTx || '—'}</span></div>` : ''}
-  </div>` : ''}
+  </div>
 </div>
 
 <script>
@@ -3745,6 +3804,12 @@ async function connectWallet() {
     const walletAddress = shieldedAddress || 'No shielded address returned';
     console.log('[wallet] address:', walletAddress);
 
+    // Persist address to localStorage for client-side session display
+    if (shieldedAddress) {
+      localStorage.setItem('pilotlog:address', shieldedAddress);
+      localStorage.setItem('pilotlog:lastConnected', new Date().toISOString());
+    }
+
     // Get wallet-configured network endpoints
     const config = await connectedApi.getConfiguration().catch(() => ({}));
     console.log('[wallet] networkId:', config.networkId);
@@ -3775,6 +3840,16 @@ async function connectWallet() {
     const txCard = document.getElementById('tx-card');
     if (txCard) txCard.style.display = 'block';
     if (walletNote) walletNote.textContent = 'Wallet connected. Network: ' + (config.networkId || NETWORK_ID);
+
+    // Update session card immediately (no reload needed)
+    if (shieldedAddress) {
+      const card = document.getElementById('session-card');
+      if (card) {
+        document.getElementById('session-address').textContent = shieldedAddress;
+        document.getElementById('session-connected').textContent = new Date().toLocaleString();
+        card.style.display = 'block';
+      }
+    }
 
     // Persist to server session
     await fetch('/wallet/connect', {
@@ -3856,7 +3931,21 @@ async function signTestTx() {
   }
 }
 
+// ── Restore Last Known Session from localStorage ──────────────────────────────
+function restoreSession() {
+  const storedAddress = localStorage.getItem('pilotlog:address');
+  const storedConnected = localStorage.getItem('pilotlog:lastConnected');
+  const card = document.getElementById('session-card');
+  if (storedAddress && card) {
+    document.getElementById('session-address').textContent = storedAddress;
+    document.getElementById('session-connected').textContent =
+      storedConnected ? new Date(storedConnected).toLocaleString() : '—';
+    card.style.display = 'block';
+  }
+}
+
 // Boot
+restoreSession();
 detectProvider();
 </script>
 </body>
