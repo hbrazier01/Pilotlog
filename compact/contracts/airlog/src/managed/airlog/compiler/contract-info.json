@@ -1,8 +1,12 @@
 {
+  "compiler-version": "0.30.0",
+  "language-version": "0.22.0",
+  "runtime-version": "0.15.0",
   "circuits": [
     {
       "name": "registerAirframe",
       "pure": false,
+      "proof": true,
       "arguments": [
         {
           "name": "airframeId",
@@ -21,6 +25,7 @@
     {
       "name": "authorizeIssuer",
       "pure": false,
+      "proof": true,
       "arguments": [
         {
           "name": "airframeId",
@@ -55,6 +60,7 @@
     {
       "name": "revokeIssuer",
       "pure": false,
+      "proof": true,
       "arguments": [
         {
           "name": "airframeId",
@@ -89,6 +95,7 @@
     {
       "name": "addEntry",
       "pure": false,
+      "proof": true,
       "arguments": [
         {
           "name": "airframeId",
@@ -151,6 +158,7 @@
     {
       "name": "transferAirframe",
       "pure": false,
+      "proof": true,
       "arguments": [
         {
           "name": "airframeId",
@@ -185,6 +193,7 @@
     {
       "name": "getNextEntryId",
       "pure": false,
+      "proof": true,
       "arguments": [
         {
           "name": "airframeId",
@@ -202,6 +211,7 @@
     {
       "name": "getEntry",
       "pure": false,
+      "proof": true,
       "arguments": [
         {
           "name": "airframeId",

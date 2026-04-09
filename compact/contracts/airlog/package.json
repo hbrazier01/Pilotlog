@@ -27,7 +27,7 @@
     "vite-plugin-wasm": "^3.6.0"
   },
   "dependencies": {
-    "@midnight-ntwrk/compact-runtime": "^0.8.1",
+    "@midnight-ntwrk/compact-runtime": "^0.15.0",
     "midnight-contracts": "git+https://riusricardo@github.com/riusricardo/midnight-contracts"
   }
 }
