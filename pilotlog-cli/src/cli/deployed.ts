@@ -257,7 +257,30 @@ async function createProviders(
 
   const coinPublicKey = walletAndMidnight.getCoinPublicKey();
   const storagePassword = `${coinPublicKey}!A`;
-  const zkConfigProvider = new NodeZkConfigProvider(ZK_KEYS_PATH);
+  const baseZkConfigProvider = new NodeZkConfigProvider(ZK_KEYS_PATH);
+
+  // Wrap NodeZkConfigProvider to normalize keyLocation shape.
+  // httpClientProofProvider may pass keyLocation as a string or an object
+  // with .circuitId / .id — NodeZkConfigProvider.get() expects a plain string.
+  const zkConfigProvider = {
+    async get(keyLocation: unknown) {
+      console.log(`  [zkConfigProvider] get called with:`, JSON.stringify(keyLocation));
+      const circuitId =
+        typeof keyLocation === "string"
+          ? keyLocation
+          : (keyLocation as any)?.circuitId ?? (keyLocation as any)?.id ?? String(keyLocation);
+      console.log(`  [zkConfigProvider] resolved circuitId: ${circuitId}`);
+      const result = await baseZkConfigProvider.get(circuitId);
+      return {
+        circuitId,
+        proverKey: (result as any).proverKey ?? (result as any).prover,
+        verifierKey: (result as any).verifierKey ?? (result as any).verifier,
+        zkir: (result as any).zkir,
+      };
+    },
+  };
+
+  console.log(`  [providers] httpClientProofProvider:`, typeof httpClientProofProvider);
 
   return {
     walletProvider: walletAndMidnight,
@@ -269,7 +292,7 @@ async function createProviders(
     zkConfigProvider,
     proofProvider: httpClientProofProvider(
       PREPROD_CONFIG.proofServer,
-      zkConfigProvider
+      zkConfigProvider as any
     ),
     privateStateProvider: levelPrivateStateProvider({
       privateStateStoreName: "airlog-private-state",
