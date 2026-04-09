@@ -1,4 +1,4 @@
-import { Contract as ContractType, Witnesses } from "./managed/airlog/contract/index.cjs";
+import { Contract as ContractType, Witnesses } from "./managed/airlog/contract/index.js";
 
 // AirLog v1 has no witness functions and no private state.
 export type Contract<T, W extends Witnesses<T> = Witnesses<T>> = ContractType<T, W>;

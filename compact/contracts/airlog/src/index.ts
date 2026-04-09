@@ -1,5 +1,5 @@
-import ContractModule from "./managed/airlog/contract/index.cjs";
-import type { Ledger, Entry, EntryType } from "./managed/airlog/contract/index.cjs";
+import ContractModule from "./managed/airlog/contract/index.js";
+import type { Ledger, Entry, EntryType } from "./managed/airlog/contract/index.js";
 
 export const pureCircuits = ContractModule.pureCircuits;
 
@@ -12,7 +12,7 @@ Object.defineProperty(ContractModule.Contract.prototype, 'provableCircuits', {
   enumerable: false,
 });
 
-export * as Airlog from "./managed/airlog/contract/index.cjs";
+export * as Airlog from "./managed/airlog/contract/index.js";
 
 export * from "./witnesses.js";
 export type { AirlogPrivateState } from "./witnesses.js";
