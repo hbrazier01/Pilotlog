@@ -1172,6 +1172,19 @@ app.get("/", (_req, res) => {
         ({ setNetworkId, CostModel, Transaction, CompiledContract, submitCallTx, httpClientProofProvider } =
           await import('/js/midnight-sdk.js'));
 
+        // AIR-135: Log each symbol immediately after SDK import to pinpoint undefined callables
+        console.log('[tx-debug] SDK import complete');
+        console.log('submitCallTx', submitCallTx);
+        console.log('CompiledContract', CompiledContract);
+        console.log('CompiledContract.make', CompiledContract?.make);
+        console.log('CompiledContract.withVacantWitnesses', CompiledContract?.withVacantWitnesses);
+        console.log('setNetworkId', setNetworkId);
+        console.log('CostModel', CostModel);
+        console.log('CostModel.initialCostModel', CostModel?.initialCostModel);
+        console.log('Transaction', Transaction);
+        console.log('Transaction.deserialize', Transaction?.deserialize);
+        console.log('httpClientProofProvider', httpClientProofProvider);
+
         setNetworkId(walletConfig.networkId);
 
         // ZK config provider: fetch prover key, verifier key, and IR from static assets.
