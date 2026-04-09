@@ -20,8 +20,8 @@
  *
  * Prerequisites:
  *   - Node v22  (nvm use 22)
- *   - Proof server running at http://127.0.0.1:6300
  *   - Wallet funded with tNight: https://faucet.preprod.midnight.network/
+ *   - No local proof server required (proving handled by remote Proof Station)
  */
 
 import path from "node:path";
@@ -65,11 +65,17 @@ const ZK_KEYS_PATH = path.resolve(
   "../../../compact/contracts/airlog/src/managed/airlog"
 );
 
+// Proof Station URL: use env var or fall back to the Midnight PreProd public Proof Station.
+// No local proof server required — proving is handled remotely.
+const PROOF_STATION_URL =
+  process.env.MIDNIGHT_PROOF_SERVER_URL ??
+  "https://proof-server.testnet-02.midnight.network";
+
 const PREPROD_CONFIG = {
   indexer: "https://indexer.preprod.midnight.network/api/v4/graphql",
   indexerWS: "wss://indexer.preprod.midnight.network/api/v4/graphql/ws",
   node: "https://rpc.preprod.midnight.network",
-  proofServer: "http://127.0.0.1:6300",
+  proofServer: PROOF_STATION_URL,
 };
 
 // DEV_SEED is only used when no provider is detected

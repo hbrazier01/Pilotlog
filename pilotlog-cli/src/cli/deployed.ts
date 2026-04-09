@@ -7,8 +7,7 @@
  *
  * Prerequisites:
  *   1. Node v22  (nvm use 22)
- *   2. Proof server running at http://127.0.0.1:6300
- *   3. Wallet funded with tNight on Midnight PreProd
+ *   2. Wallet funded with tNight on Midnight PreProd
  *      Faucet: https://faucet.preprod.midnight.network/
  *
  * Run from pilotlog-cli/:
@@ -69,11 +68,17 @@ const ZK_KEYS_PATH = path.resolve(
 
 const DEPLOYMENT_JSON = path.resolve(__dirname, "../../../deployment.json");
 
+// Proof Station URL: use env var or fall back to the Midnight PreProd public Proof Station.
+// No local proof server required — proving is handled remotely.
+const PROOF_STATION_URL =
+  process.env.MIDNIGHT_PROOF_SERVER_URL ??
+  "https://proof-server.testnet-02.midnight.network";
+
 const PREPROD_CONFIG = {
   indexer: "https://indexer.preprod.midnight.network/api/v4/graphql",
   indexerWS: "wss://indexer.preprod.midnight.network/api/v4/graphql/ws",
   node: "https://rpc.preprod.midnight.network",
-  proofServer: "http://127.0.0.1:6300",
+  proofServer: PROOF_STATION_URL,
 };
 
 // Wallet seed resolution:

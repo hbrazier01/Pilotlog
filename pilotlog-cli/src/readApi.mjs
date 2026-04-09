@@ -1116,23 +1116,67 @@ app.get("/", (_req, res) => {
       let txHash = null;
       let walletAddress = walletStatus?.session?.address || null;
 
+      // ── BLOCK 1: wallet connect ───────────────────────────────────────────
+      let connectedAPI, walletConfig;
       try {
+        console.log('[tx-debug] step: wallet detected');
         // 5. Connect wallet
-        const connectedAPI = await walletExt.connect('preview');
+        connectedAPI = await walletExt.connect('preview');
         if (!connectedAPI) throw new Error('wallet.connect() returned null — wallet rejected connection');
+        console.log('[tx-debug] step: wallet connected', connectedAPI);
 
         // 7. Get wallet config (networkId, indexer, prover URIs)
-        const walletConfig = await connectedAPI.getConfiguration();
+        walletConfig = await connectedAPI.getConfiguration();
+        console.log('[tx-debug] step: config loaded', walletConfig);
+      } catch (err) {
+        btn.textContent = origBtnText;
+        btn.disabled = false;
+        console.error('[tx-debug] wallet connect block failed', err.message, err.stack);
+        console.error('[1AM] wallet tx error:', err.message);
+        showToast('Failed to save flight · Retry or reconnect wallet', true);
+        return;
+      }
 
+      // ── BLOCK 2: canonical hash ───────────────────────────────────────────
+      let anchorHash;
+      try {
         // 8. Build canonical hash of flight data (deterministic, sorted keys)
         const sortedEntries = Object.entries(body).sort(([a],[b]) => a.localeCompare(b));
         const canonical = JSON.stringify(Object.fromEntries(sortedEntries));
         const hashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
-        const anchorHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2,'0')).join('');
+        anchorHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2,'0')).join('');
+        console.log('[tx-debug] step: anchor hash computed', anchorHash);
+      } catch (err) {
+        btn.textContent = origBtnText;
+        btn.disabled = false;
+        console.error('[tx-debug] hash block failed', err.message, err.stack);
+        console.error('[1AM] wallet tx error:', err.message);
+        showToast('Failed to save flight · Retry or reconnect wallet', true);
+        return;
+      }
 
-        // 9. Execute transaction via 1AM wallet (browser-only, no server involvement)
-        //    Providers are built from wallet-supplied config per Midnight DApp pattern.
-        const { setNetworkId } = await import('https://cdn.jsdelivr.net/npm/@midnight-ntwrk/midnight-js-network-id/+esm');
+      // ── BLOCK 3: SDK import + config + providers ──────────────────────────
+      let setNetworkId, CostModel, Transaction, CompiledContract, submitCallTx;
+      let proofProvider, walletProvider, midnightProvider;
+      try {
+        console.log('[tx-debug] step: providers start');
+        // 9. Execute transaction via 1AM wallet (browser-only, no server involvement).
+        //    Import from local pre-built bundle — avoids CDN bare-specifier errors for
+        //    @midnight-ntwrk/compact-runtime (WASM) which CDN cannot inline properly.
+        ({ setNetworkId, CostModel, Transaction, CompiledContract, submitCallTx } =
+          await import('/js/midnight-sdk.js'));
+
+        // ── Symbol audit ─────────────────────────────────────────────────────
+        console.log('[tx-debug] submitCallTx', submitCallTx);
+        console.log('[tx-debug] CompiledContract', CompiledContract);
+        console.log('[tx-debug] CompiledContract.make', CompiledContract?.make);
+        console.log('[tx-debug] CompiledContract.withVacantWitnesses', CompiledContract?.withVacantWitnesses);
+        console.log('[tx-debug] setNetworkId', setNetworkId);
+        console.log('[tx-debug] CostModel', CostModel);
+        console.log('[tx-debug] CostModel.initialCostModel', CostModel?.initialCostModel);
+        console.log('[tx-debug] Transaction', Transaction);
+        console.log('[tx-debug] Transaction.deserialize', Transaction?.deserialize);
+
         setNetworkId(walletConfig.networkId);
 
         const zkConfigProvider = {
@@ -1145,9 +1189,8 @@ app.get("/", (_req, res) => {
 
         const provingProvider = await connectedAPI.getProvingProvider(zkConfigProvider);
 
-        const proofProvider = {
+        proofProvider = {
           async proveTx(unprovenTx) {
-            const { CostModel } = await import('https://cdn.jsdelivr.net/npm/@midnight-ntwrk/ledger-v8/+esm');
             return unprovenTx.prove(provingProvider, CostModel.initialCostModel());
           },
         };
@@ -1155,13 +1198,12 @@ app.get("/", (_req, res) => {
         const shielded = await connectedAPI.getShieldedAddresses();
         walletAddress = shielded.shieldedCoinPublicKey || walletAddress;
 
-        const walletProvider = {
+        walletProvider = {
           getCoinPublicKey: () => shielded.shieldedCoinPublicKey,
           getEncryptionPublicKey: () => shielded.shieldedEncryptionPublicKey,
           async balanceTx(tx) {
             const hex = tx.serialize().toString('hex');
             const result = await connectedAPI.balanceUnsealedTransaction(hex);
-            const { Transaction } = await import('https://cdn.jsdelivr.net/npm/@midnight-ntwrk/ledger-v8/+esm');
             return Transaction.deserialize(
               'signature', 'proof', 'binding',
               new Uint8Array(result.tx.match(/.{2}/g).map(b => parseInt(b, 16)))
@@ -1169,7 +1211,7 @@ app.get("/", (_req, res) => {
           },
         };
 
-        const midnightProvider = {
+        midnightProvider = {
           async submitTx(tx) {
             const hex = tx.serialize().toString('hex');
             await connectedAPI.submitTransaction(hex);
@@ -1177,21 +1219,52 @@ app.get("/", (_req, res) => {
           },
         };
 
-        // Load compiled contract and deployment address
-        // Use browser bundle (index.browser.js) — index.js imports bare specifiers
-        // (@midnight-ntwrk/compact-runtime) which raw browser ESM cannot resolve.
-        // The bundle inlines compact-runtime + WASM as base64, fully self-contained.
-        const compiledContractModule = await import('/contract/compiled/airlog/index.browser.js');
-        const compiledContract = compiledContractModule.default || compiledContractModule;
+        console.log('[tx-debug] step: providers built');
+      } catch (err) {
+        btn.textContent = origBtnText;
+        btn.disabled = false;
+        console.error('[tx-debug] provider setup block failed', err.message, err.stack);
+        console.error('[1AM] wallet tx error:', err.message);
+        showToast('Failed to save flight · Retry or reconnect wallet', true);
+        return;
+      }
+
+      // ── BLOCK 4: compiled contract construction ───────────────────────────
+      let compiledContract;
+      try {
+        console.log('[tx-debug] step: compiled contract start');
+        // Load contract class and build a proper CompiledContract via 1AM SDK pattern.
+        // DApp builds tx → wallet proves → wallet balances → wallet submits.
+        // Contract bundle has compact-runtime + WASM inlined (no bare specifiers).
+        const { Contract } = await import('/contract/compiled/airlog/index.browser.js');
+        compiledContract = CompiledContract
+          .make('AirLog', Contract)
+          .pipe(
+            CompiledContract.withVacantWitnesses,
+            CompiledContract.withCompiledFileAssets('/contract/compiled/airlog')
+          );
+        console.log('[tx-debug] step: compiled contract built', compiledContract);
+      } catch (err) {
+        btn.textContent = origBtnText;
+        btn.disabled = false;
+        console.error('[tx-debug] compiled contract block failed', err.message, err.stack);
+        console.error('[1AM] wallet tx error:', err.message);
+        showToast('Failed to save flight · Retry or reconnect wallet', true);
+        return;
+      }
+
+      // ── BLOCK 5: submitCallTx ─────────────────────────────────────────────
+      try {
         const deploymentRes = await fetch('/deployment.json').then(r => r.ok ? r.json() : null);
         const contractAddress = deploymentRes?.contractAddress || null;
         if (!contractAddress) throw new Error('Contract not deployed — contractAddress missing from deployment.json');
 
-        const { submitCallTx } = await import('https://cdn.jsdelivr.net/npm/@midnight-ntwrk/midnight-js-contracts/+esm');
+        console.log('[tx-debug] step: before submitCallTx', { contractAddress, circuitId: 'addEntry', anchorHash });
         const result = await submitCallTx(
           { proofProvider, walletProvider, midnightProvider },
           { compiledContract, contractAddress, circuitId: 'addEntry', args: [anchorHash] }
         );
+        console.log('[tx-debug] step: after submitCallTx', result);
 
         if (!result?.public?.txHash) throw new Error('No transaction hash returned from 1AM wallet');
         txHash = result.public.txHash;
@@ -1199,6 +1272,7 @@ app.get("/", (_req, res) => {
       } catch (err) {
         btn.textContent = origBtnText;
         btn.disabled = false;
+        console.error('[tx-debug] submitCallTx block failed', err.message, err.stack);
         console.error('[1AM] wallet tx error:', err.message);
         showToast('Failed to save flight · Retry or reconnect wallet', true);
         return;
@@ -4070,7 +4144,7 @@ app.get("/wallet", (_req, res) => {
     <div class="card-title">Test Transaction</div>
     <p style="font-size:14px;color:#b6b9c6;margin:0 0 14px;">
       Confirm wallet integration by signing a <code>registerAirframe</code> transaction on Midnight PreProd.
-      The proof server must be running at <code>http://127.0.0.1:6300</code>.
+      Proving is handled remotely by the 1AM Proof Station — no local proof server required.
     </p>
     <div class="actions">
       <button class="btn btn-green" id="btn-tx" onclick="signTestTx()">Sign Test Transaction</button>
@@ -4595,6 +4669,18 @@ app.get("/pilot-report", (_req, res) => {
 
   res.type("html").send(html);
 });
+
+// Serve Midnight browser SDK bundle (pre-built, avoids CDN bare-specifier errors)
+const midnightSdkDir = path.resolve(process.cwd(), "public/js");
+if (fs.existsSync(midnightSdkDir)) {
+  app.use("/js", express.static(midnightSdkDir));
+  const sdkBundle = path.resolve(midnightSdkDir, "midnight-sdk.js");
+  if (fs.existsSync(sdkBundle)) {
+    console.log("[sdk] Midnight browser SDK bundle ready:", sdkBundle);
+  } else {
+    console.warn("[sdk] midnight-sdk.js NOT FOUND — run: npm run build:midnight-sdk");
+  }
+}
 
 // Serve deployment.json and compiled contract artifacts for browser-side 1AM wallet tx
 // Resolve from actual runtime root (fixes PKG_ROOT mismatch)
