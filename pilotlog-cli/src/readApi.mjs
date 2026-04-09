@@ -1288,7 +1288,7 @@ app.get("/", (_req, res) => {
         // Load contract class and build a proper CompiledContract via 1AM SDK pattern.
         // DApp builds tx → wallet proves → wallet balances → wallet submits.
         // Contract bundle has compact-runtime + WASM inlined (no bare specifiers).
-        const { Contract } = await import('/contract/compiled/airlog/index.browser.js');
+        const { Contract } = await import('/contract/compiled/airlog/index.js');
         compiledContract = CompiledContract
           .make('AirLog', Contract)
           .pipe(
@@ -4750,7 +4750,7 @@ const compiledContractDir = path.resolve(
 if (fs.existsSync(compiledContractDir)) {
   console.log("[contract] serving compiled contract from:", compiledContractDir);
   app.use("/contract/compiled/airlog", express.static(compiledContractDir));
-  const browserBundle = path.resolve(compiledContractDir, "index.browser.js");
+  const browserBundle = path.resolve(compiledContractDir, "index.js");
   if (fs.existsSync(browserBundle)) {
     console.log("[contract] browser bundle ready:", browserBundle);
   } else {
