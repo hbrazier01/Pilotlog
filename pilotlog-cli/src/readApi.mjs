@@ -1162,14 +1162,16 @@ app.get("/", (_req, res) => {
       }
 
       // ── BLOCK 3: SDK import + config + providers ──────────────────────────
-      let setNetworkId, CostModel, Transaction, CompiledContract, submitCallTx, httpClientProofProvider;
+      let setNetworkId, CompiledContract, submitCallTx, httpClientProofProvider;
       let proofProvider, walletProvider, midnightProvider;
       try {
         console.log('[tx-debug] step: providers start');
         // 9. Execute transaction via 1AM wallet (browser-only, no server involvement).
         //    Import from local pre-built bundle — avoids CDN bare-specifier errors for
         //    @midnight-ntwrk/compact-runtime (WASM) which CDN cannot inline properly.
-        ({ setNetworkId, CostModel, Transaction, CompiledContract, submitCallTx, httpClientProofProvider } =
+        // AIR-143: CostModel and Transaction from ledger-v8 removed from SDK entry —
+        // balanceTx uses a duck-typed proxy instead of Transaction.deserialize.
+        ({ setNetworkId, CompiledContract, submitCallTx, httpClientProofProvider } =
           await import('/js/midnight-sdk.js'));
 
         // AIR-135: Log each symbol immediately after SDK import to pinpoint undefined callables
@@ -1179,10 +1181,6 @@ app.get("/", (_req, res) => {
         console.log('CompiledContract.make', CompiledContract?.make);
         console.log('CompiledContract.withVacantWitnesses', CompiledContract?.withVacantWitnesses);
         console.log('setNetworkId', setNetworkId);
-        console.log('CostModel', CostModel);
-        console.log('CostModel.initialCostModel', CostModel?.initialCostModel);
-        console.log('Transaction', Transaction);
-        console.log('Transaction.deserialize', Transaction?.deserialize);
         console.log('httpClientProofProvider', httpClientProofProvider);
 
         setNetworkId(walletConfig.networkId);
@@ -1254,10 +1252,14 @@ app.get("/", (_req, res) => {
           async balanceTx(tx) {
             const hex = tx.serialize().toString('hex');
             const result = await connectedAPI.balanceUnsealedTransaction(hex);
-            return Transaction.deserialize(
-              'signature', 'proof', 'binding',
-              new Uint8Array(result.tx.match(/.{2}/g).map(b => parseInt(b, 16)))
-            );
+            // AIR-143: avoid Transaction.deserialize (ledger-v8/WASM, Node-only).
+            // Return a duck-typed proxy that satisfies the serialize()/identifiers() contract
+            // expected by midnightProvider.submitTx without importing ledger-v8 at the entry.
+            const balancedBytes = new Uint8Array(result.tx.match(/.{2}/g).map(b => parseInt(b, 16)));
+            return {
+              serialize: () => Buffer.from(balancedBytes),
+              identifiers: () => [result.txId ?? result.tx.slice(0, 64)],
+            };
           },
         };
 
