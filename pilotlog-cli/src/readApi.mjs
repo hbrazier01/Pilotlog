@@ -1178,7 +1178,10 @@ app.get("/", (_req, res) => {
         };
 
         // Load compiled contract and deployment address
-        const compiledContractModule = await import('/contract/compiled/airlog/index.js');
+        // Use browser bundle (index.browser.js) — index.js imports bare specifiers
+        // (@midnight-ntwrk/compact-runtime) which raw browser ESM cannot resolve.
+        // The bundle inlines compact-runtime + WASM as base64, fully self-contained.
+        const compiledContractModule = await import('/contract/compiled/airlog/index.browser.js');
         const compiledContract = compiledContractModule.default || compiledContractModule;
         const deploymentRes = await fetch('/deployment.json').then(r => r.ok ? r.json() : null);
         const contractAddress = deploymentRes?.contractAddress || null;
@@ -4594,14 +4597,46 @@ app.get("/pilot-report", (_req, res) => {
 });
 
 // Serve deployment.json and compiled contract artifacts for browser-side 1AM wallet tx
-const PKG_ROOT = path.resolve(__dirname, "../../..");
-const deploymentJsonPath = path.join(PKG_ROOT, "deployment.json");
+// Resolve from actual runtime root (fixes PKG_ROOT mismatch)
+const deploymentJsonPath = path.resolve(process.cwd(), "deployment.json");
 if (fs.existsSync(deploymentJsonPath)) {
   app.get("/deployment.json", (_req, res) => res.sendFile(deploymentJsonPath));
 }
-const compiledContractDir = path.join(PKG_ROOT, "compact/contracts/airlog/src/managed/airlog");
+
+const compiledContractDir = path.resolve(
+  process.cwd(),
+  "compact/contracts/airlog/src/managed/airlog/contract"
+);
+
 if (fs.existsSync(compiledContractDir)) {
+  console.log("[contract] serving compiled contract from:", compiledContractDir);
   app.use("/contract/compiled/airlog", express.static(compiledContractDir));
+  const browserBundle = path.resolve(compiledContractDir, "index.browser.js");
+  if (fs.existsSync(browserBundle)) {
+    console.log("[contract] browser bundle ready:", browserBundle);
+  } else {
+    console.warn("[contract] browser bundle NOT FOUND — run: npm run build:contract-bundle");
+  }
+} else {
+  console.error("[contract] compiled contract dir NOT FOUND:", compiledContractDir);
+}
+
+const keysDir = path.resolve(
+  process.cwd(),
+  "compact/contracts/airlog/src/managed/airlog/keys"
+);
+
+if (fs.existsSync(keysDir)) {
+  app.use("/contract/compiled/airlog/keys", express.static(keysDir));
+}
+
+const zkirDir = path.resolve(
+  process.cwd(),
+  "compact/contracts/airlog/src/managed/airlog/zkir"
+);
+
+if (fs.existsSync(zkirDir)) {
+  app.use("/contract/compiled/airlog/zkir", express.static(zkirDir));
 }
 
 app.listen(PORT, "0.0.0.0", () => {
