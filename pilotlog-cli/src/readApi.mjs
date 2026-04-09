@@ -1124,6 +1124,12 @@ app.get("/", (_req, res) => {
         connectedAPI = await walletExt.connect('preview');
         if (!connectedAPI) throw new Error('wallet.connect() returned null — wallet rejected connection');
         console.log('[tx-debug] step: wallet connected', connectedAPI);
+        console.log('[tx-debug] connectedAPI type:', typeof connectedAPI);
+        console.log('[tx-debug] connectedAPI keys:', connectedAPI ? Object.keys(connectedAPI) : 'null');
+        console.log('[tx-debug] connectedAPI.getProvingProvider:', connectedAPI?.getProvingProvider);
+        console.log('[tx-debug] connectedAPI.getShieldedAddresses:', connectedAPI?.getShieldedAddresses);
+        console.log('[tx-debug] connectedAPI.balanceUnsealedTransaction:', connectedAPI?.balanceUnsealedTransaction);
+        console.log('[tx-debug] connectedAPI.submitTransaction:', connectedAPI?.submitTransaction);
 
         // 7. Get wallet config (networkId, indexer, prover URIs)
         walletConfig = await connectedAPI.getConfiguration();
@@ -1187,6 +1193,10 @@ app.get("/", (_req, res) => {
           },
         };
 
+        console.log('[tx-debug] step: calling getProvingProvider', typeof connectedAPI.getProvingProvider);
+        if (typeof connectedAPI.getProvingProvider !== 'function') {
+          throw new Error(\`connectedAPI.getProvingProvider is not a function (got: \${typeof connectedAPI.getProvingProvider}). Wallet API methods: \${Object.keys(connectedAPI).join(', ')}\`);
+        }
         const provingProvider = await connectedAPI.getProvingProvider(zkConfigProvider);
 
         proofProvider = {
