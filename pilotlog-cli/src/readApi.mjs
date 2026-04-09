@@ -2156,6 +2156,20 @@ app.get("/export/sale-packet/html", (_req, res) => {
   if (profile?.pilot?.fullName) { qualityScore += 10; qualityFactors.push({ label: "Pilot profile complete", points: 10, pass: true }); }
   else { qualityFactors.push({ label: "Pilot profile complete", points: 10, pass: false }); }
 
+  // Deduct for active compliance gaps — a 100/100 score with overdue ADs is misleading
+  const highGapCount = gaps.filter((g) => g.severity === "high").length;
+  const medGapCount = gaps.filter((g) => g.severity === "medium").length;
+  if (highGapCount > 0) {
+    const deduct = Math.min(highGapCount * 20, 40);
+    qualityScore = Math.max(0, qualityScore - deduct);
+    qualityFactors.push({ label: `${highGapCount} high-severity compliance gap${highGapCount > 1 ? "s" : ""}`, points: -deduct, pass: false });
+  }
+  if (medGapCount > 0) {
+    const deduct = Math.min(medGapCount * 10, 20);
+    qualityScore = Math.max(0, qualityScore - deduct);
+    qualityFactors.push({ label: `${medGapCount} medium-severity gap${medGapCount > 1 ? "s" : ""}`, points: -deduct, pass: false });
+  }
+
   const totalLandings = Number(totals.dayLandings || 0) + Number(totals.nightLandings || 0);
   const instrumentTime = Number(totals.actualInstrument || 0) + Number(totals.simulatedInstrument || 0);
 
@@ -2199,7 +2213,7 @@ app.get("/export/sale-packet/html", (_req, res) => {
     `<tr>
       <td>${f.pass ? "✓" : "✗"}</td>
       <td>${f.label}</td>
-      <td>${f.pass ? f.points : 0} / ${f.points}</td>
+      <td>${f.points < 0 ? f.points : (f.pass ? f.points : 0)} ${f.points > 0 ? `/ ${f.points}` : ""}</td>
     </tr>`
   ).join("\n");
 
