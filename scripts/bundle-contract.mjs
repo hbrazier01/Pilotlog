@@ -8,8 +8,8 @@
  * Vite handles WebAssembly ESM imports (wasm-bindgen --target bundler output)
  * that esbuild cannot process directly.
  *
- * Output: compact/contracts/airlog/src/managed/airlog/contract/index.browser.js
- * Served at: /contract/compiled/airlog/index.browser.js
+ * Output: compact/contracts/airlog/src/managed/airlog/contract/index.js
+ * Served at: /contract/compiled/airlog/index.js
  */
 
 import { spawnSync } from "node:child_process";
@@ -50,7 +50,7 @@ export default defineConfig({
     lib: {
       entry: ${JSON.stringify(entryPoint)},
       formats: ['es'],
-      fileName: () => 'index.browser.js',
+      fileName: () => 'index.js',
     },
     outDir: ${JSON.stringify(outDir)},
     emptyOutDir: false,
@@ -65,7 +65,7 @@ fs.writeFileSync(viteConfigPath, viteConfig);
 
 console.log("[bundle-contract] building contract bundle with Vite...");
 console.log("  entry:", entryPoint);
-console.log("  output:", path.join(outDir, "index.browser.js"));
+console.log("  output:", path.join(outDir, "index.js"));
 
 const result = spawnSync(
   viteBin,
@@ -85,7 +85,7 @@ if (result.status !== 0) {
   process.exit(1);
 }
 
-const outFile = path.resolve(outDir, "index.browser.js");
+const outFile = path.resolve(outDir, "index.js");
 if (fs.existsSync(outFile)) {
   const stat = fs.statSync(outFile);
   console.log(`[bundle-contract] done — ${(stat.size / 1024).toFixed(1)} KB`);
