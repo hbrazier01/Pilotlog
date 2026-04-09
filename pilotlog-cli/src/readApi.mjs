@@ -1,7 +1,9 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { createHash, randomBytes } from "node:crypto";
 import { buildIntegrityResult } from "../../src/services/build-integrity-result.mjs";
 import { anchorOnMidnight } from "../../src/services/airlog-anchor-midnight.mjs";
@@ -1119,16 +1121,8 @@ app.get("/", (_req, res) => {
         const connectedAPI = await walletExt.connect('preview');
         if (!connectedAPI) throw new Error('wallet.connect() returned null — wallet rejected connection');
 
-        // 6. Get wallet address
-        try {
-          const state = await connectedAPI.state();
-          const shieldedAddress = state?.shieldedAddress;
-          if (shieldedAddress) walletAddress = shieldedAddress;
-        } catch (_) {}
-
-        // 7. Get wallet config (prover + indexer URIs)
-        let walletConfig = {};
-        try { walletConfig = await connectedAPI.getConfiguration(); } catch (_) {}
+        // 7. Get wallet config (networkId, indexer, prover URIs)
+        const walletConfig = await connectedAPI.getConfiguration();
 
         // 8. Build canonical hash of flight data (deterministic, sorted keys)
         const sortedEntries = Object.entries(body).sort(([a],[b]) => a.localeCompare(b));
@@ -1136,26 +1130,68 @@ app.get("/", (_req, res) => {
         const hashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
         const anchorHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2,'0')).join('');
 
-        // 9. Submit transaction via server using wallet-provided proving infrastructure
-        const anchorRes = await fetch('/entries/chain-submit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            anchorHash,
-            walletAddress,
-            indexerUri: walletConfig?.indexerUri || null,
-            proverServerUri: walletConfig?.proverServerUri || null,
-          }),
-        });
+        // 9. Execute transaction via 1AM wallet (browser-only, no server involvement)
+        //    Providers are built from wallet-supplied config per Midnight DApp pattern.
+        const { setNetworkId } = await import('https://cdn.jsdelivr.net/npm/@midnight-ntwrk/midnight-js-network-id/+esm');
+        setNetworkId(walletConfig.networkId);
 
-        if (!anchorRes.ok) {
-          const anchorErr = await anchorRes.json().catch(() => ({}));
-          throw new Error(anchorErr.error || 'Transaction submission failed');
-        }
+        const zkConfigProvider = {
+          async getZkConfig(circuitId) {
+            const res = await fetch(\`/contract/compiled/airlog/\${circuitId}.json\`);
+            if (!res.ok) throw new Error(\`ZK config not found for circuit: \${circuitId}\`);
+            return res.json();
+          },
+        };
 
-        const anchorData = await anchorRes.json();
-        if (!anchorData.txHash) throw new Error('No transaction hash returned from chain');
-        txHash = anchorData.txHash;
+        const provingProvider = await connectedAPI.getProvingProvider(zkConfigProvider);
+
+        const proofProvider = {
+          async proveTx(unprovenTx) {
+            const { CostModel } = await import('https://cdn.jsdelivr.net/npm/@midnight-ntwrk/ledger-v8/+esm');
+            return unprovenTx.prove(provingProvider, CostModel.initialCostModel());
+          },
+        };
+
+        const shielded = await connectedAPI.getShieldedAddresses();
+        walletAddress = shielded.shieldedCoinPublicKey || walletAddress;
+
+        const walletProvider = {
+          getCoinPublicKey: () => shielded.shieldedCoinPublicKey,
+          getEncryptionPublicKey: () => shielded.shieldedEncryptionPublicKey,
+          async balanceTx(tx) {
+            const hex = tx.serialize().toString('hex');
+            const result = await connectedAPI.balanceUnsealedTransaction(hex);
+            const { Transaction } = await import('https://cdn.jsdelivr.net/npm/@midnight-ntwrk/ledger-v8/+esm');
+            return Transaction.deserialize(
+              'signature', 'proof', 'binding',
+              new Uint8Array(result.tx.match(/.{2}/g).map(b => parseInt(b, 16)))
+            );
+          },
+        };
+
+        const midnightProvider = {
+          async submitTx(tx) {
+            const hex = tx.serialize().toString('hex');
+            await connectedAPI.submitTransaction(hex);
+            return tx.identifiers()[0];
+          },
+        };
+
+        // Load compiled contract and deployment address
+        const compiledContractModule = await import('/contract/compiled/airlog/index.js');
+        const compiledContract = compiledContractModule.default || compiledContractModule;
+        const deploymentRes = await fetch('/deployment.json').then(r => r.ok ? r.json() : null);
+        const contractAddress = deploymentRes?.contractAddress || null;
+        if (!contractAddress) throw new Error('Contract not deployed — contractAddress missing from deployment.json');
+
+        const { submitCallTx } = await import('https://cdn.jsdelivr.net/npm/@midnight-ntwrk/midnight-js-contracts/+esm');
+        const result = await submitCallTx(
+          { proofProvider, walletProvider, midnightProvider },
+          { compiledContract, contractAddress, circuitId: 'addEntry', args: [anchorHash] }
+        );
+
+        if (!result?.public?.txHash) throw new Error('No transaction hash returned from 1AM wallet');
+        txHash = result.public.txHash;
 
       } catch (err) {
         btn.textContent = origBtnText;
@@ -1311,34 +1347,7 @@ app.post("/entries", (req, res) => {
   res.status(201).json(entry);
 });
 
-// POST /entries/chain-submit — submit anchor hash to Midnight via wallet-provided prover config
-// Called by browser after connecting 1AM wallet. Returns txHash on success.
-app.post("/entries/chain-submit", async (req, res) => {
-  const { anchorHash, walletAddress, indexerUri, proverServerUri } = req.body || {};
-  if (!anchorHash) return res.status(400).json({ error: "anchorHash is required" });
-
-  // Attempt real anchor via midnight-local if available
-  const anchorResult = await anchorOnMidnight({
-    anchorHash,
-    airframeId: createHash("sha256").update(String(walletAddress || "unknown").toLowerCase()).digest("hex"),
-    hours: 0,
-  });
-
-  if (anchorResult.anchored && anchorResult.anchorId) {
-    return res.json({ txHash: anchorResult.anchorId, anchoredAt: anchorResult.anchoredAt, network: anchorResult.network });
-  }
-
-  // Midnight runtime not available in this environment — return a deterministic placeholder tx
-  // that embeds the hash so the record is still verifiable by hash
-  const placeholderTx = `0x${anchorHash.slice(0, 16)}${Date.now().toString(16)}`;
-  return res.json({
-    txHash: placeholderTx,
-    anchoredAt: new Date().toISOString(),
-    network: "midnight-preview",
-    pending: true,
-    note: "Wallet tx submitted — awaiting full Midnight network confirmation",
-  });
-});
+// /entries/chain-submit is REMOVED — transactions are executed browser-side via 1AM wallet
 
 // POST /entries/:id/anchor — trigger or re-trigger background anchor for a specific entry
 app.post("/entries/:id/anchor", (req, res) => {
@@ -4583,6 +4592,17 @@ app.get("/pilot-report", (_req, res) => {
 
   res.type("html").send(html);
 });
+
+// Serve deployment.json and compiled contract artifacts for browser-side 1AM wallet tx
+const PKG_ROOT = path.resolve(__dirname, "../../..");
+const deploymentJsonPath = path.join(PKG_ROOT, "deployment.json");
+if (fs.existsSync(deploymentJsonPath)) {
+  app.get("/deployment.json", (_req, res) => res.sendFile(deploymentJsonPath));
+}
+const compiledContractDir = path.join(PKG_ROOT, "compact/contracts/airlog/src/managed/airlog");
+if (fs.existsSync(compiledContractDir)) {
+  app.use("/contract/compiled/airlog", express.static(compiledContractDir));
+}
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`pilotlog-read-api listening on :${PORT}`);
