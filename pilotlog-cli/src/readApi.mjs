@@ -1162,48 +1162,75 @@ app.get("/", (_req, res) => {
       }
 
       // ── BLOCK 3: SDK import + config + providers ──────────────────────────
-      let setNetworkId, CostModel, Transaction, CompiledContract, submitCallTx;
+      let setNetworkId, CostModel, Transaction, CompiledContract, submitCallTx, httpClientProofProvider;
       let proofProvider, walletProvider, midnightProvider;
       try {
         console.log('[tx-debug] step: providers start');
         // 9. Execute transaction via 1AM wallet (browser-only, no server involvement).
         //    Import from local pre-built bundle — avoids CDN bare-specifier errors for
         //    @midnight-ntwrk/compact-runtime (WASM) which CDN cannot inline properly.
-        ({ setNetworkId, CostModel, Transaction, CompiledContract, submitCallTx } =
+        ({ setNetworkId, CostModel, Transaction, CompiledContract, submitCallTx, httpClientProofProvider } =
           await import('/js/midnight-sdk.js'));
-
-        // ── Symbol audit ─────────────────────────────────────────────────────
-        console.log('[tx-debug] submitCallTx', submitCallTx);
-        console.log('[tx-debug] CompiledContract', CompiledContract);
-        console.log('[tx-debug] CompiledContract.make', CompiledContract?.make);
-        console.log('[tx-debug] CompiledContract.withVacantWitnesses', CompiledContract?.withVacantWitnesses);
-        console.log('[tx-debug] setNetworkId', setNetworkId);
-        console.log('[tx-debug] CostModel', CostModel);
-        console.log('[tx-debug] CostModel.initialCostModel', CostModel?.initialCostModel);
-        console.log('[tx-debug] Transaction', Transaction);
-        console.log('[tx-debug] Transaction.deserialize', Transaction?.deserialize);
 
         setNetworkId(walletConfig.networkId);
 
+        // ZK config provider: fetch prover key, verifier key, and IR from static assets.
         const zkConfigProvider = {
-          async getZkConfig(circuitId) {
-            const res = await fetch(\`/contract/compiled/airlog/\${circuitId}.json\`);
-            if (!res.ok) throw new Error(\`ZK config not found for circuit: \${circuitId}\`);
-            return res.json();
+          async get(circuitId) {
+            const proverUrl = \`/contract/compiled/airlog/keys/\${circuitId}.prover\`;
+            const verifierUrl = \`/contract/compiled/airlog/keys/\${circuitId}.verifier\`;
+            const zkirUrl = \`/contract/compiled/airlog/zkir/\${circuitId}.bzkir\`;
+
+            console.log('[tx-debug] zkConfigProvider.get circuitId:', circuitId);
+            console.log('[tx-debug] fetch prover:', proverUrl);
+            let proverRes;
+            try {
+              proverRes = await fetch(proverUrl);
+              console.log('[tx-debug] prover response:', proverRes.status, proverRes.ok);
+            } catch (e) {
+              console.error('[tx-debug] FETCH FAILED prover:', proverUrl, e.message);
+              throw e;
+            }
+
+            console.log('[tx-debug] fetch verifier:', verifierUrl);
+            let verifierRes;
+            try {
+              verifierRes = await fetch(verifierUrl);
+              console.log('[tx-debug] verifier response:', verifierRes.status, verifierRes.ok);
+            } catch (e) {
+              console.error('[tx-debug] FETCH FAILED verifier:', verifierUrl, e.message);
+              throw e;
+            }
+
+            console.log('[tx-debug] fetch zkir:', zkirUrl);
+            let zkirRes;
+            try {
+              zkirRes = await fetch(zkirUrl);
+              console.log('[tx-debug] zkir response:', zkirRes.status, zkirRes.ok);
+            } catch (e) {
+              console.error('[tx-debug] FETCH FAILED zkir:', zkirUrl, e.message);
+              throw e;
+            }
+
+            if (!proverRes.ok) throw new Error(\`ZK prover key not found: \${circuitId} (status \${proverRes.status})\`);
+            if (!verifierRes.ok) throw new Error(\`ZK verifier key not found: \${circuitId} (status \${verifierRes.status})\`);
+            if (!zkirRes.ok) throw new Error(\`ZK IR not found: \${circuitId} (status \${zkirRes.status})\`);
+            const [proverKey, verifierKey, zkir] = await Promise.all([
+              proverRes.arrayBuffer().then(b => new Uint8Array(b)),
+              verifierRes.arrayBuffer().then(b => new Uint8Array(b)),
+              zkirRes.arrayBuffer().then(b => new Uint8Array(b)),
+            ]);
+            console.log('[tx-debug] zk assets loaded ok:', circuitId, { proverKey: proverKey.length, verifierKey: verifierKey.length, zkir: zkir.length });
+            return { circuitId, proverKey, verifierKey, zkir };
           },
         };
 
-        console.log('[tx-debug] step: calling getProvingProvider', typeof connectedAPI.getProvingProvider);
-        if (typeof connectedAPI.getProvingProvider !== 'function') {
-          throw new Error(\`connectedAPI.getProvingProvider is not a function (got: \${typeof connectedAPI.getProvingProvider}). Wallet API methods: \${Object.keys(connectedAPI).join(', ')}\`);
-        }
-        const provingProvider = await connectedAPI.getProvingProvider(zkConfigProvider);
-
-        proofProvider = {
-          async proveTx(unprovenTx) {
-            return unprovenTx.prove(provingProvider, CostModel.initialCostModel());
-          },
-        };
+        // Use ProofStation directly — no wallet-based proving.
+        const proverServerUri = walletConfig.proverServerUri || 'https://proof-server.testnet-02.midnight.network';
+        console.log('[tx-debug] ProofStation URI:', proverServerUri);
+        console.log('[tx-debug] walletConfig.proverServerUri (raw):', walletConfig.proverServerUri);
+        console.log('[tx-debug] constructing httpClientProofProvider with URL:', new URL(proverServerUri).href);
+        proofProvider = httpClientProofProvider(new URL(proverServerUri), zkConfigProvider);
 
         const shielded = await connectedAPI.getShieldedAddresses();
         walletAddress = shielded.shieldedCoinPublicKey || walletAddress;
@@ -1269,15 +1296,16 @@ app.get("/", (_req, res) => {
         const contractAddress = deploymentRes?.contractAddress || null;
         if (!contractAddress) throw new Error('Contract not deployed — contractAddress missing from deployment.json');
 
-        console.log('[tx-debug] step: before submitCallTx', { contractAddress, circuitId: 'addEntry', anchorHash });
+        console.log('[tx-debug] tx built');
+        console.log('[tx-debug] tx submitted', { contractAddress, circuitId: 'addEntry', anchorHash });
         const result = await submitCallTx(
           { proofProvider, walletProvider, midnightProvider },
           { compiledContract, contractAddress, circuitId: 'addEntry', args: [anchorHash] }
         );
-        console.log('[tx-debug] step: after submitCallTx', result);
 
         if (!result?.public?.txHash) throw new Error('No transaction hash returned from 1AM wallet');
         txHash = result.public.txHash;
+        console.log('[tx-debug] tx hash:', txHash);
 
       } catch (err) {
         btn.textContent = origBtnText;
