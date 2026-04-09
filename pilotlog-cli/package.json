@@ -14,9 +14,9 @@
     "wallet:test-tx": "TS_NODE_TRANSPILE_ONLY=true node --experimental-specifier-resolution=node --loader ts-node/esm src/cli/wallet-connect.ts -- --test-tx"
   },
   "dependencies": {
-    "@repo/airlog-contract": "file:../compact/contracts/airlog",
     "@midnight-ntwrk/compact-js": "2.5.0",
     "@midnight-ntwrk/compact-runtime": "0.15.0",
+    "@midnight-ntwrk/ledger-v8": "8.0.3",
     "@midnight-ntwrk/midnight-js-contracts": "4.0.4",
     "@midnight-ntwrk/midnight-js-http-client-proof-provider": "4.0.4",
     "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "4.0.4",
@@ -25,19 +25,22 @@
     "@midnight-ntwrk/midnight-js-node-zk-config-provider": "4.0.4",
     "@midnight-ntwrk/midnight-js-types": "4.0.4",
     "@midnight-ntwrk/midnight-js-utils": "4.0.4",
-    "@midnight-ntwrk/ledger-v8": "8.0.3",
+    "@midnight-ntwrk/wallet-sdk-address-format": "3.1.0",
+    "@midnight-ntwrk/wallet-sdk-dust-wallet": "3.0.0",
     "@midnight-ntwrk/wallet-sdk-facade": "3.0.0",
     "@midnight-ntwrk/wallet-sdk-hd": "3.0.1",
     "@midnight-ntwrk/wallet-sdk-shielded": "2.1.0",
     "@midnight-ntwrk/wallet-sdk-unshielded-wallet": "2.1.0",
-    "@midnight-ntwrk/wallet-sdk-dust-wallet": "3.0.0",
-    "@midnight-ntwrk/wallet-sdk-address-format": "3.1.0",
+    "@repo/airlog-contract": "file:../compact/contracts/airlog",
     "rxjs": "^7.5",
     "ws": "^8.8.1"
   },
   "devDependencies": {
     "@types/ws": "^8.0.0",
+    "ts-node": "^10.9.0",
     "typescript": "^5.8.3",
-    "ts-node": "^10.9.0"
+    "vite": "^8.0.8",
+    "vite-plugin-top-level-await": "^1.6.0",
+    "vite-plugin-wasm": "^3.6.0"
   }
 }

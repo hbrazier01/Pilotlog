@@ -66,9 +66,10 @@ const wbindgenStartPlugin = `
 
 const viteConfig = `
 import { defineConfig } from 'vite';
+import wasmPlugin from 'vite-plugin-wasm';
 
 export default defineConfig({
-  plugins: [${wbindgenStartPlugin}],
+  plugins: [wasmPlugin(), ${wbindgenStartPlugin}],
   build: {
     lib: {
       entry: ${JSON.stringify(entryPoint)},
@@ -77,13 +78,12 @@ export default defineConfig({
     },
     outDir: ${JSON.stringify(outDir)},
     emptyOutDir: false,
-    target: 'es2020',
+    target: 'esnext',
     minify: false,
     rollupOptions: {
       external: [],
     },
   },
-  assetsInclude: ['**/*.wasm'],
   resolve: {
     mainFields: ['browser', 'module', 'main'],
   },
