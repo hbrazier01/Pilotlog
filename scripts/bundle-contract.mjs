@@ -44,8 +44,10 @@ if (!fs.existsSync(viteBin)) {
 const viteConfigPath = path.resolve(contractPkgRoot, "vite.browser-bundle.config.js");
 const viteConfig = `
 import { defineConfig } from 'vite';
+import wasm from 'vite-plugin-wasm';
 
 export default defineConfig({
+  plugins: [wasm()],
   build: {
     lib: {
       entry: ${JSON.stringify(entryPoint)},
@@ -54,10 +56,14 @@ export default defineConfig({
     },
     outDir: ${JSON.stringify(outDir)},
     emptyOutDir: false,
-    target: 'es2020',
+    target: 'esnext',
     minify: false,
+    rollupOptions: {
+      // Disable tree-shaking so Compact/wasm-bindgen init side-effects are preserved.
+      // Without this, Vite eliminates required init functions and leaves broken (void 0)() call sites.
+      treeshake: false,
+    },
   },
-  assetsInclude: ['**/*.wasm'],
 });
 `;
 
@@ -87,6 +93,17 @@ if (result.status !== 0) {
 
 const outFile = path.resolve(outDir, "index.js");
 if (fs.existsSync(outFile)) {
+  // Post-process: remove Vite tree-shaking artifact `(void 0)();`
+  // This occurs when Vite eliminates an init function but leaves the call site behind,
+  // resulting in a runtime TypeError. The call is safe to remove — it was a no-op init.
+  let bundled = fs.readFileSync(outFile, "utf8");
+  const before = (bundled.match(/\(void 0\)\(\);/g) || []).length;
+  if (before > 0) {
+    bundled = bundled.replace(/\(void 0\)\(\);\n?/g, "");
+    fs.writeFileSync(outFile, bundled);
+    console.log(`[bundle-contract] stripped ${before} (void 0)() artifact(s)`);
+  }
+
   const stat = fs.statSync(outFile);
   console.log(`[bundle-contract] done — ${(stat.size / 1024).toFixed(1)} KB`);
 } else {
