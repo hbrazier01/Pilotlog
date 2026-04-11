@@ -106,13 +106,13 @@ function truncateWalletAddress(address) {
   return address.slice(0, 8) + "…" + address.slice(-6);
 }
 
-// Returns the wallet nav anchor HTML (SSR). id="wallet-nav-link" is updated by JS after load.
+// Returns the wallet nav element HTML (SSR). id="wallet-nav-link" is updated by JS after load.
 function walletNavHtml(session) {
   if (session && session.address) {
     const short = truncateWalletAddress(session.address);
-    return `<a href="/wallet" id="wallet-nav-link" style="color:#22c55e;" title="${session.address}">&#9679; ${short}</a>`;
+    return `<span id="wallet-nav-link" style="color:#22c55e;font-size:14px;cursor:default;" title="${session.address}">&#9679; ${short}</span>`;
   }
-  return `<a href="/wallet" id="wallet-nav-link">Wallet</a>`;
+  return `<button id="wallet-nav-link" onclick="connectWalletHeader()" style="background:none;border:1px solid #374151;color:#9aa3ff;font-size:14px;padding:5px 12px;border-radius:6px;cursor:pointer;font-weight:600;">Connect Wallet</button>`;
 }
 
 // Inline script injected into every main page — refreshes wallet nav from server session.
@@ -125,16 +125,42 @@ const walletStatusScript = `
     if (data.connected && data.session && data.session.address) {
       const addr = data.session.address;
       const short = addr.length > 16 ? addr.slice(0, 8) + '\\u2026' + addr.slice(-6) : addr;
-      el.textContent = '\\u25CF ' + short;
-      el.style.color = '#22c55e';
-      el.title = addr;
+      el.outerHTML = '<span id="wallet-nav-link" style="color:#22c55e;font-size:14px;cursor:default;" title="' + addr + '">\\u25CF ' + short + '</span>';
     } else {
-      el.textContent = 'Connect Wallet';
-      el.style.color = '';
-      el.title = '';
+      el.outerHTML = '<button id="wallet-nav-link" onclick="connectWalletHeader()" style="background:none;border:1px solid #374151;color:#9aa3ff;font-size:14px;padding:5px 12px;border-radius:6px;cursor:pointer;font-weight:600;">Connect Wallet</button>';
     }
   }).catch(() => {});
 })();
+
+async function connectWalletHeader() {
+  const el = document.getElementById('wallet-nav-link');
+  if (el) { el.textContent = 'Connecting…'; el.disabled = true; }
+  const wallet = window.midnight?.['1am'];
+  if (!wallet || typeof wallet.connect !== 'function') {
+    alert('1AM wallet extension not found. Install the Midnight 1AM extension to continue.');
+    if (el) { el.textContent = 'Connect Wallet'; el.disabled = false; }
+    return;
+  }
+  try {
+    const api = await wallet.connect('preview');
+    if (!api) throw new Error('Connection rejected');
+    const state = await api.state().catch(() => ({}));
+    const addr = state?.shieldedAddress || null;
+    if (addr) {
+      await fetch('/wallet/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: addr }),
+      });
+      location.reload();
+    } else {
+      throw new Error('No address returned');
+    }
+  } catch (err) {
+    if (el) { el.textContent = 'Connect Wallet'; el.disabled = false; }
+    alert('Wallet connection failed: ' + err.message);
+  }
+}
 </script>`;
 
 // ---- end wallet nav helpers ----
@@ -693,14 +719,6 @@ app.get("/", (_req, res) => {
     </div>
   </div>
 
-  <div id="wallet-home-bar" style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:#0d1220;border:1px solid #1e2a48;border-radius:12px;margin-bottom:16px;font-size:13px;">
-    <span id="wallet-home-dot" style="width:8px;height:8px;border-radius:50%;background:#374151;flex-shrink:0;"></span>
-    <span id="wallet-home-label" style="font-weight:600;color:#b6b9c6;">Checking wallet…</span>
-    <span id="wallet-home-addr" style="color:#6b7280;flex:1;"></span>
-    <button id="wallet-home-btn" onclick="connectWalletHome()" style="padding:6px 14px;background:#1a3a8f;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;display:none;">Connect Wallet</button>
-    <a href="/wallet" style="font-size:12px;color:#6b7280;text-decoration:none;">Details →</a>
-  </div>
-
   <div class="actions">
     <button class="btn btn-outline" id="openLogBtn" onclick="toggleForm()">+ Log Flight</button>
     <a href="/pilot-report" class="btn">View Pilot Report →</a>
@@ -756,68 +774,6 @@ app.get("/", (_req, res) => {
 
   <script>
     const lastUsedAircraft = ${JSON.stringify(lastUsedAircraft)};
-
-    // Wallet home bar — shows connection status and connect button
-    (async function initWalletHomeBar() {
-      const dot = document.getElementById('wallet-home-dot');
-      const label = document.getElementById('wallet-home-label');
-      const addrEl = document.getElementById('wallet-home-addr');
-      const btn = document.getElementById('wallet-home-btn');
-      try {
-        const data = await fetch('/wallet/status').then(r => r.json());
-        if (data.connected && data.session?.address) {
-          const addr = data.session.address;
-          const short = addr.length > 16 ? addr.slice(0,8) + '\\u2026' + addr.slice(-6) : addr;
-          dot.style.background = '#22c55e';
-          label.textContent = 'Wallet Connected';
-          label.style.color = '#22c55e';
-          addrEl.textContent = short;
-          btn.style.display = 'none';
-        } else {
-          dot.style.background = '#ef4444';
-          label.textContent = 'Wallet required to save flights';
-          label.style.color = '#f59e0b';
-          btn.style.display = 'inline-block';
-        }
-      } catch (_) {
-        dot.style.background = '#374151';
-        label.textContent = 'Wallet status unknown';
-        btn.style.display = 'inline-block';
-      }
-    })();
-
-    async function connectWalletHome() {
-      const btn = document.getElementById('wallet-home-btn');
-      btn.textContent = 'Connecting…';
-      btn.disabled = true;
-      const wallet = window.midnight?.['1am'];
-      if (!wallet || typeof wallet.connect !== 'function') {
-        alert('1AM wallet extension not found. Install the Midnight 1AM extension to continue.');
-        btn.textContent = 'Connect Wallet';
-        btn.disabled = false;
-        return;
-      }
-      try {
-        const api = await wallet.connect('preview');
-        if (!api) throw new Error('Connection rejected');
-        const state = await api.state().catch(() => ({}));
-        const addr = state?.shieldedAddress || null;
-        if (addr) {
-          await fetch('/wallet/connect', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ address: addr }),
-          });
-          location.reload();
-        } else {
-          throw new Error('No address returned');
-        }
-      } catch (err) {
-        btn.textContent = 'Connect Wallet';
-        btn.disabled = false;
-        alert('Wallet connection failed: ' + err.message);
-      }
-    }
 
     // Phase-aware readiness assistant
     (async function loadReadiness() {
@@ -1085,7 +1041,7 @@ app.get("/", (_req, res) => {
         walletStatus = await fetch('/wallet/status').then(r => r.json());
       } catch (_) {}
       if (!walletStatus?.connected) {
-        showToast('Wallet required to save flight · Connect wallet to continue', true);
+        showToast('Connect wallet to save flight on-chain · Use the header button to connect', true);
         return;
       }
 
@@ -4095,383 +4051,6 @@ app.get("/wallet/status", (_req, res) => {
   res.json({ connected: !!session, session: session || null });
 });
 
-// GET /wallet — wallet connect UI
-app.get("/wallet", (_req, res) => {
-  const session = readWalletSession();
-  const verification = readVerification();
-  res.type("html").send(`<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Wallet — PilotLog</title>
-  <style>
-  body { font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif; background:#0b0f18; color:#fff; margin:0; }
-  .wrap { max-width:680px; margin:0 auto; padding:32px 20px; }
-  .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:28px; }
-  .brand { font-size:20px; font-weight:800; letter-spacing:-0.5px; }
-  .nav a { color:#9aa3ff; text-decoration:none; font-size:14px; margin-left:16px; }
-  .nav a:hover { color:#fff; }
-  h1 { font-size:28px; font-weight:800; letter-spacing:-0.5px; margin:0 0 6px; }
-  .sub { color:#b6b9c6; font-size:14px; margin-bottom:28px; }
-  .card { background:#121624; border:1px solid #222843; border-radius:14px; padding:24px; margin-bottom:16px; }
-  .card-title { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:#b6b9c6; margin-bottom:14px; }
-  .status-row { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
-  .dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
-  .dot.connected { background:#22c55e; }
-  .dot.disconnected { background:#6b7280; }
-  .dot.detecting { background:#f59e0b; animation:pulse 1s infinite; }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
-  .status-label { font-size:15px; font-weight:700; }
-  .address { font-family:monospace; font-size:13px; color:#9aa3ff; word-break:break-all; background:#0b0f18; border:1px solid #222843; border-radius:8px; padding:10px 12px; margin-bottom:14px; }
-  .btn { display:inline-block; padding:11px 24px; background:#1a3a8f; color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; text-decoration:none; transition:background .15s; }
-  .btn:hover { background:#1e46b0; }
-  .btn:disabled { background:#1a2240; color:#6b7280; cursor:not-allowed; }
-  .btn-outline { background:transparent; border:1px solid #222843; color:#9aa3ff; }
-  .btn-outline:hover { background:#121624; }
-  .btn-danger { background:#7f1d1d; color:#fca5a5; }
-  .btn-danger:hover { background:#991b1b; }
-  .btn-green { background:#14532d; color:#86efac; }
-  .btn-green:hover { background:#166534; }
-  .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
-  .note { font-size:13px; color:#6b7280; margin-top:10px; line-height:1.5; }
-  .tx-result { background:#0b1a0f; border:1px solid #14532d; border-radius:8px; padding:12px; font-size:13px; color:#86efac; margin-top:12px; display:none; word-break:break-all; }
-  .tx-result.show { display:block; }
-  .not-found { background:#1c0a03; border:1px solid #7c2d12; border-radius:8px; padding:12px; font-size:13px; color:#fdba74; margin-top:12px; display:none; }
-  .not-found.show { display:block; }
-  .info-row { display:flex; justify-content:space-between; font-size:13px; padding:5px 0; border-bottom:1px solid #1a2040; }
-  .info-row:last-child { border-bottom:none; }
-  .info-label { color:#6b7280; }
-  .info-val { color:#e5e7eb; font-family:monospace; }
-  .spinner { display:inline-block; width:14px; height:14px; border:2px solid #1a3a8f; border-top-color:#9aa3ff; border-radius:50%; animation:spin .7s linear infinite; vertical-align:middle; margin-right:6px; }
-  @keyframes spin { to { transform:rotate(360deg); } }
-  </style>
-</head>
-<body>
-<div class="wrap">
-  <div class="topbar">
-    <div class="brand">PilotLog</div>
-    <div class="nav">
-      <a href="/">← Home</a>
-      <a href="/export/sale-packet/html">Sale Packet</a>
-      <span id="wallet-nav-link" style="font-size:14px;margin-left:16px;color:#b6b9c6;">Checking wallet…</span>
-    </div>
-  </div>
-  ${walletStatusScript}
-
-  <h1>Wallet</h1>
-  <div class="sub">${session ? 'Session Active · Ready to Verify' : 'Reconnect wallet to finalize verification'}</div>
-
-  <!-- Primary session card — driven by server session -->
-  <div class="card" id="wallet-card">
-    <div class="card-title">Wallet Connection</div>
-    <div class="status-row">
-      <div class="dot ${session ? 'connected' : 'detecting'}" id="status-dot"></div>
-      <div class="status-label" id="status-label">${session ? 'Wallet Connected' : 'No Wallet Session'}</div>
-    </div>
-    ${session ? `<div id="address-box" class="address">${session.address}</div>` : `<div id="address-box" class="address" style="display:none"></div>`}
-    <!-- Extension note — only shown when no session or extension missing after connect attempt -->
-    <div class="not-found" id="not-found-box"></div>
-    <div class="actions" id="wallet-actions">
-      ${session
-        ? `<button class="btn btn-danger" id="btn-connect" onclick="disconnectWallet()">Disconnect</button>`
-        : `<button class="btn" id="btn-connect" disabled><span class="spinner" id="connect-spinner"></span><span id="btn-label">Detecting…</span></button>`
-      }
-    </div>
-    <div class="note" id="wallet-note">${session ? 'Session Active · Connected ' + new Date(session.connectedAt || Date.now()).toLocaleString() : 'Connect 1AM wallet to link your identity to flight records.'}</div>
-  </div>
-
-  <!-- Session details card — shown when server session exists -->
-  <div class="card" id="session-card" style="${session ? 'display:block' : 'display:none'}">
-    <div class="card-title">Session</div>
-    <div class="info-row"><span class="info-label">Address</span><span class="info-val" id="session-address">${session ? session.address : '—'}</span></div>
-    <div class="info-row"><span class="info-label">Connected At</span><span class="info-val" id="session-connected">${session ? new Date(session.connectedAt || Date.now()).toLocaleString() : '—'}</span></div>
-    ${verification && verification.anchored ? `<div class="info-row"><span class="info-label">Anchor Tx</span><span class="info-val">${verification.anchorTx || '—'}</span></div>` : ''}
-  </div>
-
-  <!-- Extension status — secondary debug info -->
-  <div class="card" id="ext-card" style="display:none">
-    <div class="card-title">Extension Status</div>
-    <div class="info-row"><span class="info-label">1AM Extension</span><span class="info-val" id="ext-status">Checking…</span></div>
-    <div id="ext-connect-actions" style="margin-top:12px;display:none">
-      <button class="btn" id="btn-ext-connect" onclick="connectWallet()">Connect Extension</button>
-    </div>
-  </div>
-
-  <!-- Network card -->
-  <div class="card" id="network-card" style="display:none">
-    <div class="card-title">Network</div>
-    <div class="info-row"><span class="info-label">Network</span><span class="info-val" id="net-name">Midnight PreProd</span></div>
-    <div class="info-row"><span class="info-label">Address</span><span class="info-val" id="net-address">—</span></div>
-    <div class="info-row"><span class="info-label">tNight Balance</span><span class="info-val" id="net-balance">—</span></div>
-  </div>
-
-  <!-- Test transaction card -->
-  <div class="card" id="tx-card" style="display:none">
-    <div class="card-title">Test Transaction</div>
-    <p style="font-size:14px;color:#b6b9c6;margin:0 0 14px;">
-      Confirm wallet integration by signing a <code>registerAirframe</code> transaction on Midnight PreProd.
-      Proving is handled remotely by the 1AM Proof Station — no local proof server required.
-    </p>
-    <div class="actions">
-      <button class="btn btn-green" id="btn-tx" onclick="signTestTx()">Sign Test Transaction</button>
-    </div>
-    <div class="tx-result" id="tx-result"></div>
-  </div>
-</div>
-
-<script>
-// ── 1AM Wallet — Midnight DApp Connector API ─────────────────────────────────
-// Server session is source of truth for connected state.
-// Extension detection is secondary — needed only for signing new transactions.
-
-const NETWORK_ID = 'preview';
-const SERVER_SESSION_EXISTS = ${session ? 'true' : 'false'};
-
-let connectedApi = null;   // ConnectedAPI (from wallet.connect())
-
-// ── Secondary: extension detection ────────────────────────────────────────────
-// Only updates the extension status card, does NOT override primary connection state.
-
-function setBtnLabel(text) {
-  const el = document.getElementById('btn-label');
-  if (el) el.textContent = text;
-}
-
-async function detectProvider() {
-  const extCard = document.getElementById('ext-card');
-  const extStatus = document.getElementById('ext-status');
-  const extConnectActions = document.getElementById('ext-connect-actions');
-
-  // Poll up to 3s — extension injects after page load
-  for (let i = 0; i < 6; i++) {
-    const wallet = window.midnight?.['1am'];
-    if (wallet) {
-      console.log('[wallet] 1AM extension detected');
-      if (extStatus) extStatus.textContent = 'Detected — ready to connect';
-      if (extCard) extCard.style.display = 'block';
-      // If no server session, show connect option in extension card
-      if (!SERVER_SESSION_EXISTS && extConnectActions) {
-        extConnectActions.style.display = 'block';
-      }
-      // If no server session, also enable the primary connect button
-      if (!SERVER_SESSION_EXISTS) {
-        const btnConnect = document.getElementById('btn-connect');
-        const spinner = document.getElementById('connect-spinner');
-        if (spinner) spinner.style.display = 'none';
-        setBtnLabel('Connect Wallet');
-        if (btnConnect) { btnConnect.disabled = false; btnConnect.onclick = connectWallet; }
-      }
-      return;
-    }
-    await new Promise(r => setTimeout(r, 500));
-  }
-
-  // Extension not found
-  console.log('[wallet] 1AM extension not detected');
-  if (SERVER_SESSION_EXISTS) {
-    // Session exists — show as secondary warning only
-    const notFound = document.getElementById('not-found-box');
-    if (notFound) {
-      notFound.innerHTML = '<strong>Extension not currently detected.</strong> Reconnect wallet to finalize verification and sign new transactions.';
-      notFound.classList.add('show');
-    }
-  } else {
-    // No session — show primary error
-    const dot = document.getElementById('status-dot');
-    const label = document.getElementById('status-label');
-    const btnConnect = document.getElementById('btn-connect');
-    const spinner = document.getElementById('connect-spinner');
-    const notFound = document.getElementById('not-found-box');
-    if (dot) { dot.className = 'dot disconnected'; dot.style.background = '#ef4444'; }
-    if (label) label.textContent = 'No Midnight wallet detected';
-    if (spinner) spinner.style.display = 'none';
-    setBtnLabel('Retry');
-    if (btnConnect) { btnConnect.disabled = false; btnConnect.onclick = () => location.reload(); }
-    if (notFound) {
-      notFound.innerHTML = '<strong>1AM wallet not detected.</strong><br>Install the Midnight Lace extension and reload this page.<br><a href="https://midnight.network" target="_blank" style="color:#fdba74">midnight.network →</a>';
-      notFound.classList.add('show');
-    }
-  }
-}
-
-// ── Connect flow ──────────────────────────────────────────────────────────────
-
-async function connectWallet() {
-  console.log('[wallet] connectWallet triggered');
-  const dot = document.getElementById('status-dot');
-  const label = document.getElementById('status-label');
-  const btnConnect = document.getElementById('btn-connect');
-  const spinner = document.getElementById('connect-spinner');
-  const addressBox = document.getElementById('address-box');
-  const walletNote = document.getElementById('wallet-note');
-
-  if (btnConnect) btnConnect.disabled = true;
-  if (spinner) spinner.style.display = 'inline-block';
-  if (label) label.textContent = 'Connecting...';
-
-  try {
-    // Documented 1AM API: window.midnight['1am'].connect(networkId)
-    const wallet = window.midnight?.['1am'];
-    console.log('[wallet] window.midnight[1am]:', wallet);
-    console.log('[wallet] window.midnight[1am] keys:', Object.keys(wallet || {}));
-    console.log('[wallet] connect exists:', typeof (wallet?.connect));
-    console.log('[wallet] networkId:', NETWORK_ID);
-
-    if (!wallet) throw new Error('1AM wallet not installed — install the 1AM extension and reload');
-    if (typeof wallet.connect !== 'function') {
-      throw new Error('1AM detected, but connect(networkId) is unavailable. Keys: [' + Object.keys(wallet).join(', ') + ']');
-    }
-
-    // Connect using documented API
-    connectedApi = await wallet.connect(NETWORK_ID);
-    if (!connectedApi) throw new Error('wallet.connect() returned null — wallet rejected connection');
-    console.log('[wallet] connect() succeeded');
-    console.log('[wallet] connectedAPI keys:', Object.keys(connectedApi || {}));
-
-    // Get wallet address — prefer shielded (Zswap), fall back to unshielded
-    const addresses = await connectedApi.getShieldedAddresses();
-    console.log('[wallet] addresses:', addresses);
-    const shieldedAddress = addresses?.shieldedAddress;
-    console.log('[wallet] shieldedAddress:', shieldedAddress);
-    const walletAddress = shieldedAddress || 'No shielded address returned';
-    console.log('[wallet] address:', walletAddress);
-
-    // Persist address to localStorage for client-side session display
-    if (shieldedAddress) {
-      localStorage.setItem('pilotlog:address', shieldedAddress);
-      localStorage.setItem('pilotlog:lastConnected', new Date().toISOString());
-    }
-
-    // Get wallet-configured network endpoints
-    const config = await connectedApi.getConfiguration().catch(() => ({}));
-    console.log('[wallet] networkId:', config.networkId);
-
-    // Update UI
-    if (dot) dot.className = 'dot connected';
-    if (label) label.textContent = 'Wallet Connected';
-    if (addressBox) { addressBox.textContent = walletAddress; addressBox.style.display = 'block'; }
-    if (spinner) spinner.style.display = 'none';
-    setBtnLabel('Disconnect');
-    if (btnConnect) {
-      btnConnect.disabled = false;
-      btnConnect.onclick = disconnectWallet;
-      btnConnect.className = 'btn btn-danger';
-    }
-
-    // Show network card
-    const networkCard = document.getElementById('network-card');
-    if (networkCard) networkCard.style.display = 'block';
-    const netName = document.getElementById('net-name');
-    if (netName) netName.textContent = config.networkId || NETWORK_ID;
-    const netAddress = document.getElementById('net-address');
-    if (netAddress) netAddress.textContent = walletAddress;
-    const netBalance = document.getElementById('net-balance');
-    if (netBalance) netBalance.textContent = '—';
-
-    // Show test tx card
-    const txCard = document.getElementById('tx-card');
-    if (txCard) txCard.style.display = 'block';
-    if (walletNote) walletNote.textContent = 'Session Active · Network: ' + (config.networkId || NETWORK_ID);
-
-    // Update session card immediately (no reload needed)
-    if (shieldedAddress) {
-      const card = document.getElementById('session-card');
-      if (card) {
-        document.getElementById('session-address').textContent = shieldedAddress;
-        document.getElementById('session-connected').textContent = new Date().toLocaleString();
-        card.style.display = 'block';
-      }
-    }
-
-    // Persist to server session
-    await fetch('/wallet/connect', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address: walletAddress })
-    });
-    console.log('[wallet] connection success');
-
-  } catch (err) {
-    console.error('[wallet] connect error:', err);
-    if (dot) { dot.className = 'dot disconnected'; dot.style.background = '#ef4444'; }
-    if (label) label.textContent = 'Connection failed';
-    if (spinner) spinner.style.display = 'none';
-    if (btnConnect) { btnConnect.disabled = false; btnConnect.onclick = connectWallet; }
-    setBtnLabel('Retry');
-    if (walletNote) walletNote.textContent = 'Error: ' + (err.message || String(err));
-  }
-}
-
-async function disconnectWallet() {
-  connectedApi = null;
-  localStorage.removeItem('pilotlog:address');
-  localStorage.removeItem('pilotlog:lastConnected');
-  await fetch('/wallet/disconnect', { method: 'POST' });
-  location.reload();
-}
-
-// ── Test transaction ──────────────────────────────────────────────────────────
-
-async function signTestTx() {
-  const btn = document.getElementById('btn-tx');
-  const result = document.getElementById('tx-result');
-  btn.disabled = true;
-  btn.textContent = 'Signing...';
-  result.style.cssText = '';
-  result.className = 'tx-result';
-
-  try {
-    if (!connectedApi) throw new Error('Wallet not connected');
-
-    // Confirm wallet API is live and read address
-    const addresses = await connectedApi.getShieldedAddresses();
-    console.log('[wallet] addresses:', addresses);
-    const shieldedAddress = addresses?.shieldedAddress;
-    console.log('[wallet] shieldedAddress:', shieldedAddress);
-    const walletAddress = shieldedAddress || 'No shielded address returned';
-
-    // Get wallet-preferred indexer/prover config
-    const config = await connectedApi.getConfiguration().catch(() => ({}));
-
-    // Trigger server-side anchor, passing wallet config so server can use
-    // the wallet's preferred endpoints if desired
-    const resp = await fetch('/verify/anchor', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        walletAddress: walletAddress,
-        indexerUri: config.indexerUri,
-        proverServerUri: config.proverServerUri
-      })
-    });
-    const data = await resp.json();
-
-    result.textContent =
-      'OK Test passed\\n' +
-      'Wallet:  ' + walletAddress + '\\n' +
-      'Network: ' + (config.networkId || NETWORK_ID) + '\\n' +
-      (data.txId ? 'Anchor tx: ' + data.txId : 'Response: ' + JSON.stringify(data, null, 2));
-    result.className = 'tx-result show';
-    btn.textContent = 'Done';
-
-  } catch (err) {
-    result.textContent = 'Error: ' + (err.message || String(err));
-    result.className = 'tx-result show';
-    result.style.background = '#1c0a03';
-    result.style.borderColor = '#7c2d12';
-    result.style.color = '#fdba74';
-    btn.disabled = false;
-    btn.textContent = 'Retry';
-  }
-}
-
-// Boot — session state is SSR'd; only run extension detection (secondary)
-detectProvider();
-</script>
-</body>
-</html>`);
-});
 
 // ─── Pilot Report (JSON) ──────────────────────────────────────────────────────
 app.get("/pilot-report/json", (_req, res) => {
@@ -4632,7 +4211,7 @@ app.get("/pilot-report", (_req, res) => {
     <a href="/" class="btn btn-outline">← Dashboard</a>
     <a href="/pilot-report/json" class="btn btn-outline">View JSON</a>
     <button class="btn" onclick="window.print()">Print / PDF</button>
-    <a href="/wallet" id="wallet-nav-link" style="margin-left:auto;font-size:13px;color:#b6b9c6;text-decoration:none;align-self:center;">Wallet</a>
+    <span id="wallet-nav-link" style="margin-left:auto;font-size:13px;"></span>
   </div>
   ${walletStatusScript}
 
