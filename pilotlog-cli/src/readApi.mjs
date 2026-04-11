@@ -138,26 +138,43 @@ async function connectWalletHeader() {
   const wallet = window.midnight?.['1am'];
   if (!wallet || typeof wallet.connect !== 'function') {
     alert('1AM wallet extension not found. Install the Midnight 1AM extension to continue.');
-    if (el) { el.textContent = 'Connect Wallet'; el.disabled = false; }
+    if (el) { el.outerHTML = '<button id="wallet-nav-link" onclick="connectWalletHeader()" style="background:none;border:1px solid #374151;color:#9aa3ff;font-size:14px;padding:5px 12px;border-radius:6px;cursor:pointer;font-weight:600;">Connect Wallet</button>'; }
     return;
   }
   try {
     const api = await wallet.connect('preview');
     if (!api) throw new Error('Connection rejected');
-    const state = await api.state().catch(() => ({}));
-    const addr = state?.shieldedAddress || null;
-    if (addr) {
-      await fetch('/wallet/connect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address: addr }),
-      });
-      location.reload();
-    } else {
-      throw new Error('No address returned');
+
+    // Primary: getShieldedAddresses() — consistent with the flight log tx flow
+    let addr = null;
+    try {
+      const shielded = await api.getShieldedAddresses();
+      addr = shielded?.shieldedCoinPublicKey || shielded?.shieldedAddress || null;
+    } catch (_) {}
+    // Fallback: api.state()
+    if (!addr) {
+      try {
+        const state = await api.state();
+        addr = state?.shieldedAddress || state?.coinPublicKey || null;
+      } catch (_) {}
+    }
+
+    if (!addr) throw new Error('No address returned from wallet');
+
+    const resp = await fetch('/wallet/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address: addr }),
+    });
+    if (!resp.ok) throw new Error('Server rejected wallet session');
+
+    // Update header in-place — no full page reload needed
+    const short = addr.length > 16 ? addr.slice(0, 8) + '\\u2026' + addr.slice(-6) : addr;
+    if (el) {
+      el.outerHTML = '<span id="wallet-nav-link" style="color:#22c55e;font-size:14px;cursor:default;" title="' + addr + '">\\u25CF ' + short + '</span>';
     }
   } catch (err) {
-    if (el) { el.textContent = 'Connect Wallet'; el.disabled = false; }
+    if (el) { el.outerHTML = '<button id="wallet-nav-link" onclick="connectWalletHeader()" style="background:none;border:1px solid #374151;color:#9aa3ff;font-size:14px;padding:5px 12px;border-radius:6px;cursor:pointer;font-weight:600;">Connect Wallet</button>'; }
     alert('Wallet connection failed: ' + err.message);
   }
 }
