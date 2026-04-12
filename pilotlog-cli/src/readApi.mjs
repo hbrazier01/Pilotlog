@@ -190,13 +190,29 @@ async function connectWalletHeader() {
     const api = await wallet.connect('preview');
     if (!api) throw new Error('Connection rejected');
 
-    // Primary: getShieldedAddresses() — consistent with the flight log tx flow
+    // Primary: getUnshieldedAddress() — returns { unshieldedAddress }
     let addr = null;
     try {
-      const shielded = await api.getShieldedAddresses();
-      addr = shielded?.shieldedCoinPublicKey || shielded?.shieldedAddress || null;
+      const { unshieldedAddress } = await api.getUnshieldedAddress();
+      addr = unshieldedAddress || null;
     } catch (_) {}
-    // Fallback: api.state()
+    // Fallback: api.state() looking for bech32 mn_addr_* unshielded address
+    if (!addr) {
+      try {
+        const state = await api.state();
+        const candidate = state?.address || state?.unshieldedAddress || null;
+        if (candidate && String(candidate).startsWith('mn_addr')) {
+          addr = candidate;
+        }
+      } catch (_) {}
+    }
+    // Last resort: shielded address (keeps header showing something)
+    if (!addr) {
+      try {
+        const shielded = await api.getShieldedAddresses();
+        addr = shielded?.shieldedCoinPublicKey || shielded?.shieldedAddress || null;
+      } catch (_) {}
+    }
     if (!addr) {
       try {
         const state = await api.state();
