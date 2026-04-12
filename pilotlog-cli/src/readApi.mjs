@@ -106,39 +106,84 @@ function truncateWalletAddress(address) {
   return address.slice(0, 8) + "…" + address.slice(-6);
 }
 
-// Returns the wallet nav element HTML (SSR). id="wallet-nav-link" is updated by JS after load.
+// Returns the wallet nav element HTML (SSR). Always a <button> — JS updates state in-place.
 function walletNavHtml(session) {
   if (session && session.address) {
     const short = truncateWalletAddress(session.address);
-    return `<span id="wallet-nav-link" style="color:#22c55e;font-size:14px;cursor:default;" title="${session.address}">&#9679; ${short}</span>`;
+    return `<button id="wallet-nav-link" data-connected="true" title="${session.address}" style="background:none;border:none;color:#22c55e;font-size:14px;padding:5px 12px;cursor:default;font-weight:600;">&#9679; ${short}</button>`;
   }
   return `<button id="wallet-nav-link" onclick="connectWalletHeader()" style="background:none;border:1px solid #374151;color:#9aa3ff;font-size:14px;padding:5px 12px;border-radius:6px;cursor:pointer;font-weight:600;">Connect Wallet</button>`;
+}
+
+// Helper: update wallet button state without replacing the element.
+function setWalletButtonConnected(el, addr) {
+  const short = addr.length > 16 ? addr.slice(0, 8) + '\u2026' + addr.slice(-6) : addr;
+  el.textContent = '\u25CF ' + short;
+  el.setAttribute('title', addr);
+  el.setAttribute('data-connected', 'true');
+  el.style.color = '#22c55e';
+  el.style.border = 'none';
+  el.style.cursor = 'default';
+  el.onclick = null;
+  el.disabled = false;
+}
+
+function setWalletButtonDisconnected(el) {
+  el.textContent = 'Connect Wallet';
+  el.setAttribute('title', '');
+  el.setAttribute('data-connected', 'false');
+  el.style.color = '#9aa3ff';
+  el.style.border = '1px solid #374151';
+  el.style.cursor = 'pointer';
+  el.onclick = connectWalletHeader;
+  el.disabled = false;
 }
 
 // Inline script injected into every main page — refreshes wallet nav from server session.
 const walletStatusScript = `
 <script>
+function _walletSetConnected(el, addr) {
+  const short = addr.length > 16 ? addr.slice(0, 8) + '\\u2026' + addr.slice(-6) : addr;
+  el.textContent = '\\u25CF ' + short;
+  el.setAttribute('title', addr);
+  el.setAttribute('data-connected', 'true');
+  el.style.color = '#22c55e';
+  el.style.border = 'none';
+  el.style.cursor = 'default';
+  el.onclick = null;
+  el.disabled = false;
+}
+
+function _walletSetDisconnected(el) {
+  el.textContent = 'Connect Wallet';
+  el.setAttribute('title', '');
+  el.setAttribute('data-connected', 'false');
+  el.style.color = '#9aa3ff';
+  el.style.border = '1px solid #374151';
+  el.style.cursor = 'pointer';
+  el.onclick = connectWalletHeader;
+  el.disabled = false;
+}
+
 (function() {
   fetch('/wallet/status').then(r => r.json()).then(data => {
     const el = document.getElementById('wallet-nav-link');
     if (!el) return;
     if (data.connected && data.session && data.session.address) {
-      const addr = data.session.address;
-      const short = addr.length > 16 ? addr.slice(0, 8) + '\\u2026' + addr.slice(-6) : addr;
-      el.outerHTML = '<span id="wallet-nav-link" style="color:#22c55e;font-size:14px;cursor:default;" title="' + addr + '">\\u25CF ' + short + '</span>';
+      _walletSetConnected(el, data.session.address);
     } else {
-      el.outerHTML = '<button id="wallet-nav-link" onclick="connectWalletHeader()" style="background:none;border:1px solid #374151;color:#9aa3ff;font-size:14px;padding:5px 12px;border-radius:6px;cursor:pointer;font-weight:600;">Connect Wallet</button>';
+      _walletSetDisconnected(el);
     }
   }).catch(() => {});
 })();
 
 async function connectWalletHeader() {
   const el = document.getElementById('wallet-nav-link');
-  if (el) { el.textContent = 'Connecting…'; el.disabled = true; }
+  if (el) { el.textContent = 'Connecting\\u2026'; el.disabled = true; el.onclick = null; }
   const wallet = window.midnight?.['1am'];
   if (!wallet || typeof wallet.connect !== 'function') {
     alert('1AM wallet extension not found. Install the Midnight 1AM extension to continue.');
-    if (el) { el.outerHTML = '<button id="wallet-nav-link" onclick="connectWalletHeader()" style="background:none;border:1px solid #374151;color:#9aa3ff;font-size:14px;padding:5px 12px;border-radius:6px;cursor:pointer;font-weight:600;">Connect Wallet</button>'; }
+    if (el) { _walletSetDisconnected(el); }
     return;
   }
   try {
@@ -168,13 +213,9 @@ async function connectWalletHeader() {
     });
     if (!resp.ok) throw new Error('Server rejected wallet session');
 
-    // Update header in-place — no full page reload needed
-    const short = addr.length > 16 ? addr.slice(0, 8) + '\\u2026' + addr.slice(-6) : addr;
-    if (el) {
-      el.outerHTML = '<span id="wallet-nav-link" style="color:#22c55e;font-size:14px;cursor:default;" title="' + addr + '">\\u25CF ' + short + '</span>';
-    }
+    if (el) { _walletSetConnected(el, addr); }
   } catch (err) {
-    if (el) { el.outerHTML = '<button id="wallet-nav-link" onclick="connectWalletHeader()" style="background:none;border:1px solid #374151;color:#9aa3ff;font-size:14px;padding:5px 12px;border-radius:6px;cursor:pointer;font-weight:600;">Connect Wallet</button>'; }
+    if (el) { _walletSetDisconnected(el); }
     alert('Wallet connection failed: ' + err.message);
   }
 }
