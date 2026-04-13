@@ -806,15 +806,15 @@ app.get("/", (_req, res) => {
           if (d?.contractAddress) {
             dot.style.background = '#f59e0b';
             addr.textContent = d.contractAddress.slice(0,10) + '…' + d.contractAddress.slice(-6);
-            addr.title = d.contractAddress + ' (from deployment.json — click Deploy Contract to refresh)';
+            addr.title = d.contractAddress + ' (from deployment.json)';
           } else {
             dot.style.background = '#ef4444';
-            addr.textContent = 'No contract — click Deploy Contract';
+            addr.textContent = 'No contract — save a flight to deploy';
             addr.style.color = '#ef4444';
           }
         }).catch(() => {
           dot.style.background = '#ef4444';
-          addr.textContent = 'No contract — click Deploy Contract';
+          addr.textContent = 'No contract — save a flight to deploy';
           addr.style.color = '#ef4444';
         });
       }
@@ -838,9 +838,7 @@ app.get("/", (_req, res) => {
   <div class="actions">
     <button class="btn btn-outline" id="openLogBtn" onclick="toggleForm()">+ Log Flight</button>
     <a href="/pilot-report" class="btn">View Pilot Report →</a>
-    <button class="btn btn-outline" id="deployBtn" onclick="deployContract()" style="margin-left:auto;font-size:12px;padding:8px 14px;">Deploy Contract</button>
   </div>
-  <div id="deployStatus" style="display:none;margin-top:8px;font-size:12px;color:#9aa3ff;"></div>
 
   <div class="log-form" id="logForm">
     <h3>Log a Flight</h3>
@@ -1193,7 +1191,8 @@ app.get("/", (_req, res) => {
       // ── BLOCK 1: wallet connect ───────────────────────────────────────────
       let connectedAPI, walletConfig;
       try {
-        console.log('[tx-debug] step: wallet detected');
+        // AIR-178: log wallet presence at window.midnight['1am']
+        console.log('[tx-debug] wallet detected (window.midnight[1am]):', typeof window !== 'undefined' && window.midnight && window.midnight['1am'] ? 'present' : 'not found');
         // 5. Connect wallet
         connectedAPI = await walletExt.connect('preview');
         if (!connectedAPI) throw new Error('wallet.connect() returned null — wallet rejected connection');
@@ -1236,7 +1235,7 @@ app.get("/", (_req, res) => {
       }
 
       // ── BLOCK 3: SDK import + config + providers ──────────────────────────
-      let setNetworkId, CompiledContract, submitCallTx, httpClientProofProvider, indexerPublicDataProvider;
+      let setNetworkId, CompiledContract, submitCallTx, deployContractFn, httpClientProofProvider, indexerPublicDataProvider;
       let proofProvider, walletProvider, midnightProvider, publicDataProvider;
       try {
         console.log('[tx-debug] step: providers start');
@@ -1245,7 +1244,7 @@ app.get("/", (_req, res) => {
         //    @midnight-ntwrk/compact-runtime (WASM) which CDN cannot inline properly.
         // AIR-143: CostModel and Transaction from ledger-v8 removed from SDK entry —
         // balanceTx uses a duck-typed proxy instead of Transaction.deserialize.
-        ({ setNetworkId, CompiledContract, submitCallTx, httpClientProofProvider, indexerPublicDataProvider } =
+        ({ setNetworkId, CompiledContract, submitCallTx, deployContract: deployContractFn, httpClientProofProvider, indexerPublicDataProvider } =
           await import('/js/midnight-sdk.js'));
 
         // AIR-135: Log each symbol immediately after SDK import to pinpoint undefined callables
@@ -1310,6 +1309,9 @@ app.get("/", (_req, res) => {
           },
         };
 
+        // AIR-178: browser-safe hex helpers (no Buffer / no .toString('hex'))
+        const bytesToHex = (bytes) => Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+
         // AIR-173: Use wallet-native proving via getProvingProvider when available.
         // This routes ZK proofs through the 1AM wallet extension (wallet manages ProofStation URL).
         // Fall back to httpClientProofProvider using the proverServerUri from walletConfig.
@@ -1331,14 +1333,18 @@ app.get("/", (_req, res) => {
           getCoinPublicKey: () => shielded.shieldedCoinPublicKey,
           getEncryptionPublicKey: () => shielded.shieldedEncryptionPublicKey,
           async balanceTx(tx) {
-            const hex = tx.serialize().toString('hex');
+            // AIR-178: browser-safe — no Buffer.toString('hex')
+            const serialized = tx.serialize();
+            console.log('[tx-debug] balanceTx: tx.serialize() type:', serialized?.constructor?.name, 'length:', serialized?.length);
+            const hex = bytesToHex(serialized);
             const result = await connectedAPI.balanceUnsealedTransaction(hex);
             // AIR-143: avoid Transaction.deserialize (ledger-v8/WASM, Node-only).
             // Return a duck-typed proxy that satisfies the serialize()/identifiers() contract
             // expected by midnightProvider.submitTx without importing ledger-v8 at the entry.
             const balancedBytes = new Uint8Array(result.tx.match(/.{2}/g).map(b => parseInt(b, 16)));
             return {
-              serialize: () => Buffer.from(balancedBytes),
+              // AIR-178: return Uint8Array directly — no Buffer.from()
+              serialize: () => balancedBytes,
               identifiers: () => [result.txId ?? result.tx.slice(0, 64)],
             };
           },
@@ -1346,8 +1352,13 @@ app.get("/", (_req, res) => {
 
         midnightProvider = {
           async submitTx(tx) {
-            const hex = tx.serialize().toString('hex');
-            await connectedAPI.submitTransaction(hex);
+            // AIR-178: browser-safe — no Buffer.toString('hex')
+            const serialized = tx.serialize();
+            console.log('[tx-debug] submitTx: tx.serialize() type:', serialized?.constructor?.name, 'length:', serialized?.length);
+            console.log('[tx-debug] submitTx: submission start');
+            const hex = bytesToHex(serialized);
+            const submitResult = await connectedAPI.submitTransaction(hex);
+            console.log('[tx-debug] submitTx: submission result:', submitResult);
             return tx.identifiers()[0];
           },
         };
@@ -1398,42 +1409,76 @@ app.get("/", (_req, res) => {
         return;
       }
 
-      // ── BLOCK 5: submitCallTx ─────────────────────────────────────────────
+      // ── BLOCK 5: ensure contract + submitCallTx ───────────────────────────
       try {
-        // Prefer localStorage (set by browser deploy flow), fall back to deployment.json
-        const localAddress = localStorage.getItem('airlog.contractAddress');
-        let contractAddress = localAddress || null;
+        // localStorage is the source of truth for contract address (AIR-176)
+        let contractAddress = localStorage.getItem('airlog.contractAddress');
+        console.log('[tx] contractAddress from localStorage:', contractAddress);
+
         if (!contractAddress) {
-          const deploymentRes = await fetch('/deployment.json').then(r => r.ok ? r.json() : null);
-          contractAddress = deploymentRes?.contractAddress || null;
-        }
-        console.log('[tx-debug] contractAddress source:', localAddress ? 'localStorage' : 'deployment.json', contractAddress);
-        if (!contractAddress) throw new Error('Contract not deployed — deploy via the Deploy Contract button first');
+          // No contract deployed yet — deploy now via wallet (deploy-on-first-save)
+          console.log('[tx] no contract found -> deploying');
+          btn.textContent = 'Deploying contract…';
 
-        // AIR-166: Pre-check for empty contract state (first write / indexer lag).
-        // queryZSwapAndContractState returns null when the contract has never been called
-        // (freshly deployed, no entries yet). Detect this early so we can handle it
-        // gracefully rather than letting the SDK throw an opaque assertion error.
-        const existingState = await publicDataProvider.queryZSwapAndContractState(contractAddress).catch(() => null);
-        if (existingState === null) {
-          console.log('[tx-debug] no public state found → treating as first write');
-          // Wait briefly for the indexer to sync the deploy transaction, then retry once.
-          await new Promise(r => setTimeout(r, 4000));
-          const retryState = await publicDataProvider.queryZSwapAndContractState(contractAddress).catch(() => null);
-          if (retryState === null) {
-            console.warn('[tx-debug] no public state after retry — contract not yet indexed');
-            btn.textContent = origBtnText;
-            btn.disabled = false;
-            showToast('Contract not yet synced — please wait 30 seconds and retry', true);
-            return;
+          console.log('[deploy] deploy started');
+          let deployed;
+          try {
+            deployed = await deployContractFn(
+              { proofProvider, walletProvider, midnightProvider, publicDataProvider },
+              { compiledContract }
+            );
+          } catch (deployErr) {
+            console.error('[deploy] deployContractFn threw:', deployErr.message, deployErr.stack);
+            throw deployErr;
           }
-          console.log('[tx-debug] state appeared after retry → proceeding');
+
+          console.log('[deploy] raw deploy result:', JSON.stringify(deployed, null, 2));
+          contractAddress = deployed?.deployTxData?.public?.contractAddress;
+          console.log('[deploy] contractAddress from result:', contractAddress);
+          if (!contractAddress) throw new Error('Deploy returned no contractAddress — see raw result above');
+
+          console.log('[deploy] storing contract address');
+          localStorage.setItem('airlog.contractAddress', contractAddress);
+          console.log('[deploy] contract address stored in localStorage:', localStorage.getItem('airlog.contractAddress'));
+          console.log('[deploy] contract deployed:', contractAddress);
+
+          // Persist to backend as well (best-effort, do not await — do not block submitCallTx)
+          fetch('/deployment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contractAddress }),
+          }).catch(() => {});
+
+          // Wait for indexer to sync the deploy tx before submitting the call tx.
+          // Address is already stored above — even if indexer sync fails, next save will reuse address.
+          btn.textContent = 'Syncing…';
+          console.log('[tx] waiting for indexer to sync deploy…');
+          await new Promise(r => setTimeout(r, 6000));
         }
 
-        console.log('[tx-debug] tx built');
+        console.log('[tx] using contract:', contractAddress);
+        btn.textContent = 'Submitting flight entry…';
+
+        console.log('[tx] submitting flight entry');
         const recordHashBytes = new Uint8Array(anchorHash.match(/.{2}/g).map(b => parseInt(b, 16)));
         const anchoredAt = BigInt(Math.floor(Date.now() / 1000));
-        console.log('[tx-debug] tx submitted', { contractAddress, circuitId: 'anchorEntry', anchorHash });
+
+        // AIR-166 / AIR-177: Pre-check for empty contract state (indexer lag after deploy).
+        // Do NOT block the write flow on indexer sync — address is already stored.
+        // If state is missing, log a warning and attempt submitCallTx anyway.
+        const existingState = await publicDataProvider.queryZSwapAndContractState(contractAddress).catch(() => null);
+        if (existingState === null) {
+          console.log('[tx] no public state found — indexer may be lagging, attempting submit anyway');
+          btn.textContent = 'Waiting for chain…';
+          await new Promise(r => setTimeout(r, 8000));
+          const retryState = await publicDataProvider.queryZSwapAndContractState(contractAddress).catch(() => null);
+          if (retryState === null) {
+            console.warn('[tx] state still null after wait — proceeding with submitCallTx (indexer may be slow)');
+          } else {
+            console.log('[tx] state confirmed after wait — proceeding');
+          }
+        }
+
         const result = await submitCallTx(
           { proofProvider, walletProvider, midnightProvider, publicDataProvider },
           { compiledContract, contractAddress, circuitId: 'anchorEntry', args: [recordHashBytes, anchoredAt] }
@@ -1441,14 +1486,12 @@ app.get("/", (_req, res) => {
 
         if (!result?.public?.txHash) throw new Error('No transaction hash returned from 1AM wallet');
         txHash = result.public.txHash;
-        console.log('[tx-debug] tx hash:', txHash);
+        console.log('[tx] tx hash:', txHash);
 
       } catch (err) {
         btn.textContent = origBtnText;
         btn.disabled = false;
-        console.error('[tx-debug] submitCallTx block failed', err.message, err.stack);
-        console.error('[1AM] wallet tx error:', err.message);
-        // AIR-166: Surface a friendlier message if the root cause is missing contract state.
+        console.error('[tx] block failed', err.message, err.stack);
         const isEmptyStateError = err.message && err.message.includes('No public state found');
         showToast(isEmptyStateError
           ? 'Contract not yet synced — please wait 30 seconds and retry'
@@ -1487,137 +1530,6 @@ app.get("/", (_req, res) => {
       setTimeout(() => t.classList.remove('show'), isError ? 4000 : 2500);
     }
 
-    async function deployContract() {
-      const btn = document.getElementById('deployBtn');
-      const statusEl = document.getElementById('deployStatus');
-      const origText = btn.textContent;
-
-      function setStatus(msg, color) {
-        statusEl.textContent = msg;
-        statusEl.style.color = color || '#9aa3ff';
-        statusEl.style.display = 'block';
-      }
-
-      // Require wallet
-      const walletStatus = await fetch('/wallet/status').then(r => r.json()).catch(() => null);
-      if (!walletStatus?.connected) {
-        showToast('Connect wallet first to deploy contract', true);
-        return;
-      }
-      const walletExt = window.midnight?.['1am'];
-      if (!walletExt || typeof walletExt.connect !== 'function') {
-        showToast('1AM wallet extension not found', true);
-        return;
-      }
-
-      btn.textContent = 'Deploying…';
-      btn.disabled = true;
-      setStatus('Connecting wallet…');
-
-      try {
-        const connectedAPI = await walletExt.connect('preview');
-        if (!connectedAPI) throw new Error('wallet.connect() returned null');
-        const walletConfig = await connectedAPI.getConfiguration();
-
-        setStatus('Loading SDK…');
-        const { setNetworkId, CompiledContract, deployContract: deploy, httpClientProofProvider, indexerPublicDataProvider } =
-          await import('/js/midnight-sdk.js');
-
-        setNetworkId(walletConfig.networkId);
-
-        const zkConfigProvider = {
-          async get(circuitId) {
-            const [proverRes, verifierRes, zkirRes] = await Promise.all([
-              fetch(\`/contract/compiled/airlog/keys/\${circuitId}.prover\`),
-              fetch(\`/contract/compiled/airlog/keys/\${circuitId}.verifier\`),
-              fetch(\`/contract/compiled/airlog/zkir/\${circuitId}.bzkir\`),
-            ]);
-            if (!proverRes.ok || !verifierRes.ok || !zkirRes.ok) {
-              throw new Error(\`ZK assets missing for circuit: \${circuitId}\`);
-            }
-            const [proverKey, verifierKey, zkir] = await Promise.all([
-              proverRes.arrayBuffer().then(b => new Uint8Array(b)),
-              verifierRes.arrayBuffer().then(b => new Uint8Array(b)),
-              zkirRes.arrayBuffer().then(b => new Uint8Array(b)),
-            ]);
-            return { circuitId, proverKey, verifierKey, zkir };
-          },
-        };
-
-        let proofProvider;
-        if (typeof connectedAPI.getProvingProvider === 'function') {
-          proofProvider = await connectedAPI.getProvingProvider(zkConfigProvider);
-        } else {
-          const proverServerUri = walletConfig.proverServerUri || 'https://proof-server.testnet-02.midnight.network';
-          proofProvider = httpClientProofProvider(new URL(proverServerUri), zkConfigProvider);
-        }
-
-        const shielded = await connectedAPI.getShieldedAddresses();
-        const walletProvider = {
-          getCoinPublicKey: () => shielded.shieldedCoinPublicKey,
-          getEncryptionPublicKey: () => shielded.shieldedEncryptionPublicKey,
-          async balanceTx(tx) {
-            const hex = tx.serialize().toString('hex');
-            const result = await connectedAPI.balanceUnsealedTransaction(hex);
-            const balancedBytes = new Uint8Array(result.tx.match(/.{2}/g).map(b => parseInt(b, 16)));
-            return {
-              serialize: () => Buffer.from(balancedBytes),
-              identifiers: () => [result.txId ?? result.tx.slice(0, 64)],
-            };
-          },
-        };
-        const midnightProvider = {
-          async submitTx(tx) {
-            const hex = tx.serialize().toString('hex');
-            await connectedAPI.submitTransaction(hex);
-            return tx.identifiers()[0];
-          },
-        };
-        const indexerHttpUrl = walletConfig.indexerUri
-          || \`https://indexer.\${walletConfig.networkId}.midnight.network/api/v4/graphql\`;
-        const indexerWsUrl = walletConfig.indexerWsUri
-          || indexerHttpUrl.replace(/^https/, 'wss').replace(/^http/, 'ws');
-        const publicDataProvider = indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl);
-
-        setStatus('Loading contract bundle…');
-        const { Contract } = await import('/contract/compiled/airlog/index.js');
-        const compiledContract = CompiledContract
-          .make('AirLog', Contract)
-          .pipe(
-            CompiledContract.withVacantWitnesses,
-            CompiledContract.withCompiledFileAssets('/contract/compiled/airlog')
-          );
-
-        setStatus('Deploying to Midnight Preview… (wallet will prompt)');
-        const deployed = await deploy(
-          { proofProvider, walletProvider, midnightProvider, publicDataProvider },
-          { compiledContract }
-        );
-
-        const contractAddress = deployed?.deployTxData?.public?.contractAddress;
-        if (!contractAddress) throw new Error('No contractAddress in deploy result');
-
-        console.log('[deploy] contract address:', contractAddress);
-
-        // Persist to localStorage and backend
-        localStorage.setItem('airlog.contractAddress', contractAddress);
-        await fetch('/deployment', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contractAddress }),
-        });
-
-        setStatus('✓ Deployed: ' + contractAddress, '#4ade80');
-        showToast('Contract deployed — address saved');
-      } catch (err) {
-        console.error('[deploy] error:', err.message, err.stack);
-        setStatus('Deploy failed: ' + err.message, '#f87171');
-        showToast('Deploy failed — see console', true);
-      } finally {
-        btn.textContent = origText;
-        btn.disabled = false;
-      }
-    }
   </script>
 
   ${walletStatusScript}
