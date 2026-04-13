@@ -10,6 +10,7 @@ import { anchorOnMidnight } from "../../src/services/airlog-anchor-midnight.mjs"
 import { canonicalizeFlightEntry } from "../../src/lib/canonicalize-entry.mjs";
 import { buildTrustReport } from "../../src/services/build-trust-report.mjs";
 import { buildPilotReport } from "../../src/services/build-pilot-report.mjs";
+import { anchorRecord, verifyRecord, grantAccess, revokeAccess } from "../../src/services/airlog-anchor-service.mjs";
 import { computeReadiness, PILOT_PHASES } from "./lib/readiness.mjs";
 
 const PORT = Number(process.env.PORT || 8788);
@@ -1192,8 +1193,8 @@ app.get("/", (_req, res) => {
       }
 
       // ── BLOCK 3: SDK import + config + providers ──────────────────────────
-      let setNetworkId, CompiledContract, submitCallTx, httpClientProofProvider;
-      let proofProvider, walletProvider, midnightProvider;
+      let setNetworkId, CompiledContract, submitCallTx, httpClientProofProvider, indexerPublicDataProvider;
+      let proofProvider, walletProvider, midnightProvider, publicDataProvider;
       try {
         console.log('[tx-debug] step: providers start');
         // 9. Execute transaction via 1AM wallet (browser-only, no server involvement).
@@ -1201,7 +1202,7 @@ app.get("/", (_req, res) => {
         //    @midnight-ntwrk/compact-runtime (WASM) which CDN cannot inline properly.
         // AIR-143: CostModel and Transaction from ledger-v8 removed from SDK entry —
         // balanceTx uses a duck-typed proxy instead of Transaction.deserialize.
-        ({ setNetworkId, CompiledContract, submitCallTx, httpClientProofProvider } =
+        ({ setNetworkId, CompiledContract, submitCallTx, httpClientProofProvider, indexerPublicDataProvider } =
           await import('/js/midnight-sdk.js'));
 
         // AIR-135: Log each symbol immediately after SDK import to pinpoint undefined callables
@@ -1301,6 +1302,18 @@ app.get("/", (_req, res) => {
           },
         };
 
+        // AIR-165: publicDataProvider is required by submitCallTx to call
+        // queryZSwapAndContractState. Omitting it causes:
+        // TypeError: Cannot read properties of undefined (reading 'queryZSwapAndContractState')
+        // Derive indexer URLs from wallet config (1AM wallet provides these via getConfiguration()).
+        const indexerHttpUrl = walletConfig.indexerUri
+          || \`https://indexer.\${walletConfig.networkId}.midnight.network/api/v4/graphql\`;
+        const indexerWsUrl = walletConfig.indexerWsUri
+          || indexerHttpUrl.replace(/^https/, 'wss').replace(/^http/, 'ws');
+        console.log('[tx-debug] indexer HTTP:', indexerHttpUrl);
+        console.log('[tx-debug] indexer WS:', indexerWsUrl);
+        publicDataProvider = indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl);
+
         console.log('[tx-debug] step: providers built');
       } catch (err) {
         btn.textContent = origBtnText;
@@ -1341,11 +1354,33 @@ app.get("/", (_req, res) => {
         const contractAddress = deploymentRes?.contractAddress || null;
         if (!contractAddress) throw new Error('Contract not deployed — contractAddress missing from deployment.json');
 
+        // AIR-166: Pre-check for empty contract state (first write / indexer lag).
+        // queryZSwapAndContractState returns null when the contract has never been called
+        // (freshly deployed, no entries yet). Detect this early so we can handle it
+        // gracefully rather than letting the SDK throw an opaque assertion error.
+        const existingState = await publicDataProvider.queryZSwapAndContractState(contractAddress).catch(() => null);
+        if (existingState === null) {
+          console.log('[tx-debug] no public state found → treating as first write');
+          // Wait briefly for the indexer to sync the deploy transaction, then retry once.
+          await new Promise(r => setTimeout(r, 4000));
+          const retryState = await publicDataProvider.queryZSwapAndContractState(contractAddress).catch(() => null);
+          if (retryState === null) {
+            console.warn('[tx-debug] no public state after retry — contract not yet indexed');
+            btn.textContent = origBtnText;
+            btn.disabled = false;
+            showToast('Contract not yet synced — please wait 30 seconds and retry', true);
+            return;
+          }
+          console.log('[tx-debug] state appeared after retry → proceeding');
+        }
+
         console.log('[tx-debug] tx built');
-        console.log('[tx-debug] tx submitted', { contractAddress, circuitId: 'addEntry', anchorHash });
+        const recordHashBytes = new Uint8Array(anchorHash.match(/.{2}/g).map(b => parseInt(b, 16)));
+        const anchoredAt = BigInt(Math.floor(Date.now() / 1000));
+        console.log('[tx-debug] tx submitted', { contractAddress, circuitId: 'anchorEntry', anchorHash });
         const result = await submitCallTx(
-          { proofProvider, walletProvider, midnightProvider },
-          { compiledContract, contractAddress, circuitId: 'addEntry', args: [anchorHash] }
+          { proofProvider, walletProvider, midnightProvider, publicDataProvider },
+          { compiledContract, contractAddress, circuitId: 'anchorEntry', args: [recordHashBytes, anchoredAt] }
         );
 
         if (!result?.public?.txHash) throw new Error('No transaction hash returned from 1AM wallet');
@@ -1357,7 +1392,11 @@ app.get("/", (_req, res) => {
         btn.disabled = false;
         console.error('[tx-debug] submitCallTx block failed', err.message, err.stack);
         console.error('[1AM] wallet tx error:', err.message);
-        showToast('Failed to save flight · Retry or reconnect wallet', true);
+        // AIR-166: Surface a friendlier message if the root cause is missing contract state.
+        const isEmptyStateError = err.message && err.message.includes('No public state found');
+        showToast(isEmptyStateError
+          ? 'Contract not yet synced — please wait 30 seconds and retry'
+          : 'Failed to save flight · Retry or reconnect wallet', true);
         return;
       }
 
@@ -1865,6 +1904,43 @@ app.post("/verify/anchor", async (_req, res) => {
     verification,
   });
 });  
+
+// ── Anchor Service endpoints ────────────────────────────────────────────────
+
+app.post("/anchor/logbook", async (_req, res) => {
+  const entries = readEntries();
+  const aircraftList = readAircraft();
+  const aircraft = aircraftList[0];
+  if (!aircraft) return res.status(400).json({ error: "No aircraft found" });
+  try {
+    const result = await anchorRecord(aircraft, entries);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+app.get("/anchor/verify", (_req, res) => {
+  const entries = readEntries();
+  const aircraftList = readAircraft();
+  const aircraft = aircraftList[0];
+  if (!aircraft) return res.status(400).json({ error: "No aircraft found" });
+  res.json(verifyRecord(aircraft, entries));
+});
+
+app.post("/anchor/grant", (req, res) => {
+  const { recordId, viewerId, accessLevel } = req.body || {};
+  if (!recordId || !viewerId) return res.status(400).json({ error: "recordId and viewerId required" });
+  res.json(grantAccess(recordId, viewerId, accessLevel || "VERIFY"));
+});
+
+app.post("/anchor/revoke", (req, res) => {
+  const { recordId, viewerId } = req.body || {};
+  if (!recordId || !viewerId) return res.status(400).json({ error: "recordId and viewerId required" });
+  res.json(revokeAccess(recordId, viewerId));
+});
+
+// ── End Anchor Service endpoints ─────────────────────────────────────────────
 
 function computeGaps(aircraft, maintenance) {
   const gaps = [];
@@ -4406,7 +4482,16 @@ if (fs.existsSync(midnightSdkDir)) {
 // Resolve from actual runtime root (fixes PKG_ROOT mismatch)
 const deploymentJsonPath = path.resolve(process.cwd(), "deployment.json");
 if (fs.existsSync(deploymentJsonPath)) {
-  app.get("/deployment.json", (_req, res) => res.sendFile(deploymentJsonPath));
+  app.get("/deployment.json", (_req, res) => {
+    try {
+      const raw = fs.readFileSync(deploymentJsonPath, "utf8");
+      const json = JSON.parse(raw);
+      res.json(json);
+    } catch (err) {
+      console.error("[deployment] failed:", err);
+      res.status(500).json({ error: "deployment.json load failed" });
+    }
+  });
 }
 
 const compiledContractDir = path.resolve(
