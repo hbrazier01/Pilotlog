@@ -8,6 +8,14 @@
  * preventing "Failed to resolve module specifier @midnight-ntwrk/compact-runtime" errors.
  */
 
+// Browser-safe Buffer polyfill — must run before any Midnight SDK usage.
+// The Midnight SDK uses Node-style Buffer internally; without this the browser
+// throws "ReferenceError: Buffer is not defined" during contract compile / deploy.
+import { Buffer } from "buffer";
+if (typeof globalThis.Buffer === "undefined") {
+  globalThis.Buffer = Buffer;
+}
+
 export { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 // CostModel and Transaction from @midnight-ntwrk/ledger-v8 intentionally omitted —
 // ledger-v8 is a Node/WASM package that is not browser-safe at the entry point.
