@@ -15,5 +15,8 @@ export { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 // ledger-v8 types are still present transtively (midnight-js-contracts, httpClientProofProvider)
 // but are not explicitly re-exported here.
 export { CompiledContract } from "@midnight-ntwrk/compact-js";
-export { submitCallTx } from "@midnight-ntwrk/midnight-js-contracts";
+export { submitCallTx, deployContract } from "@midnight-ntwrk/midnight-js-contracts";
 export { httpClientProofProvider } from "@midnight-ntwrk/midnight-js-http-client-proof-provider";
+// indexerPublicDataProvider is required by submitCallTx to query on-chain ZSwap state.
+// Missing this causes: TypeError: Cannot read properties of undefined (reading 'queryZSwapAndContractState')
+export { indexerPublicDataProvider } from "@midnight-ntwrk/midnight-js-indexer-public-data-provider";

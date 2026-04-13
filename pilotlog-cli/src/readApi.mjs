@@ -623,6 +623,7 @@ app.get("/", (_req, res) => {
   const totalFlights = entries.length;
   const lastFlightDate = entries[0]?.date ? String(entries[0].date).slice(0, 10) : "—";
   const landings = Number(totals.dayLandings || 0) + Number(totals.nightLandings || 0);
+  const anchoredCount = entries.filter(e => e.anchored === true || e.anchorStatus === "anchored").length;
 
   // Aircraft summary from entries
   const aircraftStats = {};
@@ -780,6 +781,46 @@ app.get("/", (_req, res) => {
     </div>
   </div>
 
+  <!-- Chain Status Card -->
+  <div id="chain-status-card" style="margin-top:20px;background:#0d1220;border:1px solid #1e2a48;border-radius:14px;padding:14px 18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+    <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:200px;">
+      <span id="chain-dot" style="width:9px;height:9px;border-radius:50%;background:#374151;flex-shrink:0;"></span>
+      <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;">Midnight</span>
+      <span id="chain-address" style="font-family:monospace;font-size:12px;color:#9aa3ff;">Checking…</span>
+    </div>
+    <div style="font-size:12px;color:#6b7280;">
+      <span style="color:#fff;font-weight:700;">${anchoredCount}</span> of <span style="color:#fff;font-weight:700;">${totalFlights}</span> entries anchored on-chain
+    </div>
+  </div>
+  <script>
+    (function() {
+      const dot = document.getElementById('chain-dot');
+      const addr = document.getElementById('chain-address');
+      const local = localStorage.getItem('airlog.contractAddress');
+      if (local) {
+        dot.style.background = '#22c55e';
+        addr.textContent = local.slice(0,10) + '…' + local.slice(-6);
+        addr.title = local;
+      } else {
+        fetch('/deployment.json').then(r => r.ok ? r.json() : null).then(d => {
+          if (d?.contractAddress) {
+            dot.style.background = '#f59e0b';
+            addr.textContent = d.contractAddress.slice(0,10) + '…' + d.contractAddress.slice(-6);
+            addr.title = d.contractAddress + ' (from deployment.json — click Deploy Contract to refresh)';
+          } else {
+            dot.style.background = '#ef4444';
+            addr.textContent = 'No contract — click Deploy Contract';
+            addr.style.color = '#ef4444';
+          }
+        }).catch(() => {
+          dot.style.background = '#ef4444';
+          addr.textContent = 'No contract — click Deploy Contract';
+          addr.style.color = '#ef4444';
+        });
+      }
+    })();
+  </script>
+
   <div class="assistant-section">
     <div class="section-title">Flight Readiness</div>
     <div id="readiness-chip" class="readiness-chip" style="background:#1a1f30;color:#b6b9c6;">
@@ -797,7 +838,9 @@ app.get("/", (_req, res) => {
   <div class="actions">
     <button class="btn btn-outline" id="openLogBtn" onclick="toggleForm()">+ Log Flight</button>
     <a href="/pilot-report" class="btn">View Pilot Report →</a>
+    <button class="btn btn-outline" id="deployBtn" onclick="deployContract()" style="margin-left:auto;font-size:12px;padding:8px 14px;">Deploy Contract</button>
   </div>
+  <div id="deployStatus" style="display:none;margin-top:8px;font-size:12px;color:#9aa3ff;"></div>
 
   <div class="log-form" id="logForm">
     <h3>Log a Flight</h3>
@@ -1267,12 +1310,19 @@ app.get("/", (_req, res) => {
           },
         };
 
-        // Use ProofStation directly — no wallet-based proving.
-        const proverServerUri = walletConfig.proverServerUri || 'https://proof-server.testnet-02.midnight.network';
-        console.log('[tx-debug] ProofStation URI:', proverServerUri);
-        console.log('[tx-debug] walletConfig.proverServerUri (raw):', walletConfig.proverServerUri);
-        console.log('[tx-debug] constructing httpClientProofProvider with URL:', new URL(proverServerUri).href);
-        proofProvider = httpClientProofProvider(new URL(proverServerUri), zkConfigProvider);
+        // AIR-173: Use wallet-native proving via getProvingProvider when available.
+        // This routes ZK proofs through the 1AM wallet extension (wallet manages ProofStation URL).
+        // Fall back to httpClientProofProvider using the proverServerUri from walletConfig.
+        if (typeof connectedAPI.getProvingProvider === 'function') {
+          console.log('[tx-debug] using wallet-native getProvingProvider');
+          proofProvider = await connectedAPI.getProvingProvider(zkConfigProvider);
+          console.log('[tx-debug] wallet proving provider obtained:', typeof proofProvider);
+        } else {
+          const proverServerUri = walletConfig.proverServerUri || 'https://proof-server.testnet-02.midnight.network';
+          console.log('[tx-debug] getProvingProvider unavailable — falling back to httpClientProofProvider');
+          console.log('[tx-debug] ProofStation URI:', proverServerUri);
+          proofProvider = httpClientProofProvider(new URL(proverServerUri), zkConfigProvider);
+        }
 
         const shielded = await connectedAPI.getShieldedAddresses();
         walletAddress = shielded.shieldedCoinPublicKey || walletAddress;
@@ -1350,9 +1400,15 @@ app.get("/", (_req, res) => {
 
       // ── BLOCK 5: submitCallTx ─────────────────────────────────────────────
       try {
-        const deploymentRes = await fetch('/deployment.json').then(r => r.ok ? r.json() : null);
-        const contractAddress = deploymentRes?.contractAddress || null;
-        if (!contractAddress) throw new Error('Contract not deployed — contractAddress missing from deployment.json');
+        // Prefer localStorage (set by browser deploy flow), fall back to deployment.json
+        const localAddress = localStorage.getItem('airlog.contractAddress');
+        let contractAddress = localAddress || null;
+        if (!contractAddress) {
+          const deploymentRes = await fetch('/deployment.json').then(r => r.ok ? r.json() : null);
+          contractAddress = deploymentRes?.contractAddress || null;
+        }
+        console.log('[tx-debug] contractAddress source:', localAddress ? 'localStorage' : 'deployment.json', contractAddress);
+        if (!contractAddress) throw new Error('Contract not deployed — deploy via the Deploy Contract button first');
 
         // AIR-166: Pre-check for empty contract state (first write / indexer lag).
         // queryZSwapAndContractState returns null when the contract has never been called
@@ -1429,6 +1485,138 @@ app.get("/", (_req, res) => {
       t.style.background = isError ? '#7f1d1d' : '#1a3a8f';
       t.classList.add('show');
       setTimeout(() => t.classList.remove('show'), isError ? 4000 : 2500);
+    }
+
+    async function deployContract() {
+      const btn = document.getElementById('deployBtn');
+      const statusEl = document.getElementById('deployStatus');
+      const origText = btn.textContent;
+
+      function setStatus(msg, color) {
+        statusEl.textContent = msg;
+        statusEl.style.color = color || '#9aa3ff';
+        statusEl.style.display = 'block';
+      }
+
+      // Require wallet
+      const walletStatus = await fetch('/wallet/status').then(r => r.json()).catch(() => null);
+      if (!walletStatus?.connected) {
+        showToast('Connect wallet first to deploy contract', true);
+        return;
+      }
+      const walletExt = window.midnight?.['1am'];
+      if (!walletExt || typeof walletExt.connect !== 'function') {
+        showToast('1AM wallet extension not found', true);
+        return;
+      }
+
+      btn.textContent = 'Deploying…';
+      btn.disabled = true;
+      setStatus('Connecting wallet…');
+
+      try {
+        const connectedAPI = await walletExt.connect('preview');
+        if (!connectedAPI) throw new Error('wallet.connect() returned null');
+        const walletConfig = await connectedAPI.getConfiguration();
+
+        setStatus('Loading SDK…');
+        const { setNetworkId, CompiledContract, deployContract: deploy, httpClientProofProvider, indexerPublicDataProvider } =
+          await import('/js/midnight-sdk.js');
+
+        setNetworkId(walletConfig.networkId);
+
+        const zkConfigProvider = {
+          async get(circuitId) {
+            const [proverRes, verifierRes, zkirRes] = await Promise.all([
+              fetch(\`/contract/compiled/airlog/keys/\${circuitId}.prover\`),
+              fetch(\`/contract/compiled/airlog/keys/\${circuitId}.verifier\`),
+              fetch(\`/contract/compiled/airlog/zkir/\${circuitId}.bzkir\`),
+            ]);
+            if (!proverRes.ok || !verifierRes.ok || !zkirRes.ok) {
+              throw new Error(\`ZK assets missing for circuit: \${circuitId}\`);
+            }
+            const [proverKey, verifierKey, zkir] = await Promise.all([
+              proverRes.arrayBuffer().then(b => new Uint8Array(b)),
+              verifierRes.arrayBuffer().then(b => new Uint8Array(b)),
+              zkirRes.arrayBuffer().then(b => new Uint8Array(b)),
+            ]);
+            return { circuitId, proverKey, verifierKey, zkir };
+          },
+        };
+
+        let proofProvider;
+        if (typeof connectedAPI.getProvingProvider === 'function') {
+          proofProvider = await connectedAPI.getProvingProvider(zkConfigProvider);
+        } else {
+          const proverServerUri = walletConfig.proverServerUri || 'https://proof-server.testnet-02.midnight.network';
+          proofProvider = httpClientProofProvider(new URL(proverServerUri), zkConfigProvider);
+        }
+
+        const shielded = await connectedAPI.getShieldedAddresses();
+        const walletProvider = {
+          getCoinPublicKey: () => shielded.shieldedCoinPublicKey,
+          getEncryptionPublicKey: () => shielded.shieldedEncryptionPublicKey,
+          async balanceTx(tx) {
+            const hex = tx.serialize().toString('hex');
+            const result = await connectedAPI.balanceUnsealedTransaction(hex);
+            const balancedBytes = new Uint8Array(result.tx.match(/.{2}/g).map(b => parseInt(b, 16)));
+            return {
+              serialize: () => Buffer.from(balancedBytes),
+              identifiers: () => [result.txId ?? result.tx.slice(0, 64)],
+            };
+          },
+        };
+        const midnightProvider = {
+          async submitTx(tx) {
+            const hex = tx.serialize().toString('hex');
+            await connectedAPI.submitTransaction(hex);
+            return tx.identifiers()[0];
+          },
+        };
+        const indexerHttpUrl = walletConfig.indexerUri
+          || \`https://indexer.\${walletConfig.networkId}.midnight.network/api/v4/graphql\`;
+        const indexerWsUrl = walletConfig.indexerWsUri
+          || indexerHttpUrl.replace(/^https/, 'wss').replace(/^http/, 'ws');
+        const publicDataProvider = indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl);
+
+        setStatus('Loading contract bundle…');
+        const { Contract } = await import('/contract/compiled/airlog/index.js');
+        const compiledContract = CompiledContract
+          .make('AirLog', Contract)
+          .pipe(
+            CompiledContract.withVacantWitnesses,
+            CompiledContract.withCompiledFileAssets('/contract/compiled/airlog')
+          );
+
+        setStatus('Deploying to Midnight Preview… (wallet will prompt)');
+        const deployed = await deploy(
+          { proofProvider, walletProvider, midnightProvider, publicDataProvider },
+          { compiledContract }
+        );
+
+        const contractAddress = deployed?.deployTxData?.public?.contractAddress;
+        if (!contractAddress) throw new Error('No contractAddress in deploy result');
+
+        console.log('[deploy] contract address:', contractAddress);
+
+        // Persist to localStorage and backend
+        localStorage.setItem('airlog.contractAddress', contractAddress);
+        await fetch('/deployment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contractAddress }),
+        });
+
+        setStatus('✓ Deployed: ' + contractAddress, '#4ade80');
+        showToast('Contract deployed — address saved');
+      } catch (err) {
+        console.error('[deploy] error:', err.message, err.stack);
+        setStatus('Deploy failed: ' + err.message, '#f87171');
+        showToast('Deploy failed — see console', true);
+      } finally {
+        btn.textContent = origText;
+        btn.disabled = false;
+      }
     }
   </script>
 
@@ -4493,6 +4681,26 @@ if (fs.existsSync(deploymentJsonPath)) {
     }
   });
 }
+
+// POST /deployment — update contractAddress from browser deploy flow
+app.post("/deployment", (req, res) => {
+  const { contractAddress } = req.body || {};
+  if (!contractAddress || typeof contractAddress !== "string") {
+    return res.status(400).json({ error: "contractAddress required" });
+  }
+  try {
+    const existing = fs.existsSync(deploymentJsonPath)
+      ? JSON.parse(fs.readFileSync(deploymentJsonPath, "utf8"))
+      : {};
+    const updated = { ...existing, contractAddress, deployedAt: new Date().toISOString() };
+    fs.writeFileSync(deploymentJsonPath, JSON.stringify(updated, null, 2));
+    console.log("[deploy] contract address updated:", contractAddress);
+    res.json({ ok: true, contractAddress });
+  } catch (err) {
+    console.error("[deployment] write failed:", err);
+    res.status(500).json({ error: "deployment.json write failed" });
+  }
+});
 
 const compiledContractDir = path.resolve(
   process.cwd(),
