@@ -1,23 +1,22 @@
-import fs from "node:fs";
-import path from "node:path";
-import { createRequire } from "node:module";
+/**
+ * airlog-contract-local.mjs
+ *
+ * Local simulation of the AirLog v2 hash-anchoring contract.
+ *
+ * v2 model:
+ *   - Full records stay OFF-CHAIN (pilot logbook, maintenance entries, etc.)
+ *   - Only recordHash is anchored on-chain via anchorEntry(recordHash, anchoredAt)
+ *   - No prerequisites — first write succeeds with zero prior state
+ *
+ * When the Compact runtime is not available (e.g. Railway deploy),
+ * returns a degraded result with integrity data intact.
+ */
+
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { resolve, dirname } from "node:path";
-import { buildIntegrityResult } from "./build-integrity-result.mjs";
-
-// NOTE: compact-runtime is NOT loaded at module init time.
-// It is lazy-loaded inside simulateAirlogAnchor() so that missing
-// the runtime package never prevents app startup.
-
-const CONTRACT_PATH = path.resolve(
-  process.cwd(),
-  "compact/contracts/airlog/src/managed/airlog/contract/index.cjs"
-);
-
-let ContractModule = null;
-let CompactRuntime = null;
-let runtimeAvailable = false;
+import { canonicalizeLogbook, buildAnchorPayload } from "../lib/canonicalize-entry.mjs";
 
 const _require = createRequire(import.meta.url);
 const _dir = dirname(fileURLToPath(import.meta.url));
@@ -25,79 +24,34 @@ const _dir = dirname(fileURLToPath(import.meta.url));
 const CONTRACT_CJS = resolve(_dir, "../../compact/contracts/airlog/src/managed/airlog/contract/index.cjs");
 const RUNTIME_JS = resolve(_dir, "../../compact/contracts/airlog/node_modules/@midnight-ntwrk/compact-runtime/dist/runtime.js");
 
-function loadRuntime() {
-  if (!existsSync(CONTRACT_CJS) || !existsSync(RUNTIME_JS)) {
-    throw new Error("Midnight runtime not available in this environment");
-  }
-  const ContractModule = _require(CONTRACT_CJS);
-  const CompactRuntime = _require(RUNTIME_JS);
-  return { ContractModule, CompactRuntime };
-}
-
-const RUNTIME_PATH = path.resolve(
-  process.cwd(),
-  "compact/contracts/airlog/node_modules/@midnight-ntwrk/compact-runtime/dist/runtime.js"
-);
-
 function loadCompactDeps() {
-  if (!fs.existsSync(CONTRACT_PATH) || !fs.existsSync(RUNTIME_PATH)) {
-    return {
-      available: false,
-      reason: "Compact contract/runtime not available in this environment",
-    };
+  if (!existsSync(CONTRACT_CJS) || !existsSync(RUNTIME_JS)) {
+    return { available: false, reason: "Compact contract/runtime not available" };
   }
-
   try {
-    const ContractModule = _require(CONTRACT_PATH);
-    const CompactRuntime = _require(RUNTIME_PATH);
-    return {
-      available: true,
-      ContractModule,
-      CompactRuntime,
-    };
-  } catch (error) {
-    return {
-      available: false,
-      reason: error instanceof Error ? error.message : String(error),
-    };
+    const ContractModule = _require(CONTRACT_CJS);
+    const CompactRuntime = _require(RUNTIME_JS);
+    return { available: true, ContractModule, CompactRuntime };
+  } catch (err) {
+    return { available: false, reason: err instanceof Error ? err.message : String(err) };
   }
 }
 
 function hexToBytes32(hex) {
-  const clean = String(hex).trim().replace(/^0x/, "");
-  if (clean.length !== 64) {
-    throw new Error(`Expected 32-byte hex string, got length ${clean.length}`);
-  }
+  const clean = String(hex).replace(/^0x/, "");
+  if (clean.length !== 64) throw new Error(`Expected 32-byte hex, got ${clean.length} chars`);
   return new Uint8Array(Buffer.from(clean, "hex"));
 }
 
-function zeroBytes32() {
-  return new Uint8Array(32);
-}
-
-function hoursToTenthsBigInt(entries) {
-  const total = entries.reduce((sum, e) => sum + Number(e.total || 0), 0);
-  return BigInt(Math.round(total * 10));
-}
-
-function nowUnixSecondsBigInt() {
-  return BigInt(Math.floor(Date.now() / 1000));
-}
-
 function dummyCoinPublicKey() {
-  return {
-    bytes: new Uint8Array(32).fill(1),
-  };
+  return { bytes: new Uint8Array(32).fill(1) };
 }
 
 function createCircuitContext(contract, CompactRuntime) {
   const stateResult = contract.initialState({
     initialPrivateState: {},
-    initialZswapLocalState: {
-      coinPublicKey: dummyCoinPublicKey(),
-    },
+    initialZswapLocalState: { coinPublicKey: dummyCoinPublicKey() },
   });
-
   return {
     originalState: stateResult.currentContractState,
     currentPrivateState: stateResult.currentPrivateState,
@@ -112,13 +66,39 @@ function createCircuitContext(contract, CompactRuntime) {
   };
 }
 
+/**
+ * Simulate anchoring a private logbook record on Midnight.
+ *
+ * App flow (v2):
+ *   1. Canonicalize the full logbook off-chain → deterministic JSON
+ *   2. SHA-256 hash the canonical JSON → recordHash (64-char hex)
+ *   3. Call anchorEntry(recordHash, anchoredAt) on Midnight
+ *   4. Store anchor reference locally: { entryId, anchoredAt, recordHash }
+ *
+ * Nothing in the logbook is stored on-chain. Only the hash is anchored.
+ *
+ * @param {{ aircraft: object, entries: object[] }} opts
+ */
 export function simulateAirlogAnchor({ aircraft, entries }) {
-  const integrity = buildIntegrityResult({
-    aircraft,
-    entries,
-    network: "midnight-preview",
-  });
+  // Steps 1–2: canonicalize off-chain
+  const logbook = canonicalizeLogbook(aircraft, entries);
+  const anchorPayload = buildAnchorPayload(logbook);
 
+  const anchoredAt = BigInt(Math.floor(Date.now() / 1000));
+
+  const integrity = {
+    anchored: false,
+    anchorHash: logbook.recordHash,
+    anchorTime: new Date().toISOString(),
+    anchorNetwork: "midnight-preprod",
+    anchorTx: null,
+    entries: entries.length,
+    aircraftIdent: String(aircraft.ident || "").trim().toUpperCase(),
+    airframeId: logbook.airframeId,
+    recordId: logbook.recordId,
+  };
+
+  // Step 3: simulate on-chain anchorEntry() call
   const compact = loadCompactDeps();
 
   if (!compact.available) {
@@ -127,6 +107,7 @@ export function simulateAirlogAnchor({ aircraft, entries }) {
       degraded: true,
       message: compact.reason,
       integrity,
+      anchorPayload,
     };
   }
 
@@ -135,35 +116,16 @@ export function simulateAirlogAnchor({ aircraft, entries }) {
   const contract = new ContractModule.Contract({});
   const context = createCircuitContext(contract, CompactRuntime);
 
-  const airframeId = hexToBytes32(integrity.airframeId);
-  const docHash = hexToBytes32(integrity.anchorHash);
-  const docRef = zeroBytes32();
+  const recordHashBytes = hexToBytes32(logbook.recordHash);
 
-  const registerResult = contract.circuits.registerAirframe(context, airframeId);
-
-  const authorizeResult = contract.circuits.authorizeIssuer(
-    registerResult.context,
-    airframeId,
-    dummyCoinPublicKey()
-  );
-
-  const addEntryResult = contract.circuits.addEntry(
-    authorizeResult.context,
-    airframeId,
-    ContractModule.EntryType.OTHER,
-    nowUnixSecondsBigInt(),
-    hoursToTenthsBigInt(entries),
-    docHash,
-    docRef
-  );
+  // anchorEntry(recordHash, anchoredAt) — no prior setup required
+  const anchorResult = contract.circuits.anchorEntry(context, recordHashBytes, anchoredAt);
 
   return {
     runtimeAvailable: true,
     degraded: false,
     integrity,
-    runtimeAvailable: true,
-    registerResult,
-    authorizeResult,
-    addEntryResult,
+    anchorPayload,
+    anchorResult,
   };
 }

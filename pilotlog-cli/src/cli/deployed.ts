@@ -1,17 +1,19 @@
 /**
- * deployed.ts — AirLog on-chain demo flow (Midnight PreProd)
+ * deployed.ts — AirLog v2 on-chain demo flow (Midnight PreProd)
  *
  * Goal:
- *   deploy AirLog contract → registerAirframe → authorizeIssuer → addEntry
- *   prints contract address and tx hash for each step
+ *   deploy AirLog v2 contract → anchorEntry(recordHash, anchoredAt)
+ *   prints contract address and tx hash
+ *
+ * v2 model: no registerAirframe, no authorizeIssuer. First write succeeds immediately.
  *
  * Prerequisites:
  *   1. Node v22  (nvm use 22)
- *   2. Wallet funded with tNight on Midnight PreProd
- *      Faucet: https://faucet.preprod.midnight.network/
+ *   2. Wallet funded with tNight on PreProd
+ *      PreProd faucet:  https://faucet.preprod.midnight.network/
  *
  * Run from pilotlog-cli/:
- *   npm run demo
+ *   AIRLOG_SEED=<hex-seed> npm run demo
  */
 
 import path from "node:path";
@@ -21,7 +23,6 @@ import { createHash } from "node:crypto";
 import { Buffer } from "buffer";
 import { WebSocket } from "ws";
 
-import { loadWalletSession } from "../walletSession.js";
 
 import { CompiledContract } from "@midnight-ntwrk/compact-js";
 import {
@@ -81,22 +82,16 @@ const PREPROD_CONFIG = {
   proofServer: PROOF_STATION_URL,
 };
 
-// Wallet seed resolution:
-//   1. AIRLOG_SEED env var (set by 1AM wallet / CI)
-//   2. DEV_SEED fallback (local dev only)
-// Run `npm run wallet:connect` first to connect the 1AM wallet.
-const DEV_SEED =
-  "a1b2c3d4e5f60718293a4b5c6d7e8f9001112131415161718191a1b1c1d1e1f20";
+const ACTIVE_CONFIG = PREPROD_CONFIG;
 
 function resolveWalletSeed(): string {
-  if (process.env.AIRLOG_SEED) return process.env.AIRLOG_SEED;
-  const session = loadWalletSession();
-  if (session) {
-    // Session exists — seed must come from env; warn and fall through to DEV_SEED
-    console.log(`  Wallet: using session (${session.address.slice(0, 20)}…)`);
-    console.log(`  Note: set AIRLOG_SEED env var to use the session seed directly.`);
+  if (!process.env.AIRLOG_SEED) {
+    throw new Error(
+      "AIRLOG_SEED is required — set it to your real wallet seed hex. " +
+      "No dev/fallback seeds are allowed."
+    );
   }
-  return DEV_SEED;
+  return process.env.AIRLOG_SEED;
 }
 
 function loadDeployment(): { contractAddress: string } | null {
@@ -144,11 +139,11 @@ async function buildWallet(seed: string) {
   const sharedCfg = {
     networkId: getNetworkId(),
     indexerClientConnection: {
-      indexerHttpUrl: PREPROD_CONFIG.indexer,
-      indexerWsUrl: PREPROD_CONFIG.indexerWS,
+      indexerHttpUrl: ACTIVE_CONFIG.indexer,
+      indexerWsUrl: ACTIVE_CONFIG.indexerWS,
     },
-    provingServerUrl: new URL(PREPROD_CONFIG.proofServer),
-    relayURL: new URL(PREPROD_CONFIG.node.replace(/^http/, "ws")),
+    provingServerUrl: new URL(ACTIVE_CONFIG.proofServer),
+    relayURL: new URL(ACTIVE_CONFIG.node.replace(/^http/, "ws")),
     txHistoryStorage: new InMemoryTransactionHistoryStorage(),
     costParameters: {
       additionalFeeOverhead: 0n,
@@ -286,12 +281,12 @@ async function createProviders(
     walletProvider: walletAndMidnight,
     midnightProvider: walletAndMidnight,
     publicDataProvider: indexerPublicDataProvider(
-      PREPROD_CONFIG.indexer,
-      PREPROD_CONFIG.indexerWS
+      ACTIVE_CONFIG.indexer,
+      ACTIVE_CONFIG.indexerWS
     ),
     zkConfigProvider,
     proofProvider: httpClientProofProvider(
-      PREPROD_CONFIG.proofServer,
+      ACTIVE_CONFIG.proofServer,
       zkConfigProvider as any
     ),
     privateStateProvider: levelPrivateStateProvider({
@@ -317,13 +312,13 @@ function fail(msg: string) {
 
 async function main() {
   console.log("╔══════════════════════════════════════════════════╗");
-  console.log("║      AirLog — Midnight PreProd Demo Flow         ║");
+  console.log("║      AirLog v2 — Hash Anchoring Demo Flow        ║");
   console.log("╚══════════════════════════════════════════════════╝");
 
   setNetworkId("preprod");
   console.log(`\nNetwork:      ${getNetworkId()}`);
   console.log(`ZK keys:      ${ZK_KEYS_PATH}`);
-  console.log(`Proof server: ${PREPROD_CONFIG.proofServer}`);
+  console.log(`Proof server: ${ACTIVE_CONFIG.proofServer}`);
 
   const airlogCompiledContract = CompiledContract.make(
     "airlog",
@@ -338,9 +333,9 @@ async function main() {
   const walletCtx = await buildWallet(seed);
   ok(`Wallet ready`);
   console.log(`  Address (fund with tNight): ${walletCtx.unshieldedKeystore.getBech32Address()}`);
-  console.log(`  Faucet: https://faucet.preprod.midnight.network/`);
+  console.log(`  Faucet: https://faucet.${"preprod"}.midnight.network/`);
 
-  step(2, "Sync with PreProd");
+  step(2, "Sync with network");
   const syncedState = await Rx.firstValueFrom(
     walletCtx.wallet.state().pipe(
       Rx.throttleTime(5_000),
@@ -353,7 +348,7 @@ async function main() {
   console.log(`  tNight balance: ${balance}`);
 
   if (balance === 0n) {
-    fail("Wallet has no tNight. Fund it at https://faucet.preprod.midnight.network/ then re-run.");
+    fail(`Wallet has no tNight. Fund it at https://faucet.${"preprod"}.midnight.network/ then re-run.`);
     process.exit(1);
   }
 
@@ -391,11 +386,11 @@ async function main() {
   const providers = await createProviders(walletCtx);
   ok("Providers ready");
 
-  let deployedContract: any;
-  let isNewDeploy = false;
   const existing = loadDeployment();
 
-  step(4, existing ? "Join existing contract" : "Deploy AirLog contract");
+  step(4, existing ? "Join existing contract" : "Deploy AirLog v2 contract");
+
+  let deployedContract: any;
 
   if (existing) {
     console.log(`  Contract address: ${existing.contractAddress}`);
@@ -407,7 +402,6 @@ async function main() {
     });
     ok("Contract joined");
   } else {
-    isNewDeploy = true;
     deployedContract = await deployContract(providers as any, {
       compiledContract: airlogCompiledContract,
       privateStateId: "airlogPrivateState",
@@ -422,65 +416,36 @@ async function main() {
 
   const contractAddress = deployedContract.deployTxData.public.contractAddress;
 
-  const airframeId = new Uint8Array(32);
-  const tail = Buffer.from("N12345", "utf8");
-  airframeId.set(tail.subarray(0, Math.min(tail.length, 32)));
-
-  const entryType = Airlog.EntryType.ANNUAL;
-  const dateUtc = BigInt(Math.floor(new Date("2026-04-02").getTime() / 1000));
-  const tachOrTT = 1234n;
-  const docHash = new Uint8Array(
-    createHash("sha256").update("annual-inspection-report-2026.pdf").digest()
+  // Build record hash: SHA-256 of a sample pilot log entry
+  const sampleRecord = JSON.stringify({
+    aircraft: "N12345",
+    date: "2026-04-12",
+    totalTime: 1234.5,
+    entryType: "ANNUAL",
+  });
+  const recordHash = new Uint8Array(
+    createHash("sha256").update(sampleRecord).digest()
   );
-  const docRef = new Uint8Array(32);
+  const anchoredAt = BigInt(Math.floor(Date.now() / 1000));
 
-  if (isNewDeploy) {
-    step(5, "registerAirframe");
-    console.log("  airframeId: N12345 (padded to 32 bytes)");
-    const registerTxData = await deployedContract.callTx.registerAirframe(airframeId);
-    ok(`SUCCESS`);
-    console.log(`  tx: ${registerTxData.public.txId}`);
+  step(5, "anchorEntry");
+  console.log(`  recordHash: ${toHex(recordHash)}`);
+  console.log(`  anchoredAt: ${anchoredAt} (unix seconds)`);
+  console.log(`  note: no prior setup required — works on fresh contract`);
 
-    step(6, "authorizeIssuer");
-    const walletState = await Rx.firstValueFrom(
-      walletCtx.wallet.state().pipe(Rx.filter((s: any) => s.isSynced))
-    );
-    const coinPkHex = (walletState as any).shielded.coinPublicKey.toHexString();
-    const coinPkBytes = new Uint8Array(Buffer.from(coinPkHex, "hex"));
-    const issuerPk = { bytes: coinPkBytes };
-
-    const authTxData = await deployedContract.callTx.authorizeIssuer(airframeId, issuerPk);
-    ok(`SUCCESS`);
-    console.log(`  tx: ${authTxData.public.txId}`);
-  }
-
-  step(isNewDeploy ? 7 : 5, "addEntry");
-  console.log("  airframeId: N12345");
-  console.log("  entryType:  ANNUAL");
-  console.log(`  date:       2026-04-02 (${dateUtc} unix)`);
-  console.log(`  tachOrTT:   ${tachOrTT}`);
-  console.log(`  docHash:    ${toHex(docHash)}`);
-
-  const finalizedTxData = await deployedContract.callTx.addEntry(
-    airframeId,
-    entryType,
-    dateUtc,
-    tachOrTT,
-    docHash,
-    docRef
-  );
+  const anchorTxData = await deployedContract.callTx.anchorEntry(recordHash, anchoredAt);
 
   ok(`SUCCESS`);
-  console.log(`  tx:       ${finalizedTxData.public.txId}`);
-  console.log(`  block:    ${finalizedTxData.public.blockHeight}`);
+  console.log(`  tx:       ${anchorTxData.public.txId}`);
+  console.log(`  block:    ${anchorTxData.public.blockHeight}`);
 
   console.log("\n╔══════════════════════════════════════════════════╗");
   console.log("║  DEMO COMPLETE                                   ║");
   console.log("╠══════════════════════════════════════════════════╣");
-  console.log(`║  Contract: ${contractAddress.slice(0, 38)}  ║`);
-  console.log(`║  addEntry: ${finalizedTxData.public.txId.slice(0, 38)}  ║`);
+  console.log(`║  Contract:  ${contractAddress.slice(0, 37)}  ║`);
+  console.log(`║  anchorEntry: ${anchorTxData.public.txId.slice(0, 35)}  ║`);
   console.log("╚══════════════════════════════════════════════════╝");
-  console.log("\nAirLog entry anchored on Midnight PreProd.");
+  console.log(`\nAirLog v2 entry anchored on Midnight ${"preprod"}.`);
 
   process.exit(0);
 }

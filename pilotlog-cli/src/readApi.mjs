@@ -63,7 +63,7 @@ if (!fs.existsSync(VERIFICATION_PATH)) {
         anchored: false,
         anchorHash: null,
         anchorTime: null,
-        anchorNetwork: "midnight-preview",
+        anchorNetwork: "midnight-preprod",
         anchorTx: null,
         entries: 0,
         aircraftIdent: null,
@@ -188,7 +188,7 @@ async function connectWalletHeader() {
     return;
   }
   try {
-    const api = await wallet.connect('preview');
+    const api = await wallet.connect('preprod');
     if (!api) throw new Error('Connection rejected');
 
     // Primary: getUnshieldedAddress() — returns { unshieldedAddress }
@@ -781,46 +781,6 @@ app.get("/", (_req, res) => {
     </div>
   </div>
 
-  <!-- Chain Status Card -->
-  <div id="chain-status-card" style="margin-top:20px;background:#0d1220;border:1px solid #1e2a48;border-radius:14px;padding:14px 18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
-    <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:200px;">
-      <span id="chain-dot" style="width:9px;height:9px;border-radius:50%;background:#374151;flex-shrink:0;"></span>
-      <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;">Midnight</span>
-      <span id="chain-address" style="font-family:monospace;font-size:12px;color:#9aa3ff;">Checking…</span>
-    </div>
-    <div style="font-size:12px;color:#6b7280;">
-      <span style="color:#fff;font-weight:700;">${anchoredCount}</span> of <span style="color:#fff;font-weight:700;">${totalFlights}</span> entries anchored on-chain
-    </div>
-  </div>
-  <script>
-    (function() {
-      const dot = document.getElementById('chain-dot');
-      const addr = document.getElementById('chain-address');
-      const local = localStorage.getItem('airlog.contractAddress');
-      if (local) {
-        dot.style.background = '#22c55e';
-        addr.textContent = local.slice(0,10) + '…' + local.slice(-6);
-        addr.title = local;
-      } else {
-        fetch('/deployment.json').then(r => r.ok ? r.json() : null).then(d => {
-          if (d?.contractAddress) {
-            dot.style.background = '#f59e0b';
-            addr.textContent = d.contractAddress.slice(0,10) + '…' + d.contractAddress.slice(-6);
-            addr.title = d.contractAddress + ' (from deployment.json)';
-          } else {
-            dot.style.background = '#ef4444';
-            addr.textContent = 'No contract — save a flight to deploy';
-            addr.style.color = '#ef4444';
-          }
-        }).catch(() => {
-          dot.style.background = '#ef4444';
-          addr.textContent = 'No contract — save a flight to deploy';
-          addr.style.color = '#ef4444';
-        });
-      }
-    })();
-  </script>
-
   <div class="assistant-section">
     <div class="section-title">Flight Readiness</div>
     <div id="readiness-chip" class="readiness-chip" style="background:#1a1f30;color:#b6b9c6;">
@@ -1017,11 +977,8 @@ app.get("/", (_req, res) => {
         function buildCta(pd) {
           const ctaType = pd.ctaType || 'record';
           const ctaLabel = pd.ctaLabel || 'View Pilot Report →';
-          if (ctaType === 'log') {
-            return \`<button class="today-cta" onclick="openLogForm()">\${ctaLabel}</button>\`;
-          }
-          if (ctaType === 'plan') {
-            return \`<button class="today-cta" onclick="openLogForm()">\${ctaLabel}</button>\`;
+          if (ctaType === 'log' || ctaType === 'plan') {
+            return '';
           }
           return \`<a class="today-cta" href="/pilot-report">\${ctaLabel}</a>\`;
         }
@@ -1039,8 +996,7 @@ app.get("/", (_req, res) => {
             <div class="today-headline" style="color:#22c55e;">You are current. Keep momentum this week.</div>
             <div class="today-footer">
               \${MAINTENANCE_FALLBACKS.map(a => \`<span class="secondary-chip">\${a}</span>\`).join('')}
-            </div>
-            <button class="today-cta" onclick="openLogForm()">Log a Flight →</button>\`;
+            </div>\`;
         } else {
           const primary = scored[0];
           const pd = primary.domain;
@@ -1194,7 +1150,7 @@ app.get("/", (_req, res) => {
         // AIR-178: log wallet presence at window.midnight['1am']
         console.log('[tx-debug] wallet detected (window.midnight[1am]):', typeof window !== 'undefined' && window.midnight && window.midnight['1am'] ? 'present' : 'not found');
         // 5. Connect wallet
-        connectedAPI = await walletExt.connect('preview');
+        connectedAPI = await walletExt.connect('preprod');
         if (!connectedAPI) throw new Error('wallet.connect() returned null — wallet rejected connection');
         console.log('[tx-debug] step: wallet connected', connectedAPI);
         console.log('[tx-debug] connectedAPI type:', typeof connectedAPI);
@@ -1236,7 +1192,7 @@ app.get("/", (_req, res) => {
 
       // ── BLOCK 3: SDK import + config + providers ──────────────────────────
       let setNetworkId, CompiledContract, submitCallTx, deployContractFn, httpClientProofProvider, indexerPublicDataProvider;
-      let proofProvider, walletProvider, midnightProvider, publicDataProvider;
+      let proofProvider, walletProvider, midnightProvider, publicDataProvider, zkConfigProvider;
       try {
         console.log('[tx-debug] step: providers start');
         // 9. Execute transaction via 1AM wallet (browser-only, no server involvement).
@@ -1259,8 +1215,10 @@ app.get("/", (_req, res) => {
         setNetworkId(walletConfig.networkId);
 
         // ZK config provider: fetch prover key, verifier key, and IR from static assets.
-        const zkConfigProvider = {
+        // AIR-181: declared in outer scope so it's accessible in BLOCK 5 (deployContractFn call).
+        zkConfigProvider = {
           async get(circuitId) {
+            console.log('[zk-debug] get called:', circuitId);
             const proverUrl = \`/contract/compiled/airlog/keys/\${circuitId}.prover\`;
             const verifierUrl = \`/contract/compiled/airlog/keys/\${circuitId}.verifier\`;
             const zkirUrl = \`/contract/compiled/airlog/zkir/\${circuitId}.bzkir\`;
@@ -1307,24 +1265,28 @@ app.get("/", (_req, res) => {
             console.log('[tx-debug] zk assets loaded ok:', circuitId, { proverKey: proverKey.length, verifierKey: verifierKey.length, zkir: zkir.length });
             return { circuitId, proverKey, verifierKey, zkir };
           },
+          // AIR-180: SDK's makeAdaptedReader calls getVerifierKey(circuitId) during deploy.
+          // Our provider only had get(circuitId), causing ZKConfigurationReadError on deploy.
+          async getVerifierKey(circuitId) {
+            console.log('[zk-debug] getVerifierKey called:', circuitId);
+            const verifierUrl = \`/contract/compiled/airlog/keys/\${circuitId}.verifier\`;
+            console.log('[tx-debug] getVerifierKey fetch:', verifierUrl);
+            const res = await fetch(verifierUrl);
+            if (!res.ok) throw new Error(\`ZK verifier key not found: \${circuitId} (status \${res.status})\`);
+            return new Uint8Array(await res.arrayBuffer());
+          },
         };
 
         // AIR-178: browser-safe hex helpers (no Buffer / no .toString('hex'))
         const bytesToHex = (bytes) => Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
 
-        // AIR-173: Use wallet-native proving via getProvingProvider when available.
-        // This routes ZK proofs through the 1AM wallet extension (wallet manages ProofStation URL).
-        // Fall back to httpClientProofProvider using the proverServerUri from walletConfig.
-        if (typeof connectedAPI.getProvingProvider === 'function') {
-          console.log('[tx-debug] using wallet-native getProvingProvider');
-          proofProvider = await connectedAPI.getProvingProvider(zkConfigProvider);
-          console.log('[tx-debug] wallet proving provider obtained:', typeof proofProvider);
-        } else {
-          const proverServerUri = walletConfig.proverServerUri || 'https://proof-server.testnet-02.midnight.network';
-          console.log('[tx-debug] getProvingProvider unavailable — falling back to httpClientProofProvider');
-          console.log('[tx-debug] ProofStation URI:', proverServerUri);
-          proofProvider = httpClientProofProvider(new URL(proverServerUri), zkConfigProvider);
-        }
+        // AIR-183: Always use httpClientProofProvider — it returns a ProofProvider with proveTx().
+        // connectedAPI.getProvingProvider() returns a ProvingProvider (circuit-level, no proveTx),
+        // which causes "providers.proofProvider.proveTx is not a function" in deployContract.
+        const proverServerUri = walletConfig.proverServerUri || 'https://proof-server.testnet-02.midnight.network';
+        console.log('[tx-debug] ProofStation URI:', proverServerUri);
+        proofProvider = httpClientProofProvider(proverServerUri, zkConfigProvider);
+        console.log('[tx-debug] proofProvider.proveTx:', typeof proofProvider?.proveTx);
 
         const shielded = await connectedAPI.getShieldedAddresses();
         walletAddress = shielded.shieldedCoinPublicKey || walletAddress;
@@ -1392,7 +1354,35 @@ app.get("/", (_req, res) => {
         // Load contract class and build a proper CompiledContract via 1AM SDK pattern.
         // DApp builds tx → wallet proves → wallet balances → wallet submits.
         // Contract bundle has compact-runtime + WASM inlined (no bare specifiers).
-        const { Contract } = await import('/contract/compiled/airlog/index.js');
+        const contractMod = await import('/contract/compiled/airlog/index.js');
+        const { Contract } = contractMod;
+
+        // AIR-182: Bridge cross-WASM ContractMaintenanceAuthority mismatch.
+        // The SDK's deployContract creates a CMA from its own WASM and sets it on
+        // ContractState (from the compiled contract's WASM). The _assertClass instanceof
+        // check fails across WASM boundaries. Patch the setter to serialize/deserialize.
+        const CMA = contractMod.ContractMaintenanceAuthority;
+        const ContractStateClass = contractMod.ContractState;
+        if (CMA && ContractStateClass) {
+          const cmaDesc = Object.getOwnPropertyDescriptor(ContractStateClass.prototype, 'maintenanceAuthority');
+          if (cmaDesc && cmaDesc.set) {
+            Object.defineProperty(ContractStateClass.prototype, 'maintenanceAuthority', {
+              get: cmaDesc.get,
+              set(authority) {
+                if (authority instanceof CMA) {
+                  cmaDesc.set.call(this, authority);
+                } else {
+                  // Cross-WASM: round-trip through serialize/deserialize
+                  cmaDesc.set.call(this, CMA.deserialize(authority.serialize()));
+                }
+              },
+              configurable: true,
+              enumerable: cmaDesc.enumerable,
+            });
+            console.log('[AIR-182] ContractState.maintenanceAuthority setter patched for cross-WASM CMA');
+          }
+        }
+
         compiledContract = CompiledContract
           .make('AirLog', Contract)
           .pipe(
@@ -1421,10 +1411,16 @@ app.get("/", (_req, res) => {
           btn.textContent = 'Deploying contract…';
 
           console.log('[deploy] deploy started');
+          // AIR-181: Verify zkConfigProvider is wired into providers before deployContract.
+          // SDK's makeAdaptedReader reads providers.zkConfigProvider.getVerifierKey() — omitting
+          // this key causes ZKConfigurationReadError on every deploy attempt.
+          console.log('[zk-debug] providers.zkConfigProvider exists:', !!zkConfigProvider);
+          console.log('[zk-debug] typeof providers.zkConfigProvider.getVerifierKey:', typeof zkConfigProvider?.getVerifierKey);
+          console.log('[zk-debug] providers keys:', ['proofProvider', 'walletProvider', 'midnightProvider', 'publicDataProvider', 'zkConfigProvider'].join(', '));
           let deployed;
           try {
             deployed = await deployContractFn(
-              { proofProvider, walletProvider, midnightProvider, publicDataProvider },
+              { proofProvider, walletProvider, midnightProvider, publicDataProvider, zkConfigProvider },
               { compiledContract }
             );
           } catch (deployErr) {
@@ -1556,8 +1552,12 @@ app.get("/", (_req, res) => {
         ${recent.map(e => {
           const anchorObj = e.anchor || null;
           const status = anchorObj?.status || e.anchorStatus || (e.anchored ? "anchored" : null);
+          const explorerNetwork = "preprod";
+          const explorerLink = (status === "anchored" && anchorObj?.tx)
+            ? `<br><a href="https://explorer.1am.xyz/tx/${anchorObj.tx}?network=${explorerNetwork}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;font-weight:500;text-decoration:none;">View on chain →</a>`
+            : "";
           const statusBadge = status === "anchored"
-            ? '<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Saved to chain</span>'
+            ? `<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Saved to chain</span>${explorerLink}`
             : status === "anchor_failed"
             ? '<span style="color:#ef4444;font-size:11px;font-weight:600;">&#x2717; Failed</span>'
             : (status === "pending_anchor" || status === "anchored_pending")
@@ -1579,6 +1579,38 @@ app.get("/", (_req, res) => {
     </table>
   </div>
 </div>
+<script>
+(function() {
+  // Seed real on-chain entry into localStorage (hybrid model)
+  var REAL_ENTRY = ${JSON.stringify({
+    id: "e005",
+    date: "2026-04-12",
+    aircraftId: "N12345",
+    from: "KAPA",
+    to: "KAPA",
+    totalTime: 1.2,
+    pic: 1.2,
+    remarks: "Annual — N12345 airframe inspection and verification",
+    anchor: {
+      status: "anchored",
+      hash: "91ee77fd525d2e1d7d8eee3ed84c1584d2ca59f912cff8f691e9fad708bca23e",
+      tx: "ba8469647e24aff2b10dfbc1c5858dabe0bba06b8a6b489346acfbb1ac382240",
+      network: "preprod",
+      time: "2026-04-03T02:46:24.000Z",
+      contractAddress: "2308d3e94b0bdd11631a814beb9e1d46b0d192254dcbb95aa4dcf40cb6a4b6ab",
+      blockHeight: 181586
+    }
+  })};
+  try {
+    var stored = JSON.parse(localStorage.getItem('airlog_anchored_entries') || '[]');
+    var exists = stored.some(function(e) { return e.id === REAL_ENTRY.id; });
+    if (!exists) {
+      stored.push(REAL_ENTRY);
+      localStorage.setItem('airlog_anchored_entries', JSON.stringify(stored));
+    }
+  } catch(e) {}
+})();
+</script>
 </body>
 </html>`);
 });
