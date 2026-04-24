@@ -2,6 +2,7 @@ node_modules
 .git
 .paperclip
 .DS_Store
-compact
+compact/contracts/airlog/node_modules
+compact/tooling/node_modules
 .gitignore
 *.log
