@@ -1,0 +1,221 @@
+/**
+ * AirLog v2 – Private-record anchoring with access grants
+ *
+ * Design:
+ *   - Full records stay OFF-CHAIN (pilot logbook, maintenance entries, etc.)
+ *   - Only record metadata + hash is anchored on-chain
+ *   - Owner controls who can verify (grantAccess / revokeAccess)
+ *   - Records can be superseded (e.g. amended entry replaces old one)
+ *
+ * On-chain anchor fields:
+ *   recordId, ownerId, recordType, recordHash, createdAt, status, supersedesRecordId
+ *
+ * On-chain grant fields:
+ *   grantId, recordId, grantedBy, viewerId, accessLevel, createdAt, revokedAt
+ */
+
+pragma language_version >= 0.16.0;
+
+import CompactStandardLibrary;
+
+// ---------------------
+// Types
+// ---------------------
+
+export enum RecordType {
+  FLIGHT_ENTRY,
+  MAINTENANCE_ENTRY,
+  AIRFRAME,
+  DOCUMENT
+}
+
+export enum RecordStatus {
+  ACTIVE,
+  SUPERSEDED,
+  REVOKED
+}
+
+export enum AccessLevel {
+  READ,
+  VERIFY
+}
+
+export struct RecordAnchor {
+  ownerId: ZswapCoinPublicKey,
+  recordType: RecordType,
+  recordHash: Bytes<32>,
+  createdAt: Uint<64>,
+  status: RecordStatus,
+  supersedesRecordId: Bytes<32> // all-zero = none
+}
+
+export struct AccessGrant {
+  recordId: Bytes<32>,
+  grantedBy: ZswapCoinPublicKey,
+  viewerId: ZswapCoinPublicKey,
+  accessLevel: AccessLevel,
+  createdAt: Uint<64>,
+  active: Boolean
+}
+
+// ---------------------
+// Ledger state
+// ---------------------
+
+// recordId -> RecordAnchor
+export ledger records: Map<Bytes<32>, RecordAnchor>;
+
+// grantId (hash(recordId || viewerId)) -> AccessGrant
+export ledger grants: Map<Field, AccessGrant>;
+
+// ---------------------
+// Helpers
+// ---------------------
+
+circuit grantKey(recordId: Bytes<32>, viewerId: ZswapCoinPublicKey): Field {
+  return transientHash<[Bytes<32>, Bytes<32>]>([recordId, viewerId.bytes]);
+}
+
+circuit requireOwner(recordId: Bytes<32>): ZswapCoinPublicKey {
+  const sender = ownPublicKey();
+  assert(records.member(disclose(recordId)), "Record not found");
+  const anchor = records.lookup(disclose(recordId));
+  assert(anchor.ownerId.bytes == sender.bytes, "Not record owner");
+  return sender;
+}
+
+// ---------------------
+// Public circuits
+// ---------------------
+
+/**
+ * Anchor a new private record.
+ * Only the hash + metadata goes on-chain; full record stays off-chain.
+ */
+export circuit anchorRecord(
+  recordId: Bytes<32>,
+  recordType: RecordType,
+  recordHash: Bytes<32>,
+  createdAt: Uint<64>
+): [] {
+  const sender = ownPublicKey();
+
+  assert(!records.member(disclose(recordId)), "Record already anchored");
+
+  const anchor = RecordAnchor {
+    ownerId: sender,
+    recordType: recordType,
+    recordHash: recordHash,
+    createdAt: createdAt,
+    status: RecordStatus.ACTIVE,
+    supersedesRecordId: [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] as Bytes<32>
+  };
+
+  records.insert(disclose(recordId), disclose(anchor));
+}
+
+/**
+ * Grant read/verify access to a viewer for a specific record.
+ */
+export circuit grantAccess(
+  recordId: Bytes<32>,
+  viewerId: ZswapCoinPublicKey,
+  accessLevel: AccessLevel,
+  grantedAt: Uint<64>
+): [] {
+  const sender = requireOwner(recordId);
+
+  const grantId = grantKey(recordId, viewerId);
+  const grant = AccessGrant {
+    recordId: recordId,
+    grantedBy: sender,
+    viewerId: viewerId,
+    accessLevel: accessLevel,
+    createdAt: grantedAt,
+    active: true
+  };
+
+  grants.insert(disclose(grantId), disclose(grant));
+}
+
+/**
+ * Revoke a previously granted access.
+ */
+export circuit revokeAccess(
+  recordId: Bytes<32>,
+  viewerId: ZswapCoinPublicKey
+): [] {
+  requireOwner(recordId);
+
+  const grantId = grantKey(recordId, viewerId);
+  assert(grants.member(disclose(grantId)), "Grant not found");
+
+  const existing = grants.lookup(disclose(grantId));
+  const revoked = AccessGrant {
+    recordId: existing.recordId,
+    grantedBy: existing.grantedBy,
+    viewerId: existing.viewerId,
+    accessLevel: existing.accessLevel,
+    createdAt: existing.createdAt,
+    active: false
+  };
+
+  grants.insert(disclose(grantId), disclose(revoked));
+}
+
+/**
+ * Supersede an existing record with a new one.
+ * Original is marked SUPERSEDED; new record is anchored in the same call.
+ */
+export circuit supersedeRecord(
+  oldRecordId: Bytes<32>,
+  newRecordId: Bytes<32>,
+  newRecordType: RecordType,
+  newRecordHash: Bytes<32>,
+  createdAt: Uint<64>
+): [] {
+  const sender = requireOwner(oldRecordId);
+
+  // Mark old record superseded
+  const old = records.lookup(disclose(oldRecordId));
+  const superseded = RecordAnchor {
+    ownerId: old.ownerId,
+    recordType: old.recordType,
+    recordHash: old.recordHash,
+    createdAt: old.createdAt,
+    status: RecordStatus.SUPERSEDED,
+    supersedesRecordId: old.supersedesRecordId
+  };
+  records.insert(disclose(oldRecordId), disclose(superseded));
+
+  // Anchor new record pointing back to old
+  assert(!records.member(disclose(newRecordId)), "New record already exists");
+  const newAnchor = RecordAnchor {
+    ownerId: sender,
+    recordType: newRecordType,
+    recordHash: newRecordHash,
+    createdAt: createdAt,
+    status: RecordStatus.ACTIVE,
+    supersedesRecordId: oldRecordId
+  };
+  records.insert(disclose(newRecordId), disclose(newAnchor));
+}
+
+/**
+ * Verify a record anchor: returns the stored hash for comparison off-chain.
+ */
+export circuit verifyRecord(recordId: Bytes<32>): RecordAnchor {
+  assert(records.member(disclose(recordId)), "Record not found");
+  return records.lookup(disclose(recordId));
+}
+
+/**
+ * Check if a grant is currently active for a viewer.
+ */
+export circuit checkAccess(recordId: Bytes<32>, viewerId: ZswapCoinPublicKey): Boolean {
+  const grantId = grantKey(recordId, viewerId);
+  if (!grants.member(disclose(grantId))) {
+    return false;
+  }
+  return grants.lookup(disclose(grantId)).active;
+}

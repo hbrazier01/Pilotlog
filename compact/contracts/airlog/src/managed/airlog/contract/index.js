@@ -5574,135 +5574,83 @@ const contractDependencies = (contractReferenceLocations, state) => {
 
 checkRuntimeVersion('0.15.0');
 
-var EntryType;
-(function (EntryType) {
-  EntryType[EntryType['ANNUAL'] = 0] = 'ANNUAL';
-  EntryType[EntryType['HUNDRED_HOUR'] = 1] = 'HUNDRED_HOUR';
-  EntryType[EntryType['AD_COMPLIANCE'] = 2] = 'AD_COMPLIANCE';
-  EntryType[EntryType['REPAIR'] = 3] = 'REPAIR';
-  EntryType[EntryType['MOD_STC'] = 4] = 'MOD_STC';
-  EntryType[EntryType['OVERHAUL'] = 5] = 'OVERHAUL';
-  EntryType[EntryType['OTHER'] = 6] = 'OTHER';
-})(EntryType || (EntryType = {}));
+const _descriptor_0 = new CompactTypeUnsignedInteger(18446744073709551615n, 8);
 
-const _descriptor_0 = new CompactTypeBytes(32);
+const _descriptor_1 = new CompactTypeBytes(32);
 
 class _ZswapCoinPublicKey_0 {
   alignment() {
-    return _descriptor_0.alignment();
+    return _descriptor_1.alignment();
   }
   fromValue(value_0) {
     return {
-      bytes: _descriptor_0.fromValue(value_0)
+      bytes: _descriptor_1.fromValue(value_0)
     }
   }
   toValue(value_0) {
-    return _descriptor_0.toValue(value_0.bytes);
+    return _descriptor_1.toValue(value_0.bytes);
   }
 }
 
-const _descriptor_1 = new _ZswapCoinPublicKey_0();
+const _descriptor_2 = new _ZswapCoinPublicKey_0();
 
-const _descriptor_2 = CompactTypeBoolean;
-
-const _descriptor_3 = new CompactTypeUnsignedInteger(18446744073709551615n, 8);
-
-const _descriptor_4 = CompactTypeField;
-
-const _descriptor_5 = new CompactTypeEnum(6, 1);
-
-class _Entry_0 {
+class _EntryAnchor_0 {
   alignment() {
-    return _descriptor_5.alignment().concat(_descriptor_3.alignment().concat(_descriptor_3.alignment().concat(_descriptor_1.alignment().concat(_descriptor_0.alignment().concat(_descriptor_0.alignment())))));
+    return _descriptor_2.alignment().concat(_descriptor_1.alignment().concat(_descriptor_0.alignment()));
   }
   fromValue(value_0) {
     return {
-      entryType: _descriptor_5.fromValue(value_0),
-      dateUtc: _descriptor_3.fromValue(value_0),
-      tachOrTT: _descriptor_3.fromValue(value_0),
-      issuer: _descriptor_1.fromValue(value_0),
-      docHash: _descriptor_0.fromValue(value_0),
-      docRef: _descriptor_0.fromValue(value_0)
+      owner: _descriptor_2.fromValue(value_0),
+      recordHash: _descriptor_1.fromValue(value_0),
+      anchoredAt: _descriptor_0.fromValue(value_0)
     }
   }
   toValue(value_0) {
-    return _descriptor_5.toValue(value_0.entryType).concat(_descriptor_3.toValue(value_0.dateUtc).concat(_descriptor_3.toValue(value_0.tachOrTT).concat(_descriptor_1.toValue(value_0.issuer).concat(_descriptor_0.toValue(value_0.docHash).concat(_descriptor_0.toValue(value_0.docRef))))));
+    return _descriptor_2.toValue(value_0.owner).concat(_descriptor_1.toValue(value_0.recordHash).concat(_descriptor_0.toValue(value_0.anchoredAt)));
   }
 }
 
-const _descriptor_6 = new _Entry_0();
+const _descriptor_3 = new _EntryAnchor_0();
 
-class _tuple_0 {
-  alignment() {
-    return _descriptor_0.alignment().concat(_descriptor_0.alignment());
-  }
-  fromValue(value_0) {
-    return [
-      _descriptor_0.fromValue(value_0),
-      _descriptor_0.fromValue(value_0)
-    ]
-  }
-  toValue(value_0) {
-    return _descriptor_0.toValue(value_0[0]).concat(_descriptor_0.toValue(value_0[1]));
-  }
-}
-
-const _descriptor_7 = new _tuple_0();
-
-class _tuple_1 {
-  alignment() {
-    return _descriptor_0.alignment().concat(_descriptor_3.alignment());
-  }
-  fromValue(value_0) {
-    return [
-      _descriptor_0.fromValue(value_0),
-      _descriptor_3.fromValue(value_0)
-    ]
-  }
-  toValue(value_0) {
-    return _descriptor_0.toValue(value_0[0]).concat(_descriptor_3.toValue(value_0[1]));
-  }
-}
-
-const _descriptor_8 = new _tuple_1();
+const _descriptor_4 = CompactTypeBoolean;
 
 class _Either_0 {
   alignment() {
-    return _descriptor_2.alignment().concat(_descriptor_0.alignment().concat(_descriptor_0.alignment()));
+    return _descriptor_4.alignment().concat(_descriptor_1.alignment().concat(_descriptor_1.alignment()));
   }
   fromValue(value_0) {
     return {
-      is_left: _descriptor_2.fromValue(value_0),
-      left: _descriptor_0.fromValue(value_0),
-      right: _descriptor_0.fromValue(value_0)
+      is_left: _descriptor_4.fromValue(value_0),
+      left: _descriptor_1.fromValue(value_0),
+      right: _descriptor_1.fromValue(value_0)
     }
   }
   toValue(value_0) {
-    return _descriptor_2.toValue(value_0.is_left).concat(_descriptor_0.toValue(value_0.left).concat(_descriptor_0.toValue(value_0.right)));
+    return _descriptor_4.toValue(value_0.is_left).concat(_descriptor_1.toValue(value_0.left).concat(_descriptor_1.toValue(value_0.right)));
   }
 }
 
-const _descriptor_9 = new _Either_0();
+const _descriptor_5 = new _Either_0();
 
-const _descriptor_10 = new CompactTypeUnsignedInteger(340282366920938463463374607431768211455n, 16);
+const _descriptor_6 = new CompactTypeUnsignedInteger(340282366920938463463374607431768211455n, 16);
 
 class _ContractAddress_0 {
   alignment() {
-    return _descriptor_0.alignment();
+    return _descriptor_1.alignment();
   }
   fromValue(value_0) {
     return {
-      bytes: _descriptor_0.fromValue(value_0)
+      bytes: _descriptor_1.fromValue(value_0)
     }
   }
   toValue(value_0) {
-    return _descriptor_0.toValue(value_0.bytes);
+    return _descriptor_1.toValue(value_0.bytes);
   }
 }
 
-const _descriptor_11 = new _ContractAddress_0();
+const _descriptor_7 = new _ContractAddress_0();
 
-const _descriptor_12 = new CompactTypeUnsignedInteger(255n, 1);
+const _descriptor_8 = new CompactTypeUnsignedInteger(255n, 1);
 
 class Contract {
   witnesses;
@@ -5716,357 +5664,118 @@ class Contract {
     }
     this.witnesses = witnesses_0;
     this.circuits = {
-      registerAirframe: (...args_1) => {
-        if (args_1.length !== 2) {
-          throw new CompactError(`registerAirframe: expected 2 arguments (as invoked from Typescript), received ${args_1.length}`);
-        }
-        const contextOrig_0 = args_1[0];
-        const airframeId_0 = args_1[1];
-        if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
-          typeError('registerAirframe',
-                                     'argument 1 (as invoked from Typescript)',
-                                     'airlog.compact line 83 char 1',
-                                     'CircuitContext',
-                                     contextOrig_0);
-        }
-        if (!(airframeId_0.buffer instanceof ArrayBuffer && airframeId_0.BYTES_PER_ELEMENT === 1 && airframeId_0.length === 32)) {
-          typeError('registerAirframe',
-                                     'argument 1 (argument 2 as invoked from Typescript)',
-                                     'airlog.compact line 83 char 1',
-                                     'Bytes<32>',
-                                     airframeId_0);
-        }
-        const context = { ...contextOrig_0, gasCost: emptyRunningCost() };
-        const partialProofData = {
-          input: {
-            value: _descriptor_0.toValue(airframeId_0),
-            alignment: _descriptor_0.alignment()
-          },
-          output: undefined,
-          publicTranscript: [],
-          privateTranscriptOutputs: []
-        };
-        const result_0 = this._registerAirframe_0(context,
-                                                  partialProofData,
-                                                  airframeId_0);
-        partialProofData.output = { value: [], alignment: [] };
-        return { result: result_0, context: context, proofData: partialProofData, gasCost: context.gasCost };
-      },
-      authorizeIssuer: (...args_1) => {
+      anchorEntry: (...args_1) => {
         if (args_1.length !== 3) {
-          throw new CompactError(`authorizeIssuer: expected 3 arguments (as invoked from Typescript), received ${args_1.length}`);
+          throw new CompactError(`anchorEntry: expected 3 arguments (as invoked from Typescript), received ${args_1.length}`);
         }
         const contextOrig_0 = args_1[0];
-        const airframeId_0 = args_1[1];
-        const issuerPk_0 = args_1[2];
+        const recordHash_0 = args_1[1];
+        const anchoredAt_0 = args_1[2];
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
-          typeError('authorizeIssuer',
+          typeError('anchorEntry',
                                      'argument 1 (as invoked from Typescript)',
-                                     'airlog.compact line 94 char 1',
+                                     'airlog.compact line 49 char 1',
                                      'CircuitContext',
                                      contextOrig_0);
         }
-        if (!(airframeId_0.buffer instanceof ArrayBuffer && airframeId_0.BYTES_PER_ELEMENT === 1 && airframeId_0.length === 32)) {
-          typeError('authorizeIssuer',
+        if (!(recordHash_0.buffer instanceof ArrayBuffer && recordHash_0.BYTES_PER_ELEMENT === 1 && recordHash_0.length === 32)) {
+          typeError('anchorEntry',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'airlog.compact line 94 char 1',
+                                     'airlog.compact line 49 char 1',
                                      'Bytes<32>',
-                                     airframeId_0);
+                                     recordHash_0);
         }
-        if (!(typeof(issuerPk_0) === 'object' && issuerPk_0.bytes.buffer instanceof ArrayBuffer && issuerPk_0.bytes.BYTES_PER_ELEMENT === 1 && issuerPk_0.bytes.length === 32)) {
-          typeError('authorizeIssuer',
+        if (!(typeof(anchoredAt_0) === 'bigint' && anchoredAt_0 >= 0n && anchoredAt_0 <= 18446744073709551615n)) {
+          typeError('anchorEntry',
                                      'argument 2 (argument 3 as invoked from Typescript)',
-                                     'airlog.compact line 94 char 1',
-                                     'struct ZswapCoinPublicKey<bytes: Bytes<32>>',
-                                     issuerPk_0);
-        }
-        const context = { ...contextOrig_0, gasCost: emptyRunningCost() };
-        const partialProofData = {
-          input: {
-            value: _descriptor_0.toValue(airframeId_0).concat(_descriptor_1.toValue(issuerPk_0)),
-            alignment: _descriptor_0.alignment().concat(_descriptor_1.alignment())
-          },
-          output: undefined,
-          publicTranscript: [],
-          privateTranscriptOutputs: []
-        };
-        const result_0 = this._authorizeIssuer_0(context,
-                                                 partialProofData,
-                                                 airframeId_0,
-                                                 issuerPk_0);
-        partialProofData.output = { value: [], alignment: [] };
-        return { result: result_0, context: context, proofData: partialProofData, gasCost: context.gasCost };
-      },
-      revokeIssuer: (...args_1) => {
-        if (args_1.length !== 3) {
-          throw new CompactError(`revokeIssuer: expected 3 arguments (as invoked from Typescript), received ${args_1.length}`);
-        }
-        const contextOrig_0 = args_1[0];
-        const airframeId_0 = args_1[1];
-        const issuerPk_0 = args_1[2];
-        if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
-          typeError('revokeIssuer',
-                                     'argument 1 (as invoked from Typescript)',
-                                     'airlog.compact line 99 char 1',
-                                     'CircuitContext',
-                                     contextOrig_0);
-        }
-        if (!(airframeId_0.buffer instanceof ArrayBuffer && airframeId_0.BYTES_PER_ELEMENT === 1 && airframeId_0.length === 32)) {
-          typeError('revokeIssuer',
-                                     'argument 1 (argument 2 as invoked from Typescript)',
-                                     'airlog.compact line 99 char 1',
-                                     'Bytes<32>',
-                                     airframeId_0);
-        }
-        if (!(typeof(issuerPk_0) === 'object' && issuerPk_0.bytes.buffer instanceof ArrayBuffer && issuerPk_0.bytes.BYTES_PER_ELEMENT === 1 && issuerPk_0.bytes.length === 32)) {
-          typeError('revokeIssuer',
-                                     'argument 2 (argument 3 as invoked from Typescript)',
-                                     'airlog.compact line 99 char 1',
-                                     'struct ZswapCoinPublicKey<bytes: Bytes<32>>',
-                                     issuerPk_0);
-        }
-        const context = { ...contextOrig_0, gasCost: emptyRunningCost() };
-        const partialProofData = {
-          input: {
-            value: _descriptor_0.toValue(airframeId_0).concat(_descriptor_1.toValue(issuerPk_0)),
-            alignment: _descriptor_0.alignment().concat(_descriptor_1.alignment())
-          },
-          output: undefined,
-          publicTranscript: [],
-          privateTranscriptOutputs: []
-        };
-        const result_0 = this._revokeIssuer_0(context,
-                                              partialProofData,
-                                              airframeId_0,
-                                              issuerPk_0);
-        partialProofData.output = { value: [], alignment: [] };
-        return { result: result_0, context: context, proofData: partialProofData, gasCost: context.gasCost };
-      },
-      addEntry: (...args_1) => {
-        if (args_1.length !== 7) {
-          throw new CompactError(`addEntry: expected 7 arguments (as invoked from Typescript), received ${args_1.length}`);
-        }
-        const contextOrig_0 = args_1[0];
-        const airframeId_0 = args_1[1];
-        const entryType_0 = args_1[2];
-        const dateUtc_0 = args_1[3];
-        const tachOrTT_0 = args_1[4];
-        const docHash_0 = args_1[5];
-        const docRef_0 = args_1[6];
-        if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
-          typeError('addEntry',
-                                     'argument 1 (as invoked from Typescript)',
-                                     'airlog.compact line 104 char 1',
-                                     'CircuitContext',
-                                     contextOrig_0);
-        }
-        if (!(airframeId_0.buffer instanceof ArrayBuffer && airframeId_0.BYTES_PER_ELEMENT === 1 && airframeId_0.length === 32)) {
-          typeError('addEntry',
-                                     'argument 1 (argument 2 as invoked from Typescript)',
-                                     'airlog.compact line 104 char 1',
-                                     'Bytes<32>',
-                                     airframeId_0);
-        }
-        if (!(typeof(entryType_0) === 'number' && entryType_0 >= 0 && entryType_0 <= 6)) {
-          typeError('addEntry',
-                                     'argument 2 (argument 3 as invoked from Typescript)',
-                                     'airlog.compact line 104 char 1',
-                                     'Enum<EntryType, ANNUAL, HUNDRED_HOUR, AD_COMPLIANCE, REPAIR, MOD_STC, OVERHAUL, OTHER>',
-                                     entryType_0);
-        }
-        if (!(typeof(dateUtc_0) === 'bigint' && dateUtc_0 >= 0n && dateUtc_0 <= 18446744073709551615n)) {
-          typeError('addEntry',
-                                     'argument 3 (argument 4 as invoked from Typescript)',
-                                     'airlog.compact line 104 char 1',
+                                     'airlog.compact line 49 char 1',
                                      'Uint<0..18446744073709551616>',
-                                     dateUtc_0);
-        }
-        if (!(typeof(tachOrTT_0) === 'bigint' && tachOrTT_0 >= 0n && tachOrTT_0 <= 18446744073709551615n)) {
-          typeError('addEntry',
-                                     'argument 4 (argument 5 as invoked from Typescript)',
-                                     'airlog.compact line 104 char 1',
-                                     'Uint<0..18446744073709551616>',
-                                     tachOrTT_0);
-        }
-        if (!(docHash_0.buffer instanceof ArrayBuffer && docHash_0.BYTES_PER_ELEMENT === 1 && docHash_0.length === 32)) {
-          typeError('addEntry',
-                                     'argument 5 (argument 6 as invoked from Typescript)',
-                                     'airlog.compact line 104 char 1',
-                                     'Bytes<32>',
-                                     docHash_0);
-        }
-        if (!(docRef_0.buffer instanceof ArrayBuffer && docRef_0.BYTES_PER_ELEMENT === 1 && docRef_0.length === 32)) {
-          typeError('addEntry',
-                                     'argument 6 (argument 7 as invoked from Typescript)',
-                                     'airlog.compact line 104 char 1',
-                                     'Bytes<32>',
-                                     docRef_0);
+                                     anchoredAt_0);
         }
         const context = { ...contextOrig_0, gasCost: emptyRunningCost() };
         const partialProofData = {
           input: {
-            value: _descriptor_0.toValue(airframeId_0).concat(_descriptor_5.toValue(entryType_0).concat(_descriptor_3.toValue(dateUtc_0).concat(_descriptor_3.toValue(tachOrTT_0).concat(_descriptor_0.toValue(docHash_0).concat(_descriptor_0.toValue(docRef_0)))))),
-            alignment: _descriptor_0.alignment().concat(_descriptor_5.alignment().concat(_descriptor_3.alignment().concat(_descriptor_3.alignment().concat(_descriptor_0.alignment().concat(_descriptor_0.alignment())))))
+            value: _descriptor_1.toValue(recordHash_0).concat(_descriptor_0.toValue(anchoredAt_0)),
+            alignment: _descriptor_1.alignment().concat(_descriptor_0.alignment())
           },
           output: undefined,
           publicTranscript: [],
           privateTranscriptOutputs: []
         };
-        const result_0 = this._addEntry_0(context,
-                                          partialProofData,
-                                          airframeId_0,
-                                          entryType_0,
-                                          dateUtc_0,
-                                          tachOrTT_0,
-                                          docHash_0,
-                                          docRef_0);
-        partialProofData.output = { value: [], alignment: [] };
-        return { result: result_0, context: context, proofData: partialProofData, gasCost: context.gasCost };
-      },
-      transferAirframe: (...args_1) => {
-        if (args_1.length !== 3) {
-          throw new CompactError(`transferAirframe: expected 3 arguments (as invoked from Typescript), received ${args_1.length}`);
-        }
-        const contextOrig_0 = args_1[0];
-        const airframeId_0 = args_1[1];
-        const newOwner_0 = args_1[2];
-        if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
-          typeError('transferAirframe',
-                                     'argument 1 (as invoked from Typescript)',
-                                     'airlog.compact line 134 char 1',
-                                     'CircuitContext',
-                                     contextOrig_0);
-        }
-        if (!(airframeId_0.buffer instanceof ArrayBuffer && airframeId_0.BYTES_PER_ELEMENT === 1 && airframeId_0.length === 32)) {
-          typeError('transferAirframe',
-                                     'argument 1 (argument 2 as invoked from Typescript)',
-                                     'airlog.compact line 134 char 1',
-                                     'Bytes<32>',
-                                     airframeId_0);
-        }
-        if (!(typeof(newOwner_0) === 'object' && newOwner_0.bytes.buffer instanceof ArrayBuffer && newOwner_0.bytes.BYTES_PER_ELEMENT === 1 && newOwner_0.bytes.length === 32)) {
-          typeError('transferAirframe',
-                                     'argument 2 (argument 3 as invoked from Typescript)',
-                                     'airlog.compact line 134 char 1',
-                                     'struct ZswapCoinPublicKey<bytes: Bytes<32>>',
-                                     newOwner_0);
-        }
-        const context = { ...contextOrig_0, gasCost: emptyRunningCost() };
-        const partialProofData = {
-          input: {
-            value: _descriptor_0.toValue(airframeId_0).concat(_descriptor_1.toValue(newOwner_0)),
-            alignment: _descriptor_0.alignment().concat(_descriptor_1.alignment())
-          },
-          output: undefined,
-          publicTranscript: [],
-          privateTranscriptOutputs: []
-        };
-        const result_0 = this._transferAirframe_0(context,
-                                                  partialProofData,
-                                                  airframeId_0,
-                                                  newOwner_0);
-        partialProofData.output = { value: [], alignment: [] };
-        return { result: result_0, context: context, proofData: partialProofData, gasCost: context.gasCost };
-      },
-      getNextEntryId: (...args_1) => {
-        if (args_1.length !== 2) {
-          throw new CompactError(`getNextEntryId: expected 2 arguments (as invoked from Typescript), received ${args_1.length}`);
-        }
-        const contextOrig_0 = args_1[0];
-        const airframeId_0 = args_1[1];
-        if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
-          typeError('getNextEntryId',
-                                     'argument 1 (as invoked from Typescript)',
-                                     'airlog.compact line 139 char 1',
-                                     'CircuitContext',
-                                     contextOrig_0);
-        }
-        if (!(airframeId_0.buffer instanceof ArrayBuffer && airframeId_0.BYTES_PER_ELEMENT === 1 && airframeId_0.length === 32)) {
-          typeError('getNextEntryId',
-                                     'argument 1 (argument 2 as invoked from Typescript)',
-                                     'airlog.compact line 139 char 1',
-                                     'Bytes<32>',
-                                     airframeId_0);
-        }
-        const context = { ...contextOrig_0, gasCost: emptyRunningCost() };
-        const partialProofData = {
-          input: {
-            value: _descriptor_0.toValue(airframeId_0),
-            alignment: _descriptor_0.alignment()
-          },
-          output: undefined,
-          publicTranscript: [],
-          privateTranscriptOutputs: []
-        };
-        const result_0 = this._getNextEntryId_0(context,
-                                                partialProofData,
-                                                airframeId_0);
-        partialProofData.output = { value: _descriptor_3.toValue(result_0), alignment: _descriptor_3.alignment() };
+        const result_0 = this._anchorEntry_0(context,
+                                             partialProofData,
+                                             recordHash_0,
+                                             anchoredAt_0);
+        partialProofData.output = { value: _descriptor_0.toValue(result_0), alignment: _descriptor_0.alignment() };
         return { result: result_0, context: context, proofData: partialProofData, gasCost: context.gasCost };
       },
       getEntry: (...args_1) => {
-        if (args_1.length !== 3) {
-          throw new CompactError(`getEntry: expected 3 arguments (as invoked from Typescript), received ${args_1.length}`);
+        if (args_1.length !== 2) {
+          throw new CompactError(`getEntry: expected 2 arguments (as invoked from Typescript), received ${args_1.length}`);
         }
         const contextOrig_0 = args_1[0];
-        const airframeId_0 = args_1[1];
-        const entryId_0 = args_1[2];
+        const entryId_0 = args_1[1];
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           typeError('getEntry',
                                      'argument 1 (as invoked from Typescript)',
-                                     'airlog.compact line 144 char 1',
+                                     'airlog.compact line 71 char 1',
                                      'CircuitContext',
                                      contextOrig_0);
         }
-        if (!(airframeId_0.buffer instanceof ArrayBuffer && airframeId_0.BYTES_PER_ELEMENT === 1 && airframeId_0.length === 32)) {
-          typeError('getEntry',
-                                     'argument 1 (argument 2 as invoked from Typescript)',
-                                     'airlog.compact line 144 char 1',
-                                     'Bytes<32>',
-                                     airframeId_0);
-        }
         if (!(typeof(entryId_0) === 'bigint' && entryId_0 >= 0n && entryId_0 <= 18446744073709551615n)) {
           typeError('getEntry',
-                                     'argument 2 (argument 3 as invoked from Typescript)',
-                                     'airlog.compact line 144 char 1',
+                                     'argument 1 (argument 2 as invoked from Typescript)',
+                                     'airlog.compact line 71 char 1',
                                      'Uint<0..18446744073709551616>',
                                      entryId_0);
         }
         const context = { ...contextOrig_0, gasCost: emptyRunningCost() };
         const partialProofData = {
           input: {
-            value: _descriptor_0.toValue(airframeId_0).concat(_descriptor_3.toValue(entryId_0)),
-            alignment: _descriptor_0.alignment().concat(_descriptor_3.alignment())
+            value: _descriptor_0.toValue(entryId_0),
+            alignment: _descriptor_0.alignment()
           },
           output: undefined,
           publicTranscript: [],
           privateTranscriptOutputs: []
         };
-        const result_0 = this._getEntry_0(context,
-                                          partialProofData,
-                                          airframeId_0,
-                                          entryId_0);
-        partialProofData.output = { value: _descriptor_6.toValue(result_0), alignment: _descriptor_6.alignment() };
+        const result_0 = this._getEntry_0(context, partialProofData, entryId_0);
+        partialProofData.output = { value: _descriptor_3.toValue(result_0), alignment: _descriptor_3.alignment() };
+        return { result: result_0, context: context, proofData: partialProofData, gasCost: context.gasCost };
+      },
+      getNextEntryId: (...args_1) => {
+        if (args_1.length !== 1) {
+          throw new CompactError(`getNextEntryId: expected 1 argument (as invoked from Typescript), received ${args_1.length}`);
+        }
+        const contextOrig_0 = args_1[0];
+        if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
+          typeError('getNextEntryId',
+                                     'argument 1 (as invoked from Typescript)',
+                                     'airlog.compact line 79 char 1',
+                                     'CircuitContext',
+                                     contextOrig_0);
+        }
+        const context = { ...contextOrig_0, gasCost: emptyRunningCost() };
+        const partialProofData = {
+          input: { value: [], alignment: [] },
+          output: undefined,
+          publicTranscript: [],
+          privateTranscriptOutputs: []
+        };
+        const result_0 = this._getNextEntryId_0(context, partialProofData);
+        partialProofData.output = { value: _descriptor_0.toValue(result_0), alignment: _descriptor_0.alignment() };
         return { result: result_0, context: context, proofData: partialProofData, gasCost: context.gasCost };
       }
     };
     this.impureCircuits = {
-      registerAirframe: this.circuits.registerAirframe,
-      authorizeIssuer: this.circuits.authorizeIssuer,
-      revokeIssuer: this.circuits.revokeIssuer,
-      addEntry: this.circuits.addEntry,
-      transferAirframe: this.circuits.transferAirframe,
-      getNextEntryId: this.circuits.getNextEntryId,
-      getEntry: this.circuits.getEntry
+      anchorEntry: this.circuits.anchorEntry,
+      getEntry: this.circuits.getEntry,
+      getNextEntryId: this.circuits.getNextEntryId
     };
     this.provableCircuits = {
-      registerAirframe: this.circuits.registerAirframe,
-      authorizeIssuer: this.circuits.authorizeIssuer,
-      revokeIssuer: this.circuits.revokeIssuer,
-      addEntry: this.circuits.addEntry,
-      transferAirframe: this.circuits.transferAirframe,
-      getNextEntryId: this.circuits.getNextEntryId,
-      getEntry: this.circuits.getEntry
+      anchorEntry: this.circuits.anchorEntry,
+      getEntry: this.circuits.getEntry,
+      getNextEntryId: this.circuits.getNextEntryId
     };
   }
   initialState(...args_0) {
@@ -6087,16 +5796,10 @@ class Contract {
     let stateValue_0 = StateValue.newArray();
     stateValue_0 = stateValue_0.arrayPush(StateValue.newNull());
     stateValue_0 = stateValue_0.arrayPush(StateValue.newNull());
-    stateValue_0 = stateValue_0.arrayPush(StateValue.newNull());
-    stateValue_0 = stateValue_0.arrayPush(StateValue.newNull());
     state_0.data = new ChargedState(stateValue_0);
-    state_0.setOperation('registerAirframe', new ContractOperation());
-    state_0.setOperation('authorizeIssuer', new ContractOperation());
-    state_0.setOperation('revokeIssuer', new ContractOperation());
-    state_0.setOperation('addEntry', new ContractOperation());
-    state_0.setOperation('transferAirframe', new ContractOperation());
-    state_0.setOperation('getNextEntryId', new ContractOperation());
+    state_0.setOperation('anchorEntry', new ContractOperation());
     state_0.setOperation('getEntry', new ContractOperation());
+    state_0.setOperation('getNextEntryId', new ContractOperation());
     const context = createCircuitContext(dummyContractAddress$1(), constructorContext_0.initialZswapLocalState.coinPublicKey, state_0.data, constructorContext_0.initialPrivateState);
     const partialProofData = {
       input: { value: [], alignment: [] },
@@ -6108,8 +5811,8 @@ class Contract {
                                       partialProofData,
                                       [
                                        { push: { storage: false,
-                                                 value: StateValue.newCell({ value: _descriptor_12.toValue(0n),
-                                                                                              alignment: _descriptor_12.alignment() }).encode() } },
+                                                 value: StateValue.newCell({ value: _descriptor_8.toValue(0n),
+                                                                                              alignment: _descriptor_8.alignment() }).encode() } },
                                        { push: { storage: true,
                                                  value: StateValue.newMap(
                                                           new StateMap()
@@ -6119,30 +5822,8 @@ class Contract {
                                       partialProofData,
                                       [
                                        { push: { storage: false,
-                                                 value: StateValue.newCell({ value: _descriptor_12.toValue(1n),
-                                                                                              alignment: _descriptor_12.alignment() }).encode() } },
-                                       { push: { storage: true,
-                                                 value: StateValue.newMap(
-                                                          new StateMap()
-                                                        ).encode() } },
-                                       { ins: { cached: false, n: 1 } }]);
-    queryLedgerState(context,
-                                      partialProofData,
-                                      [
-                                       { push: { storage: false,
-                                                 value: StateValue.newCell({ value: _descriptor_12.toValue(2n),
-                                                                                              alignment: _descriptor_12.alignment() }).encode() } },
-                                       { push: { storage: true,
-                                                 value: StateValue.newMap(
-                                                          new StateMap()
-                                                        ).encode() } },
-                                       { ins: { cached: false, n: 1 } }]);
-    queryLedgerState(context,
-                                      partialProofData,
-                                      [
-                                       { push: { storage: false,
-                                                 value: StateValue.newCell({ value: _descriptor_12.toValue(3n),
-                                                                                              alignment: _descriptor_12.alignment() }).encode() } },
+                                                 value: StateValue.newCell({ value: _descriptor_8.toValue(1n),
+                                                                                              alignment: _descriptor_8.alignment() }).encode() } },
                                        { push: { storage: true,
                                                  value: StateValue.newMap(
                                                           new StateMap()
@@ -6155,225 +5836,18 @@ class Contract {
       currentZswapLocalState: context.currentZswapLocalState
     }
   }
-  _transientHash_0(value_0) {
-    const result_0 = transientHash(_descriptor_7, value_0);
-    return result_0;
-  }
-  _transientHash_1(value_0) {
-    const result_0 = transientHash(_descriptor_8, value_0);
-    return result_0;
-  }
   _ownPublicKey_0(context, partialProofData) {
     const result_0 = ownPublicKey(context);
     partialProofData.privateTranscriptOutputs.push({
-      value: _descriptor_1.toValue(result_0),
-      alignment: _descriptor_1.alignment()
+      value: _descriptor_2.toValue(result_0),
+      alignment: _descriptor_2.alignment()
     });
     return result_0;
   }
-  _issuerKey_0(airframeId_0, issuerPk_0) {
-    const payload_0 = [airframeId_0, issuerPk_0.bytes];
-    return this._transientHash_0(payload_0);
-  }
-  _entryKey_0(airframeId_0, entryId_0) {
-    const payload_0 = [airframeId_0, entryId_0];
-    return this._transientHash_1(payload_0);
-  }
-  _requireOwner_0(context, partialProofData, airframeId_0) {
+  _anchorEntry_0(context, partialProofData, recordHash_0, anchoredAt_0) {
     const sender_0 = this._ownPublicKey_0(context, partialProofData);
-    const owner_0 = _descriptor_1.fromValue(queryLedgerState(context,
-                                                                              partialProofData,
-                                                                              [
-                                                                               { dup: { n: 0 } },
-                                                                               { idx: { cached: false,
-                                                                                        pushPath: false,
-                                                                                        path: [
-                                                                                               { tag: 'value',
-                                                                                                 value: { value: _descriptor_12.toValue(0n),
-                                                                                                          alignment: _descriptor_12.alignment() } }] } },
-                                                                               { idx: { cached: false,
-                                                                                        pushPath: false,
-                                                                                        path: [
-                                                                                               { tag: 'value',
-                                                                                                 value: { value: _descriptor_0.toValue(airframeId_0),
-                                                                                                          alignment: _descriptor_0.alignment() } }] } },
-                                                                               { popeq: { cached: false,
-                                                                                          result: undefined } }]).value);
-    assert(this._equal_0(owner_0.bytes, sender_0.bytes),
-                            'Not owner');
-    return sender_0;
-  }
-  _isIssuerAuthorized_0(context, partialProofData, airframeId_0, issuerPk_0) {
-    const k_0 = this._issuerKey_0(airframeId_0, issuerPk_0);
-    return _descriptor_2.fromValue(queryLedgerState(context,
-                                                                     partialProofData,
-                                                                     [
-                                                                      { dup: { n: 0 } },
-                                                                      { idx: { cached: false,
-                                                                               pushPath: false,
-                                                                               path: [
-                                                                                      { tag: 'value',
-                                                                                        value: { value: _descriptor_12.toValue(1n),
-                                                                                                 alignment: _descriptor_12.alignment() } }] } },
-                                                                      { push: { storage: false,
-                                                                                value: StateValue.newCell({ value: _descriptor_4.toValue(k_0),
-                                                                                                                             alignment: _descriptor_4.alignment() }).encode() } },
-                                                                      'member',
-                                                                      { popeq: { cached: true,
-                                                                                 result: undefined } }]).value)
-           &&
-           _descriptor_2.fromValue(queryLedgerState(context,
-                                                                     partialProofData,
-                                                                     [
-                                                                      { dup: { n: 0 } },
-                                                                      { idx: { cached: false,
-                                                                               pushPath: false,
-                                                                               path: [
-                                                                                      { tag: 'value',
-                                                                                        value: { value: _descriptor_12.toValue(1n),
-                                                                                                 alignment: _descriptor_12.alignment() } }] } },
-                                                                      { idx: { cached: false,
-                                                                               pushPath: false,
-                                                                               path: [
-                                                                                      { tag: 'value',
-                                                                                        value: { value: _descriptor_4.toValue(k_0),
-                                                                                                 alignment: _descriptor_4.alignment() } }] } },
-                                                                      { popeq: { cached: false,
-                                                                                 result: undefined } }]).value);
-  }
-  _registerAirframe_0(context, partialProofData, airframeId_0) {
-    const sender_0 = this._ownPublicKey_0(context, partialProofData);
-    const already_0 = _descriptor_2.fromValue(queryLedgerState(context,
-                                                                                partialProofData,
-                                                                                [
-                                                                                 { dup: { n: 0 } },
-                                                                                 { idx: { cached: false,
-                                                                                          pushPath: false,
-                                                                                          path: [
-                                                                                                 { tag: 'value',
-                                                                                                   value: { value: _descriptor_12.toValue(0n),
-                                                                                                            alignment: _descriptor_12.alignment() } }] } },
-                                                                                 { push: { storage: false,
-                                                                                           value: StateValue.newCell({ value: _descriptor_0.toValue(airframeId_0),
-                                                                                                                                        alignment: _descriptor_0.alignment() }).encode() } },
-                                                                                 'member',
-                                                                                 { popeq: { cached: true,
-                                                                                            result: undefined } }]).value);
-    assert(!already_0, 'Airframe already registered');
-    queryLedgerState(context,
-                                      partialProofData,
-                                      [
-                                       { idx: { cached: false,
-                                                pushPath: true,
-                                                path: [
-                                                       { tag: 'value',
-                                                         value: { value: _descriptor_12.toValue(0n),
-                                                                  alignment: _descriptor_12.alignment() } }] } },
-                                       { push: { storage: false,
-                                                 value: StateValue.newCell({ value: _descriptor_0.toValue(airframeId_0),
-                                                                                              alignment: _descriptor_0.alignment() }).encode() } },
-                                       { push: { storage: true,
-                                                 value: StateValue.newCell({ value: _descriptor_1.toValue(sender_0),
-                                                                                              alignment: _descriptor_1.alignment() }).encode() } },
-                                       { ins: { cached: false, n: 1 } },
-                                       { ins: { cached: true, n: 1 } }]);
-    const tmp_0 = 1n;
-    queryLedgerState(context,
-                                      partialProofData,
-                                      [
-                                       { idx: { cached: false,
-                                                pushPath: true,
-                                                path: [
-                                                       { tag: 'value',
-                                                         value: { value: _descriptor_12.toValue(3n),
-                                                                  alignment: _descriptor_12.alignment() } }] } },
-                                       { push: { storage: false,
-                                                 value: StateValue.newCell({ value: _descriptor_0.toValue(airframeId_0),
-                                                                                              alignment: _descriptor_0.alignment() }).encode() } },
-                                       { push: { storage: true,
-                                                 value: StateValue.newCell({ value: _descriptor_3.toValue(tmp_0),
-                                                                                              alignment: _descriptor_3.alignment() }).encode() } },
-                                       { ins: { cached: false, n: 1 } },
-                                       { ins: { cached: true, n: 1 } }]);
-    return [];
-  }
-  _authorizeIssuer_0(context, partialProofData, airframeId_0, issuerPk_0) {
-    this._requireOwner_0(context, partialProofData, airframeId_0);
-    const tmp_0 = this._issuerKey_0(airframeId_0, issuerPk_0);
-    queryLedgerState(context,
-                                      partialProofData,
-                                      [
-                                       { idx: { cached: false,
-                                                pushPath: true,
-                                                path: [
-                                                       { tag: 'value',
-                                                         value: { value: _descriptor_12.toValue(1n),
-                                                                  alignment: _descriptor_12.alignment() } }] } },
-                                       { push: { storage: false,
-                                                 value: StateValue.newCell({ value: _descriptor_4.toValue(tmp_0),
-                                                                                              alignment: _descriptor_4.alignment() }).encode() } },
-                                       { push: { storage: true,
-                                                 value: StateValue.newCell({ value: _descriptor_2.toValue(true),
-                                                                                              alignment: _descriptor_2.alignment() }).encode() } },
-                                       { ins: { cached: false, n: 1 } },
-                                       { ins: { cached: true, n: 1 } }]);
-    return [];
-  }
-  _revokeIssuer_0(context, partialProofData, airframeId_0, issuerPk_0) {
-    this._requireOwner_0(context, partialProofData, airframeId_0);
-    const tmp_0 = this._issuerKey_0(airframeId_0, issuerPk_0);
-    queryLedgerState(context,
-                                      partialProofData,
-                                      [
-                                       { idx: { cached: false,
-                                                pushPath: true,
-                                                path: [
-                                                       { tag: 'value',
-                                                         value: { value: _descriptor_12.toValue(1n),
-                                                                  alignment: _descriptor_12.alignment() } }] } },
-                                       { push: { storage: false,
-                                                 value: StateValue.newCell({ value: _descriptor_4.toValue(tmp_0),
-                                                                                              alignment: _descriptor_4.alignment() }).encode() } },
-                                       { push: { storage: true,
-                                                 value: StateValue.newCell({ value: _descriptor_2.toValue(false),
-                                                                                              alignment: _descriptor_2.alignment() }).encode() } },
-                                       { ins: { cached: false, n: 1 } },
-                                       { ins: { cached: true, n: 1 } }]);
-    return [];
-  }
-  _addEntry_0(context,
-              partialProofData,
-              airframeId_0,
-              entryType_0,
-              dateUtc_0,
-              tachOrTT_0,
-              docHash_0,
-              docRef_0)
-  {
-    const sender_0 = this._ownPublicKey_0(context, partialProofData);
-    assert(_descriptor_2.fromValue(queryLedgerState(context,
-                                                                                      partialProofData,
-                                                                                      [
-                                                                                       { dup: { n: 0 } },
-                                                                                       { idx: { cached: false,
-                                                                                                pushPath: false,
-                                                                                                path: [
-                                                                                                       { tag: 'value',
-                                                                                                         value: { value: _descriptor_12.toValue(0n),
-                                                                                                                  alignment: _descriptor_12.alignment() } }] } },
-                                                                                       { push: { storage: false,
-                                                                                                 value: StateValue.newCell({ value: _descriptor_0.toValue(airframeId_0),
-                                                                                                                                              alignment: _descriptor_0.alignment() }).encode() } },
-                                                                                       'member',
-                                                                                       { popeq: { cached: true,
-                                                                                                  result: undefined } }]).value),
-                            'Airframe not registered');
-    assert(this._isIssuerAuthorized_0(context,
-                                                       partialProofData,
-                                                       airframeId_0,
-                                                       sender_0),
-                            'Issuer not authorized');
-    const id_0 = _descriptor_3.fromValue(queryLedgerState(context,
+    const COUNTER_KEY_0 = 0n;
+    const id_0 = _descriptor_0.fromValue(queryLedgerState(context,
                                                                            partialProofData,
                                                                            [
                                                                             { dup: { n: 0 } },
@@ -6381,23 +5855,19 @@ class Contract {
                                                                                      pushPath: false,
                                                                                      path: [
                                                                                             { tag: 'value',
-                                                                                              value: { value: _descriptor_12.toValue(3n),
-                                                                                                       alignment: _descriptor_12.alignment() } }] } },
+                                                                                              value: { value: _descriptor_8.toValue(1n),
+                                                                                                       alignment: _descriptor_8.alignment() } }] } },
                                                                             { idx: { cached: false,
                                                                                      pushPath: false,
                                                                                      path: [
                                                                                             { tag: 'value',
-                                                                                              value: { value: _descriptor_0.toValue(airframeId_0),
+                                                                                              value: { value: _descriptor_0.toValue(COUNTER_KEY_0),
                                                                                                        alignment: _descriptor_0.alignment() } }] } },
                                                                             { popeq: { cached: false,
                                                                                        result: undefined } }]).value);
-    const e_0 = { entryType: entryType_0,
-                  dateUtc: dateUtc_0,
-                  tachOrTT: tachOrTT_0,
-                  issuer: sender_0,
-                  docHash: docHash_0,
-                  docRef: docRef_0 };
-    const k_0 = this._entryKey_0(airframeId_0, id_0);
+    const entry_0 = { owner: sender_0,
+                      recordHash: recordHash_0,
+                      anchoredAt: anchoredAt_0 };
     queryLedgerState(context,
                                       partialProofData,
                                       [
@@ -6405,19 +5875,19 @@ class Contract {
                                                 pushPath: true,
                                                 path: [
                                                        { tag: 'value',
-                                                         value: { value: _descriptor_12.toValue(2n),
-                                                                  alignment: _descriptor_12.alignment() } }] } },
+                                                         value: { value: _descriptor_8.toValue(0n),
+                                                                  alignment: _descriptor_8.alignment() } }] } },
                                        { push: { storage: false,
-                                                 value: StateValue.newCell({ value: _descriptor_4.toValue(k_0),
-                                                                                              alignment: _descriptor_4.alignment() }).encode() } },
+                                                 value: StateValue.newCell({ value: _descriptor_0.toValue(id_0),
+                                                                                              alignment: _descriptor_0.alignment() }).encode() } },
                                        { push: { storage: true,
-                                                 value: StateValue.newCell({ value: _descriptor_6.toValue(e_0),
-                                                                                              alignment: _descriptor_6.alignment() }).encode() } },
+                                                 value: StateValue.newCell({ value: _descriptor_3.toValue(entry_0),
+                                                                                              alignment: _descriptor_3.alignment() }).encode() } },
                                        { ins: { cached: false, n: 1 } },
                                        { ins: { cached: true, n: 1 } }]);
     const tmp_0 = ((t1) => {
                     if (t1 > 18446744073709551615n) {
-                      throw new CompactError('airlog.compact line 131 char 53: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                      throw new CompactError('airlog.compact line 63 char 54: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                     }
                     return t1;
                   })(id_0 + 1n);
@@ -6428,41 +5898,20 @@ class Contract {
                                                 pushPath: true,
                                                 path: [
                                                        { tag: 'value',
-                                                         value: { value: _descriptor_12.toValue(3n),
-                                                                  alignment: _descriptor_12.alignment() } }] } },
+                                                         value: { value: _descriptor_8.toValue(1n),
+                                                                  alignment: _descriptor_8.alignment() } }] } },
                                        { push: { storage: false,
-                                                 value: StateValue.newCell({ value: _descriptor_0.toValue(airframeId_0),
+                                                 value: StateValue.newCell({ value: _descriptor_0.toValue(COUNTER_KEY_0),
                                                                                               alignment: _descriptor_0.alignment() }).encode() } },
                                        { push: { storage: true,
-                                                 value: StateValue.newCell({ value: _descriptor_3.toValue(tmp_0),
-                                                                                              alignment: _descriptor_3.alignment() }).encode() } },
-                                       { ins: { cached: false, n: 1 } },
-                                       { ins: { cached: true, n: 1 } }]);
-    return [];
-  }
-  _transferAirframe_0(context, partialProofData, airframeId_0, newOwner_0) {
-    this._requireOwner_0(context, partialProofData, airframeId_0);
-    queryLedgerState(context,
-                                      partialProofData,
-                                      [
-                                       { idx: { cached: false,
-                                                pushPath: true,
-                                                path: [
-                                                       { tag: 'value',
-                                                         value: { value: _descriptor_12.toValue(0n),
-                                                                  alignment: _descriptor_12.alignment() } }] } },
-                                       { push: { storage: false,
-                                                 value: StateValue.newCell({ value: _descriptor_0.toValue(airframeId_0),
+                                                 value: StateValue.newCell({ value: _descriptor_0.toValue(tmp_0),
                                                                                               alignment: _descriptor_0.alignment() }).encode() } },
-                                       { push: { storage: true,
-                                                 value: StateValue.newCell({ value: _descriptor_1.toValue(newOwner_0),
-                                                                                              alignment: _descriptor_1.alignment() }).encode() } },
                                        { ins: { cached: false, n: 1 } },
                                        { ins: { cached: true, n: 1 } }]);
-    return [];
+    return id_0;
   }
-  _getNextEntryId_0(context, partialProofData, airframeId_0) {
-    assert(_descriptor_2.fromValue(queryLedgerState(context,
+  _getEntry_0(context, partialProofData, entryId_0) {
+    assert(_descriptor_4.fromValue(queryLedgerState(context,
                                                                                       partialProofData,
                                                                                       [
                                                                                        { dup: { n: 0 } },
@@ -6470,15 +5919,15 @@ class Contract {
                                                                                                 pushPath: false,
                                                                                                 path: [
                                                                                                        { tag: 'value',
-                                                                                                         value: { value: _descriptor_12.toValue(0n),
-                                                                                                                  alignment: _descriptor_12.alignment() } }] } },
+                                                                                                         value: { value: _descriptor_8.toValue(0n),
+                                                                                                                  alignment: _descriptor_8.alignment() } }] } },
                                                                                        { push: { storage: false,
-                                                                                                 value: StateValue.newCell({ value: _descriptor_0.toValue(airframeId_0),
+                                                                                                 value: StateValue.newCell({ value: _descriptor_0.toValue(entryId_0),
                                                                                                                                               alignment: _descriptor_0.alignment() }).encode() } },
                                                                                        'member',
                                                                                        { popeq: { cached: true,
                                                                                                   result: undefined } }]).value),
-                            'Airframe not registered');
+                            'Entry not found');
     return _descriptor_3.fromValue(queryLedgerState(context,
                                                                      partialProofData,
                                                                      [
@@ -6487,37 +5936,20 @@ class Contract {
                                                                                pushPath: false,
                                                                                path: [
                                                                                       { tag: 'value',
-                                                                                        value: { value: _descriptor_12.toValue(3n),
-                                                                                                 alignment: _descriptor_12.alignment() } }] } },
+                                                                                        value: { value: _descriptor_8.toValue(0n),
+                                                                                                 alignment: _descriptor_8.alignment() } }] } },
                                                                       { idx: { cached: false,
                                                                                pushPath: false,
                                                                                path: [
                                                                                       { tag: 'value',
-                                                                                        value: { value: _descriptor_0.toValue(airframeId_0),
+                                                                                        value: { value: _descriptor_0.toValue(entryId_0),
                                                                                                  alignment: _descriptor_0.alignment() } }] } },
                                                                       { popeq: { cached: false,
                                                                                  result: undefined } }]).value);
   }
-  _getEntry_0(context, partialProofData, airframeId_0, entryId_0) {
-    assert(_descriptor_2.fromValue(queryLedgerState(context,
-                                                                                      partialProofData,
-                                                                                      [
-                                                                                       { dup: { n: 0 } },
-                                                                                       { idx: { cached: false,
-                                                                                                pushPath: false,
-                                                                                                path: [
-                                                                                                       { tag: 'value',
-                                                                                                         value: { value: _descriptor_12.toValue(0n),
-                                                                                                                  alignment: _descriptor_12.alignment() } }] } },
-                                                                                       { push: { storage: false,
-                                                                                                 value: StateValue.newCell({ value: _descriptor_0.toValue(airframeId_0),
-                                                                                                                                              alignment: _descriptor_0.alignment() }).encode() } },
-                                                                                       'member',
-                                                                                       { popeq: { cached: true,
-                                                                                                  result: undefined } }]).value),
-                            'Airframe not registered');
-    const k_0 = this._entryKey_0(airframeId_0, entryId_0);
-    return _descriptor_6.fromValue(queryLedgerState(context,
+  _getNextEntryId_0(context, partialProofData) {
+    const COUNTER_KEY_0 = 0n;
+    return _descriptor_0.fromValue(queryLedgerState(context,
                                                                      partialProofData,
                                                                      [
                                                                       { dup: { n: 0 } },
@@ -6525,20 +5957,16 @@ class Contract {
                                                                                pushPath: false,
                                                                                path: [
                                                                                       { tag: 'value',
-                                                                                        value: { value: _descriptor_12.toValue(2n),
-                                                                                                 alignment: _descriptor_12.alignment() } }] } },
+                                                                                        value: { value: _descriptor_8.toValue(1n),
+                                                                                                 alignment: _descriptor_8.alignment() } }] } },
                                                                       { idx: { cached: false,
                                                                                pushPath: false,
                                                                                path: [
                                                                                       { tag: 'value',
-                                                                                        value: { value: _descriptor_4.toValue(k_0),
-                                                                                                 alignment: _descriptor_4.alignment() } }] } },
+                                                                                        value: { value: _descriptor_0.toValue(COUNTER_KEY_0),
+                                                                                                 alignment: _descriptor_0.alignment() } }] } },
                                                                       { popeq: { cached: false,
                                                                                  result: undefined } }]).value);
-  }
-  _equal_0(x0, y0) {
-    if (!x0.every((x, i) => y0[i] === x)) { return false; }
-    return true;
   }
 }
 function ledger(stateOrChargedState) {
@@ -6555,12 +5983,12 @@ function ledger(stateOrChargedState) {
     privateTranscriptOutputs: []
   };
   return {
-    owners: {
+    entryStore: {
       isEmpty(...args_0) {
         if (args_0.length !== 0) {
           throw new CompactError(`isEmpty: expected 0 arguments, received ${args_0.length}`);
         }
-        return _descriptor_2.fromValue(queryLedgerState(context,
+        return _descriptor_4.fromValue(queryLedgerState(context,
                                                                          partialProofData,
                                                                          [
                                                                           { dup: { n: 0 } },
@@ -6568,12 +5996,12 @@ function ledger(stateOrChargedState) {
                                                                                    pushPath: false,
                                                                                    path: [
                                                                                           { tag: 'value',
-                                                                                            value: { value: _descriptor_12.toValue(0n),
-                                                                                                     alignment: _descriptor_12.alignment() } }] } },
+                                                                                            value: { value: _descriptor_8.toValue(0n),
+                                                                                                     alignment: _descriptor_8.alignment() } }] } },
                                                                           'size',
                                                                           { push: { storage: false,
-                                                                                    value: StateValue.newCell({ value: _descriptor_3.toValue(0n),
-                                                                                                                                 alignment: _descriptor_3.alignment() }).encode() } },
+                                                                                    value: StateValue.newCell({ value: _descriptor_0.toValue(0n),
+                                                                                                                                 alignment: _descriptor_0.alignment() }).encode() } },
                                                                           'eq',
                                                                           { popeq: { cached: true,
                                                                                      result: undefined } }]).value);
@@ -6582,7 +6010,7 @@ function ledger(stateOrChargedState) {
         if (args_0.length !== 0) {
           throw new CompactError(`size: expected 0 arguments, received ${args_0.length}`);
         }
-        return _descriptor_3.fromValue(queryLedgerState(context,
+        return _descriptor_0.fromValue(queryLedgerState(context,
                                                                          partialProofData,
                                                                          [
                                                                           { dup: { n: 0 } },
@@ -6590,8 +6018,8 @@ function ledger(stateOrChargedState) {
                                                                                    pushPath: false,
                                                                                    path: [
                                                                                           { tag: 'value',
-                                                                                            value: { value: _descriptor_12.toValue(0n),
-                                                                                                     alignment: _descriptor_12.alignment() } }] } },
+                                                                                            value: { value: _descriptor_8.toValue(0n),
+                                                                                                     alignment: _descriptor_8.alignment() } }] } },
                                                                           'size',
                                                                           { popeq: { cached: true,
                                                                                      result: undefined } }]).value);
@@ -6601,14 +6029,14 @@ function ledger(stateOrChargedState) {
           throw new CompactError(`member: expected 1 argument, received ${args_0.length}`);
         }
         const key_0 = args_0[0];
-        if (!(key_0.buffer instanceof ArrayBuffer && key_0.BYTES_PER_ELEMENT === 1 && key_0.length === 32)) {
+        if (!(typeof(key_0) === 'bigint' && key_0 >= 0n && key_0 <= 18446744073709551615n)) {
           typeError('member',
                                      'argument 1',
-                                     'airlog.compact line 42 char 1',
-                                     'Bytes<32>',
+                                     'airlog.compact line 32 char 1',
+                                     'Uint<0..18446744073709551616>',
                                      key_0);
         }
-        return _descriptor_2.fromValue(queryLedgerState(context,
+        return _descriptor_4.fromValue(queryLedgerState(context,
                                                                          partialProofData,
                                                                          [
                                                                           { dup: { n: 0 } },
@@ -6616,8 +6044,8 @@ function ledger(stateOrChargedState) {
                                                                                    pushPath: false,
                                                                                    path: [
                                                                                           { tag: 'value',
-                                                                                            value: { value: _descriptor_12.toValue(0n),
-                                                                                                     alignment: _descriptor_12.alignment() } }] } },
+                                                                                            value: { value: _descriptor_8.toValue(0n),
+                                                                                                     alignment: _descriptor_8.alignment() } }] } },
                                                                           { push: { storage: false,
                                                                                     value: StateValue.newCell({ value: _descriptor_0.toValue(key_0),
                                                                                                                                  alignment: _descriptor_0.alignment() }).encode() } },
@@ -6630,14 +6058,14 @@ function ledger(stateOrChargedState) {
           throw new CompactError(`lookup: expected 1 argument, received ${args_0.length}`);
         }
         const key_0 = args_0[0];
-        if (!(key_0.buffer instanceof ArrayBuffer && key_0.BYTES_PER_ELEMENT === 1 && key_0.length === 32)) {
+        if (!(typeof(key_0) === 'bigint' && key_0 >= 0n && key_0 <= 18446744073709551615n)) {
           typeError('lookup',
                                      'argument 1',
-                                     'airlog.compact line 42 char 1',
-                                     'Bytes<32>',
+                                     'airlog.compact line 32 char 1',
+                                     'Uint<0..18446744073709551616>',
                                      key_0);
         }
-        return _descriptor_1.fromValue(queryLedgerState(context,
+        return _descriptor_3.fromValue(queryLedgerState(context,
                                                                          partialProofData,
                                                                          [
                                                                           { dup: { n: 0 } },
@@ -6645,8 +6073,8 @@ function ledger(stateOrChargedState) {
                                                                                    pushPath: false,
                                                                                    path: [
                                                                                           { tag: 'value',
-                                                                                            value: { value: _descriptor_12.toValue(0n),
-                                                                                                     alignment: _descriptor_12.alignment() } }] } },
+                                                                                            value: { value: _descriptor_8.toValue(0n),
+                                                                                                     alignment: _descriptor_8.alignment() } }] } },
                                                                           { idx: { cached: false,
                                                                                    pushPath: false,
                                                                                    path: [
@@ -6661,225 +6089,7 @@ function ledger(stateOrChargedState) {
           throw new CompactError(`iter: expected 0 arguments, received ${args_0.length}`);
         }
         const self_0 = state.asArray()[0];
-        return self_0.asMap().keys().map(  (key) => {    const value = self_0.asMap().get(key).asCell();    return [      _descriptor_0.fromValue(key.value),      _descriptor_1.fromValue(value.value)    ];  })[Symbol.iterator]();
-      }
-    },
-    issuerAuth: {
-      isEmpty(...args_0) {
-        if (args_0.length !== 0) {
-          throw new CompactError(`isEmpty: expected 0 arguments, received ${args_0.length}`);
-        }
-        return _descriptor_2.fromValue(queryLedgerState(context,
-                                                                         partialProofData,
-                                                                         [
-                                                                          { dup: { n: 0 } },
-                                                                          { idx: { cached: false,
-                                                                                   pushPath: false,
-                                                                                   path: [
-                                                                                          { tag: 'value',
-                                                                                            value: { value: _descriptor_12.toValue(1n),
-                                                                                                     alignment: _descriptor_12.alignment() } }] } },
-                                                                          'size',
-                                                                          { push: { storage: false,
-                                                                                    value: StateValue.newCell({ value: _descriptor_3.toValue(0n),
-                                                                                                                                 alignment: _descriptor_3.alignment() }).encode() } },
-                                                                          'eq',
-                                                                          { popeq: { cached: true,
-                                                                                     result: undefined } }]).value);
-      },
-      size(...args_0) {
-        if (args_0.length !== 0) {
-          throw new CompactError(`size: expected 0 arguments, received ${args_0.length}`);
-        }
-        return _descriptor_3.fromValue(queryLedgerState(context,
-                                                                         partialProofData,
-                                                                         [
-                                                                          { dup: { n: 0 } },
-                                                                          { idx: { cached: false,
-                                                                                   pushPath: false,
-                                                                                   path: [
-                                                                                          { tag: 'value',
-                                                                                            value: { value: _descriptor_12.toValue(1n),
-                                                                                                     alignment: _descriptor_12.alignment() } }] } },
-                                                                          'size',
-                                                                          { popeq: { cached: true,
-                                                                                     result: undefined } }]).value);
-      },
-      member(...args_0) {
-        if (args_0.length !== 1) {
-          throw new CompactError(`member: expected 1 argument, received ${args_0.length}`);
-        }
-        const key_0 = args_0[0];
-        if (!(typeof(key_0) === 'bigint' && key_0 >= 0 && key_0 <= MAX_FIELD)) {
-          typeError('member',
-                                     'argument 1',
-                                     'airlog.compact line 45 char 1',
-                                     'Field',
-                                     key_0);
-        }
-        return _descriptor_2.fromValue(queryLedgerState(context,
-                                                                         partialProofData,
-                                                                         [
-                                                                          { dup: { n: 0 } },
-                                                                          { idx: { cached: false,
-                                                                                   pushPath: false,
-                                                                                   path: [
-                                                                                          { tag: 'value',
-                                                                                            value: { value: _descriptor_12.toValue(1n),
-                                                                                                     alignment: _descriptor_12.alignment() } }] } },
-                                                                          { push: { storage: false,
-                                                                                    value: StateValue.newCell({ value: _descriptor_4.toValue(key_0),
-                                                                                                                                 alignment: _descriptor_4.alignment() }).encode() } },
-                                                                          'member',
-                                                                          { popeq: { cached: true,
-                                                                                     result: undefined } }]).value);
-      },
-      lookup(...args_0) {
-        if (args_0.length !== 1) {
-          throw new CompactError(`lookup: expected 1 argument, received ${args_0.length}`);
-        }
-        const key_0 = args_0[0];
-        if (!(typeof(key_0) === 'bigint' && key_0 >= 0 && key_0 <= MAX_FIELD)) {
-          typeError('lookup',
-                                     'argument 1',
-                                     'airlog.compact line 45 char 1',
-                                     'Field',
-                                     key_0);
-        }
-        return _descriptor_2.fromValue(queryLedgerState(context,
-                                                                         partialProofData,
-                                                                         [
-                                                                          { dup: { n: 0 } },
-                                                                          { idx: { cached: false,
-                                                                                   pushPath: false,
-                                                                                   path: [
-                                                                                          { tag: 'value',
-                                                                                            value: { value: _descriptor_12.toValue(1n),
-                                                                                                     alignment: _descriptor_12.alignment() } }] } },
-                                                                          { idx: { cached: false,
-                                                                                   pushPath: false,
-                                                                                   path: [
-                                                                                          { tag: 'value',
-                                                                                            value: { value: _descriptor_4.toValue(key_0),
-                                                                                                     alignment: _descriptor_4.alignment() } }] } },
-                                                                          { popeq: { cached: false,
-                                                                                     result: undefined } }]).value);
-      },
-      [Symbol.iterator](...args_0) {
-        if (args_0.length !== 0) {
-          throw new CompactError(`iter: expected 0 arguments, received ${args_0.length}`);
-        }
-        const self_0 = state.asArray()[1];
-        return self_0.asMap().keys().map(  (key) => {    const value = self_0.asMap().get(key).asCell();    return [      _descriptor_4.fromValue(key.value),      _descriptor_2.fromValue(value.value)    ];  })[Symbol.iterator]();
-      }
-    },
-    entryStore: {
-      isEmpty(...args_0) {
-        if (args_0.length !== 0) {
-          throw new CompactError(`isEmpty: expected 0 arguments, received ${args_0.length}`);
-        }
-        return _descriptor_2.fromValue(queryLedgerState(context,
-                                                                         partialProofData,
-                                                                         [
-                                                                          { dup: { n: 0 } },
-                                                                          { idx: { cached: false,
-                                                                                   pushPath: false,
-                                                                                   path: [
-                                                                                          { tag: 'value',
-                                                                                            value: { value: _descriptor_12.toValue(2n),
-                                                                                                     alignment: _descriptor_12.alignment() } }] } },
-                                                                          'size',
-                                                                          { push: { storage: false,
-                                                                                    value: StateValue.newCell({ value: _descriptor_3.toValue(0n),
-                                                                                                                                 alignment: _descriptor_3.alignment() }).encode() } },
-                                                                          'eq',
-                                                                          { popeq: { cached: true,
-                                                                                     result: undefined } }]).value);
-      },
-      size(...args_0) {
-        if (args_0.length !== 0) {
-          throw new CompactError(`size: expected 0 arguments, received ${args_0.length}`);
-        }
-        return _descriptor_3.fromValue(queryLedgerState(context,
-                                                                         partialProofData,
-                                                                         [
-                                                                          { dup: { n: 0 } },
-                                                                          { idx: { cached: false,
-                                                                                   pushPath: false,
-                                                                                   path: [
-                                                                                          { tag: 'value',
-                                                                                            value: { value: _descriptor_12.toValue(2n),
-                                                                                                     alignment: _descriptor_12.alignment() } }] } },
-                                                                          'size',
-                                                                          { popeq: { cached: true,
-                                                                                     result: undefined } }]).value);
-      },
-      member(...args_0) {
-        if (args_0.length !== 1) {
-          throw new CompactError(`member: expected 1 argument, received ${args_0.length}`);
-        }
-        const key_0 = args_0[0];
-        if (!(typeof(key_0) === 'bigint' && key_0 >= 0 && key_0 <= MAX_FIELD)) {
-          typeError('member',
-                                     'argument 1',
-                                     'airlog.compact line 48 char 1',
-                                     'Field',
-                                     key_0);
-        }
-        return _descriptor_2.fromValue(queryLedgerState(context,
-                                                                         partialProofData,
-                                                                         [
-                                                                          { dup: { n: 0 } },
-                                                                          { idx: { cached: false,
-                                                                                   pushPath: false,
-                                                                                   path: [
-                                                                                          { tag: 'value',
-                                                                                            value: { value: _descriptor_12.toValue(2n),
-                                                                                                     alignment: _descriptor_12.alignment() } }] } },
-                                                                          { push: { storage: false,
-                                                                                    value: StateValue.newCell({ value: _descriptor_4.toValue(key_0),
-                                                                                                                                 alignment: _descriptor_4.alignment() }).encode() } },
-                                                                          'member',
-                                                                          { popeq: { cached: true,
-                                                                                     result: undefined } }]).value);
-      },
-      lookup(...args_0) {
-        if (args_0.length !== 1) {
-          throw new CompactError(`lookup: expected 1 argument, received ${args_0.length}`);
-        }
-        const key_0 = args_0[0];
-        if (!(typeof(key_0) === 'bigint' && key_0 >= 0 && key_0 <= MAX_FIELD)) {
-          typeError('lookup',
-                                     'argument 1',
-                                     'airlog.compact line 48 char 1',
-                                     'Field',
-                                     key_0);
-        }
-        return _descriptor_6.fromValue(queryLedgerState(context,
-                                                                         partialProofData,
-                                                                         [
-                                                                          { dup: { n: 0 } },
-                                                                          { idx: { cached: false,
-                                                                                   pushPath: false,
-                                                                                   path: [
-                                                                                          { tag: 'value',
-                                                                                            value: { value: _descriptor_12.toValue(2n),
-                                                                                                     alignment: _descriptor_12.alignment() } }] } },
-                                                                          { idx: { cached: false,
-                                                                                   pushPath: false,
-                                                                                   path: [
-                                                                                          { tag: 'value',
-                                                                                            value: { value: _descriptor_4.toValue(key_0),
-                                                                                                     alignment: _descriptor_4.alignment() } }] } },
-                                                                          { popeq: { cached: false,
-                                                                                     result: undefined } }]).value);
-      },
-      [Symbol.iterator](...args_0) {
-        if (args_0.length !== 0) {
-          throw new CompactError(`iter: expected 0 arguments, received ${args_0.length}`);
-        }
-        const self_0 = state.asArray()[2];
-        return self_0.asMap().keys().map(  (key) => {    const value = self_0.asMap().get(key).asCell();    return [      _descriptor_4.fromValue(key.value),      _descriptor_6.fromValue(value.value)    ];  })[Symbol.iterator]();
+        return self_0.asMap().keys().map(  (key) => {    const value = self_0.asMap().get(key).asCell();    return [      _descriptor_0.fromValue(key.value),      _descriptor_3.fromValue(value.value)    ];  })[Symbol.iterator]();
       }
     },
     nextEntryId: {
@@ -6887,7 +6097,7 @@ function ledger(stateOrChargedState) {
         if (args_0.length !== 0) {
           throw new CompactError(`isEmpty: expected 0 arguments, received ${args_0.length}`);
         }
-        return _descriptor_2.fromValue(queryLedgerState(context,
+        return _descriptor_4.fromValue(queryLedgerState(context,
                                                                          partialProofData,
                                                                          [
                                                                           { dup: { n: 0 } },
@@ -6895,12 +6105,12 @@ function ledger(stateOrChargedState) {
                                                                                    pushPath: false,
                                                                                    path: [
                                                                                           { tag: 'value',
-                                                                                            value: { value: _descriptor_12.toValue(3n),
-                                                                                                     alignment: _descriptor_12.alignment() } }] } },
+                                                                                            value: { value: _descriptor_8.toValue(1n),
+                                                                                                     alignment: _descriptor_8.alignment() } }] } },
                                                                           'size',
                                                                           { push: { storage: false,
-                                                                                    value: StateValue.newCell({ value: _descriptor_3.toValue(0n),
-                                                                                                                                 alignment: _descriptor_3.alignment() }).encode() } },
+                                                                                    value: StateValue.newCell({ value: _descriptor_0.toValue(0n),
+                                                                                                                                 alignment: _descriptor_0.alignment() }).encode() } },
                                                                           'eq',
                                                                           { popeq: { cached: true,
                                                                                      result: undefined } }]).value);
@@ -6909,7 +6119,7 @@ function ledger(stateOrChargedState) {
         if (args_0.length !== 0) {
           throw new CompactError(`size: expected 0 arguments, received ${args_0.length}`);
         }
-        return _descriptor_3.fromValue(queryLedgerState(context,
+        return _descriptor_0.fromValue(queryLedgerState(context,
                                                                          partialProofData,
                                                                          [
                                                                           { dup: { n: 0 } },
@@ -6917,8 +6127,8 @@ function ledger(stateOrChargedState) {
                                                                                    pushPath: false,
                                                                                    path: [
                                                                                           { tag: 'value',
-                                                                                            value: { value: _descriptor_12.toValue(3n),
-                                                                                                     alignment: _descriptor_12.alignment() } }] } },
+                                                                                            value: { value: _descriptor_8.toValue(1n),
+                                                                                                     alignment: _descriptor_8.alignment() } }] } },
                                                                           'size',
                                                                           { popeq: { cached: true,
                                                                                      result: undefined } }]).value);
@@ -6928,14 +6138,14 @@ function ledger(stateOrChargedState) {
           throw new CompactError(`member: expected 1 argument, received ${args_0.length}`);
         }
         const key_0 = args_0[0];
-        if (!(key_0.buffer instanceof ArrayBuffer && key_0.BYTES_PER_ELEMENT === 1 && key_0.length === 32)) {
+        if (!(typeof(key_0) === 'bigint' && key_0 >= 0n && key_0 <= 18446744073709551615n)) {
           typeError('member',
                                      'argument 1',
-                                     'airlog.compact line 51 char 1',
-                                     'Bytes<32>',
+                                     'airlog.compact line 35 char 1',
+                                     'Uint<0..18446744073709551616>',
                                      key_0);
         }
-        return _descriptor_2.fromValue(queryLedgerState(context,
+        return _descriptor_4.fromValue(queryLedgerState(context,
                                                                          partialProofData,
                                                                          [
                                                                           { dup: { n: 0 } },
@@ -6943,8 +6153,8 @@ function ledger(stateOrChargedState) {
                                                                                    pushPath: false,
                                                                                    path: [
                                                                                           { tag: 'value',
-                                                                                            value: { value: _descriptor_12.toValue(3n),
-                                                                                                     alignment: _descriptor_12.alignment() } }] } },
+                                                                                            value: { value: _descriptor_8.toValue(1n),
+                                                                                                     alignment: _descriptor_8.alignment() } }] } },
                                                                           { push: { storage: false,
                                                                                     value: StateValue.newCell({ value: _descriptor_0.toValue(key_0),
                                                                                                                                  alignment: _descriptor_0.alignment() }).encode() } },
@@ -6957,14 +6167,14 @@ function ledger(stateOrChargedState) {
           throw new CompactError(`lookup: expected 1 argument, received ${args_0.length}`);
         }
         const key_0 = args_0[0];
-        if (!(key_0.buffer instanceof ArrayBuffer && key_0.BYTES_PER_ELEMENT === 1 && key_0.length === 32)) {
+        if (!(typeof(key_0) === 'bigint' && key_0 >= 0n && key_0 <= 18446744073709551615n)) {
           typeError('lookup',
                                      'argument 1',
-                                     'airlog.compact line 51 char 1',
-                                     'Bytes<32>',
+                                     'airlog.compact line 35 char 1',
+                                     'Uint<0..18446744073709551616>',
                                      key_0);
         }
-        return _descriptor_3.fromValue(queryLedgerState(context,
+        return _descriptor_0.fromValue(queryLedgerState(context,
                                                                          partialProofData,
                                                                          [
                                                                           { dup: { n: 0 } },
@@ -6972,8 +6182,8 @@ function ledger(stateOrChargedState) {
                                                                                    pushPath: false,
                                                                                    path: [
                                                                                           { tag: 'value',
-                                                                                            value: { value: _descriptor_12.toValue(3n),
-                                                                                                     alignment: _descriptor_12.alignment() } }] } },
+                                                                                            value: { value: _descriptor_8.toValue(1n),
+                                                                                                     alignment: _descriptor_8.alignment() } }] } },
                                                                           { idx: { cached: false,
                                                                                    pushPath: false,
                                                                                    path: [
@@ -6987,8 +6197,8 @@ function ledger(stateOrChargedState) {
         if (args_0.length !== 0) {
           throw new CompactError(`iter: expected 0 arguments, received ${args_0.length}`);
         }
-        const self_0 = state.asArray()[3];
-        return self_0.asMap().keys().map(  (key) => {    const value = self_0.asMap().get(key).asCell();    return [      _descriptor_0.fromValue(key.value),      _descriptor_3.fromValue(value.value)    ];  })[Symbol.iterator]();
+        const self_0 = state.asArray()[1];
+        return self_0.asMap().keys().map(  (key) => {    const value = self_0.asMap().get(key).asCell();    return [      _descriptor_0.fromValue(key.value),      _descriptor_0.fromValue(value.value)    ];  })[Symbol.iterator]();
       }
     }
   };
@@ -7001,4 +6211,4 @@ const pureCircuits = {};
 const contractReferenceLocations =
   { tag: 'publicLedgerArray', indices: { } };
 
-export { Contract, EntryType, contractReferenceLocations, ledger, pureCircuits };
+export { Contract, ContractMaintenanceAuthority, ContractState, contractReferenceLocations, ledger, pureCircuits };

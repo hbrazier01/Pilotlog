@@ -102,7 +102,67 @@ Local circuit simulation works today. To validate readiness for live PreProd dep
 node scripts/validate-phase2-readiness.mjs
 ```
 
-Live deployment requires: Lace wallet with tDUST on Midnight PreProd, plus `MIDNIGHT_NODE_URL`, `MIDNIGHT_INDEXER_URL`, `MIDNIGHT_PROOF_SERVER_URL`, and `MIDNIGHT_WALLET_SEED` env vars.
+### One-Command PreProd Demo
+
+Run the full deploy + addEntry flow from a clean state:
+
+```bash
+cd pilotlog-cli
+npm run demo
+```
+
+**Prerequisites:**
+
+| Requirement | Detail |
+|---|---|
+| Node.js | v22 required (`nvm use 22`) |
+| Proof server | Must be running at `http://127.0.0.1:6300` |
+| tNight balance | Wallet must be funded on Midnight PreProd |
+
+The demo wallet address is printed on startup. Fund it at: https://faucet.preprod.midnight.network/
+
+**What it does:**
+
+1. Builds wallet from dev seed
+2. Syncs with PreProd network
+3. Bootstraps dust wallet if needed (`registerNightUtxosForDustGeneration`)
+4. Deploys AirLog contract (or joins existing from `deployment.json`)
+5. Calls `registerAirframe` (new deploy only)
+6. Calls `authorizeIssuer` (new deploy only)
+7. Calls `addEntry` — ANNUAL inspection for N12345
+
+**Expected output:**
+
+```
+╔══════════════════════════════════════════════════╗
+║      AirLog — Midnight PreProd Demo Flow         ║
+╚══════════════════════════════════════════════════╝
+
+[1] Build wallet
+──────────────────────────────────────────────────
+  ✓ Wallet ready
+  Address (fund with tNight): midnight1q...
+
+[2] Sync with PreProd
+  ✓ Synced
+  tNight balance: 1000000
+
+...
+
+[7] addEntry
+  ✓ SUCCESS
+  tx:    0xabc123...
+  block: 4821012
+
+╔══════════════════════════════════════════════════╗
+║  DEMO COMPLETE                                   ║
+╠══════════════════════════════════════════════════╣
+║  Contract: midnight1contract...                  ║
+║  addEntry: 0xabc123...                           ║
+╚══════════════════════════════════════════════════╝
+```
+
+The contract address is saved to `deployment.json` after first deploy. Subsequent runs join the existing contract and only call `addEntry`.
 
 ## Technology
 

@@ -1552,12 +1552,13 @@ app.get("/", (_req, res) => {
         ${recent.map(e => {
           const anchorObj = e.anchor || null;
           const status = anchorObj?.status || e.anchorStatus || (e.anchored ? "anchored" : null);
-          const explorerNetwork = "preprod";
+          const explorerNetwork = anchorObj?.network || "preprod";
+          const networkLabel = explorerNetwork === "preview" ? "Preview" : explorerNetwork === "preprod" ? "PreProd" : explorerNetwork;
           const explorerLink = (status === "anchored" && anchorObj?.tx)
             ? `<br><a href="https://explorer.1am.xyz/tx/${anchorObj.tx}?network=${explorerNetwork}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;font-weight:500;text-decoration:none;">View on chain →</a>`
             : "";
           const statusBadge = status === "anchored"
-            ? `<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Saved to chain</span>${explorerLink}`
+            ? `<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Saved to chain (${networkLabel})</span>${explorerLink}`
             : status === "anchor_failed"
             ? '<span style="color:#ef4444;font-size:11px;font-weight:600;">&#x2717; Failed</span>'
             : (status === "pending_anchor" || status === "anchored_pending")
@@ -4423,10 +4424,20 @@ app.get("/pilot-report", (_req, res) => {
 
   // Recent flights
   const recentRows = activity.recentFlights.length
-    ? activity.recentFlights.map(f =>
-        `<tr><td>${f.date || "—"}</td><td>${f.route || "—"}</td><td>${f.aircraft || "—"}</td><td>${f.hours} hrs</td><td>${f.remarks || "—"}</td></tr>`
-      ).join("")
-    : `<tr><td colspan="5" style="color:#6b7280;">No flights logged yet.</td></tr>`;
+    ? activity.recentFlights.map(f => {
+        const anchor = f.anchor || null;
+        let chainCell = '<span style="color:#718096;">—</span>';
+        if (anchor?.status === "anchored") {
+          const net = anchor.network || "preprod";
+          const netLabel = net === "preview" ? "Preview" : net === "preprod" ? "PreProd" : net;
+          const explorerLink = anchor.tx
+            ? ` <a href="https://explorer.1am.xyz/tx/${anchor.tx}?network=${net}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;text-decoration:none;">View →</a>`
+            : "";
+          chainCell = `<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Saved to chain (${netLabel})</span>${explorerLink}`;
+        }
+        return `<tr><td>${f.date || "—"}</td><td>${f.route || "—"}</td><td>${f.aircraft || "—"}</td><td>${f.hours} hrs</td><td>${f.remarks || "—"}</td><td>${chainCell}</td></tr>`;
+      }).join("")
+    : `<tr><td colspan="6" style="color:#6b7280;">No flights logged yet.</td></tr>`;
 
   // Integrity
   const intBadge = badge(integrity.status.color, integrity.status.label);
@@ -4560,7 +4571,7 @@ app.get("/pilot-report", (_req, res) => {
     <div class="section-title">Recent Flight History</div>
     <div class="section-body">
       <table>
-        <thead><tr><th>Date</th><th>Route</th><th>Aircraft</th><th>Hours</th><th>Remarks</th></tr></thead>
+        <thead><tr><th>Date</th><th>Route</th><th>Aircraft</th><th>Hours</th><th>Remarks</th><th>Chain</th></tr></thead>
         <tbody>${recentRows}</tbody>
       </table>
     </div>

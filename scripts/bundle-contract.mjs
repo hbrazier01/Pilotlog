@@ -48,6 +48,9 @@ import wasm from 'vite-plugin-wasm';
 
 export default defineConfig({
   plugins: [wasm()],
+  optimizeDeps: {
+    include: ["@midnight-ntwrk/compact-runtime"],
+  },
   build: {
     lib: {
       entry: ${JSON.stringify(entryPoint)},
@@ -58,6 +61,9 @@ export default defineConfig({
     emptyOutDir: false,
     target: 'esnext',
     minify: false,
+    commonjsOptions: {
+      transformMixedEsModules: true,
+    },
     rollupOptions: {
       // Disable tree-shaking so Compact/wasm-bindgen init side-effects are preserved.
       // Without this, Vite eliminates required init functions and leaves broken (void 0)() call sites.
@@ -100,9 +106,19 @@ if (fs.existsSync(outFile)) {
   const before = (bundled.match(/\(void 0\)\(\);/g) || []).length;
   if (before > 0) {
     bundled = bundled.replace(/\(void 0\)\(\);\n?/g, "");
-    fs.writeFileSync(outFile, bundled);
     console.log(`[bundle-contract] stripped ${before} (void 0)() artifact(s)`);
   }
+
+  // Post-process: fix runtimeExports star-import wrapping.
+  // Vite wraps `import * as runtimeExportsRaw` in a _mergeNamespaces call and then
+  // assigns `const runtimeExports = runtime$2 ?? runtimeExportsRaw`. In browser context
+  // runtime$2 (the default export helper) can be null, leaving checkRuntimeVersion missing.
+  // The CJS require result (runtimeExports$1) already contains all named exports — use it directly.
+  bundled = bundled.replace(
+    /const runtimeExportsRaw = \/\*#__PURE__\*\/_mergeNamespaces\(\{[\s\S]*?\}, \[runtimeExports\$1\]\);\n+const runtimeExports = runtime\$2 \?\? runtimeExportsRaw;/,
+    "const runtimeExports = runtimeExports$1;"
+  );
+  fs.writeFileSync(outFile, bundled);
 
   const stat = fs.statSync(outFile);
   console.log(`[bundle-contract] done — ${(stat.size / 1024).toFixed(1)} KB`);

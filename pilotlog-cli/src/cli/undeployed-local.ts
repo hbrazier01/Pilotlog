@@ -1,6 +1,9 @@
 import { loadEntries, saveEntries } from "../store.js";
 import { loadProfile, saveProfile } from "../profileStore.js";
 import { randomUUID } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
 
@@ -32,6 +35,7 @@ function usage() {
   console.log('  add --from KAPA --to KADS --total 1.3 --pic 1.3 --remarks "XC hop"');
   console.log("  list");
   console.log("  totals");
+  console.log("  report [--out <path>]");
   console.log("");
   console.log("  profile get");
   console.log('  profile set --fullName "H B" --email "you@example.com" --phone "555-555-5555"');
@@ -242,6 +246,25 @@ else if (command === "endorse") {
   } else {
     usage();
   }
+}
+
+// -------------------- REPORT --------------------
+else if (command === "report") {
+  // Resolve script path relative to this file's location (works whether run from source or dist)
+  const thisFile = fileURLToPath(import.meta.url);
+  const pkgRoot = path.resolve(path.dirname(thisFile), "../../..");
+  const scriptPath = path.join(pkgRoot, "scripts", "generate-pilot-report.mjs");
+  const dataDir = process.env.PILOTLOG_HOME || path.join(process.cwd(), ".pilotlog");
+
+  const extraArgs: string[] = [];
+  if (flags["out"]) extraArgs.push("--out", flags["out"]);
+
+  const res = spawnSync(process.execPath, [scriptPath, ...extraArgs], {
+    stdio: "inherit",
+    env: { ...process.env, PILOTLOG_HOME: dataDir },
+  });
+
+  process.exit(res.status ?? 1);
 }
 
 else {

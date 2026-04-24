@@ -1,8 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
 
+export type PilotPhase =
+  | "student_ppl"
+  | "ppl_complete"
+  | "instrument_training"
+  | "instrument_rated"
+  | "commercial"
+  | "cfi";
+
 export type PilotProfile = {
   pilot: { fullName: string; email?: string; phone?: string };
+  pilotPhase?: PilotPhase;
   certificates: { type: string; issued?: string; number?: string }[];
   ratings: { type: string; issued?: string }[];
   medical: {
