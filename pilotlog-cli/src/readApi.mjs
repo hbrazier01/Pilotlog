@@ -1480,9 +1480,15 @@ app.get("/", (_req, res) => {
           { compiledContract, contractAddress, circuitId: 'anchorEntry', args: [recordHashBytes, anchoredAt] }
         );
 
-        if (!result?.public?.txHash) throw new Error('No transaction hash returned from 1AM wallet');
-        txHash = result.public.txHash;
+        // Accept txHash or txId depending on SDK version
+        txHash = result?.public?.txHash || result?.public?.txId || null;
+        if (!txHash) throw new Error('No transaction hash returned from 1AM wallet');
         console.log('[tx] tx hash:', txHash);
+
+        // Chain confirmation success — update button immediately
+        btn.textContent = 'Saved to chain';
+        btn.disabled = false;
+        showToast('Flight anchored on-chain — saving record...');
 
       } catch (err) {
         btn.textContent = origBtnText;
@@ -1491,32 +1497,64 @@ app.get("/", (_req, res) => {
         const isEmptyStateError = err.message && err.message.includes('No public state found');
         showToast(isEmptyStateError
           ? 'Contract not yet synced — please wait 30 seconds and retry'
-          : 'Failed to save flight · Retry or reconnect wallet', true);
+          : 'Chain submit failed · Retry or reconnect wallet', true);
         return;
       }
 
-      // 10. Only save entry after successful tx
-      const res = await fetch('/entries', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...body, txHash, walletAddress }),
-      });
-
-      btn.textContent = origBtnText;
-      btn.disabled = false;
+      // 10. Only save entry locally after successful on-chain tx
+      let res;
+      try {
+        res = await fetch('/entries', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...body, txHash, walletAddress }),
+        });
+      } catch (netErr) {
+        // Network error on local save — chain write succeeded, don't lose that info
+        console.error('[save] local save network error:', netErr.message);
+        showToast('Saved to chain — local save failed · Refresh to sync', true);
+        e.target.reset();
+        e.target.querySelector('input[name="date"]').value = new Date().toISOString().slice(0,10);
+        toggleForm();
+        btn.textContent = origBtnText;
+        return;
+      }
 
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        showToast('Failed to save flight · ' + (err.error || res.status), true);
+        const errBody = await res.json().catch(() => ({}));
+        console.error('[save] local save failed:', res.status, errBody);
+        showToast('Saved to chain — local save failed · ' + (errBody.error || res.status), true);
+        e.target.reset();
+        e.target.querySelector('input[name="date"]').value = new Date().toISOString().slice(0,10);
+        toggleForm();
+        btn.textContent = origBtnText;
         return;
       }
 
+      // Full success: chain confirmed + local saved
       e.target.reset();
       e.target.querySelector('input[name="date"]').value = new Date().toISOString().slice(0,10);
       toggleForm();
-      showToast('Flight saved and verified');
+      btn.textContent = origBtnText;
+      btn.disabled = false;
+      showToast('Flight saved to chain');
       sessionStorage.setItem('airlog_just_logged', '1');
-      setTimeout(() => location.reload(), 600);
+
+      // Poll once for indexer sync, then reload to refresh Recent Flights
+      (async () => {
+        try {
+          await new Promise(r => setTimeout(r, 2000));
+          const check = await fetch('/entries').catch(() => null);
+          if (check && check.ok) {
+            location.reload();
+          } else {
+            showToast('Saved to chain — refresh to see updated flights');
+            setTimeout(() => location.reload(), 3000);
+          }
+        } catch (_) {
+          setTimeout(() => location.reload(), 3000);
+        }
+      })();
     }
     function showToast(msg, isError) {
       const t = document.getElementById('toast');
