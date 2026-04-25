@@ -35,16 +35,22 @@ function usage() {
   console.log('  add --from KAPA --to KADS --total 1.3 --pic 1.3 --remarks "XC hop"');
   console.log("  list");
   console.log("  totals");
-  console.log("  report [--out <path>]");
+  console.log("  report [--out <path>]          Pilot report (currency, certs, hours)");
+  console.log("  trust-report [--out <path>]    Buyer-facing trust dossier (provenance, compliance, risk)");
   console.log("");
   console.log("  profile get");
-  console.log('  profile set --fullName "H B" --email "you@example.com" --phone "555-555-5555"');
+  console.log('  profile set --fullName "H B" --email "you@example.com" --phone "555-555-5555" [--phase student_ppl|ppl_complete|instrument_training|instrument_rated|commercial|cfi]');
   console.log("");
   console.log('  medical set --kind Medical --class 3 --issued 2026-01-01 --expires 2028-01-31');
   console.log('  medical set --kind BasicMed --cmec 2026-02-01 --course 2026-02-01');
   console.log("  medical set --kind None");
   console.log("");
   console.log("  proficiency set --flightReview 2026-02-10 --ipc 2026-03-15");
+  console.log("");
+  console.log('  cert add --type "Private Pilot" [--issued 2025-01-15] [--number "1234567"]');
+  console.log("  cert list");
+  console.log('  rating add --type "Instrument Rating" [--issued 2025-06-01]');
+  console.log("  rating list");
   console.log("");
   console.log('  endorse add --text "Solo endorsement..." --date 2026-03-01');
   console.log("  endorse list");
@@ -88,7 +94,22 @@ if (command === "add") {
   console.log("Flight added:", entry.id);
 } else if (command === "list") {
   const entries = loadEntries();
-  console.log(entries);
+  if (!entries.length) {
+    console.log("No flights logged yet.");
+  } else {
+    console.log(`${"DATE".padEnd(12)}${"FROM".padEnd(6)}${"TO".padEnd(6)}${"TOTAL".padEnd(7)}${"PIC".padEnd(6)}REMARKS`);
+    console.log("─".repeat(72));
+    for (const e of (entries as any[])) {
+      const date = String(e.date || "").slice(0, 10).padEnd(12);
+      const from = String(e.from || e.aircraftId || "").padEnd(6);
+      const to = String(e.to || "").padEnd(6);
+      const total = String(Number(e.total || e.totalTime || 0).toFixed(1)).padEnd(7);
+      const pic = String(Number(e.pic || 0).toFixed(1)).padEnd(6);
+      const remarks = String(e.remarks || "").slice(0, 40);
+      console.log(`${date}${from}${to}${total}${pic}${remarks}`);
+    }
+    console.log(`\n${entries.length} flight(s) total.`);
+  }
 } else if (command === "totals") {
   const entries = loadEntries();
 
@@ -145,9 +166,18 @@ else if (command === "profile") {
     profile.pilot.email = email;
     profile.pilot.phone = phone;
 
+    if (flags["phase"] !== undefined) {
+      const validPhases = ["student_ppl", "ppl_complete", "instrument_training", "instrument_rated", "commercial", "cfi"];
+      if (!validPhases.includes(flags["phase"])) {
+        console.error(`profile set: --phase must be one of: ${validPhases.join(" | ")}`);
+        process.exit(1);
+      }
+      profile.pilotPhase = flags["phase"] as any;
+    }
+
     saveProfile(profile);
     console.log("Profile updated.");
-    console.log(profile.pilot);
+    console.log({ ...profile.pilot, pilotPhase: profile.pilotPhase });
   } else {
     usage();
   }
@@ -225,6 +255,61 @@ else if (command === "proficiency") {
   }
 }
 
+// -------------------- CERTIFICATES --------------------
+else if (command === "cert") {
+  const profile = loadProfile();
+
+  if (sub === "add") {
+    const type = str("type", "");
+    if (!type.trim()) {
+      console.error('cert add: required --type "..."');
+      process.exit(1);
+    }
+    const issued = str("issued", "") || undefined;
+    const number = str("number", "") || undefined;
+    profile.certificates.push({ type, ...(issued ? { issued } : {}), ...(number ? { number } : {}) });
+    saveProfile(profile);
+    console.log("Certificate added:", type);
+  } else if (sub === "list" || !sub) {
+    if (!profile.certificates.length) {
+      console.log("No certificates on file.");
+    } else {
+      for (const c of profile.certificates) {
+        console.log(`  ${c.type}${c.number ? ` [#${c.number}]` : ""}${c.issued ? ` — issued ${c.issued}` : ""}`);
+      }
+    }
+  } else {
+    usage();
+  }
+}
+
+// -------------------- RATINGS --------------------
+else if (command === "rating") {
+  const profile = loadProfile();
+
+  if (sub === "add") {
+    const type = str("type", "");
+    if (!type.trim()) {
+      console.error('rating add: required --type "..."');
+      process.exit(1);
+    }
+    const issued = str("issued", "") || undefined;
+    profile.ratings.push({ type, ...(issued ? { issued } : {}) });
+    saveProfile(profile);
+    console.log("Rating added:", type);
+  } else if (sub === "list" || !sub) {
+    if (!profile.ratings.length) {
+      console.log("No ratings on file.");
+    } else {
+      for (const r of profile.ratings) {
+        console.log(`  ${r.type}${r.issued ? ` — issued ${r.issued}` : ""}`);
+      }
+    }
+  } else {
+    usage();
+  }
+}
+
 // -------------------- ENDORSEMENTS --------------------
 else if (command === "endorse") {
   const profile = loadProfile();
@@ -254,6 +339,24 @@ else if (command === "report") {
   const thisFile = fileURLToPath(import.meta.url);
   const pkgRoot = path.resolve(path.dirname(thisFile), "../../..");
   const scriptPath = path.join(pkgRoot, "scripts", "generate-pilot-report.mjs");
+  const dataDir = process.env.PILOTLOG_HOME || path.join(process.cwd(), ".pilotlog");
+
+  const extraArgs: string[] = [];
+  if (flags["out"]) extraArgs.push("--out", flags["out"]);
+
+  const res = spawnSync(process.execPath, [scriptPath, ...extraArgs], {
+    stdio: "inherit",
+    env: { ...process.env, PILOTLOG_HOME: dataDir },
+  });
+
+  process.exit(res.status ?? 1);
+}
+
+// -------------------- TRUST REPORT --------------------
+else if (command === "trust-report") {
+  const thisFile = fileURLToPath(import.meta.url);
+  const pkgRoot = path.resolve(path.dirname(thisFile), "../../..");
+  const scriptPath = path.join(pkgRoot, "scripts", "generate-trust-report.mjs");
   const dataDir = process.env.PILOTLOG_HOME || path.join(process.cwd(), ".pilotlog");
 
   const extraArgs: string[] = [];

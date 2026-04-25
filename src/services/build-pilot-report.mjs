@@ -36,22 +36,18 @@ function certStatus(days) {
 
 function buildPilotIdentity(profile) {
   const pilot = profile?.pilot || {};
-  const certs = profile?.certificates || {};
-  const ratings = profile?.ratings || [];
+  const certs = Array.isArray(profile?.certificates) ? profile.certificates : [];
+  const ratings = Array.isArray(profile?.ratings) ? profile.ratings : [];
 
-  const certList = [];
-  if (certs.studentPilot) certList.push("Student Pilot");
-  if (certs.privatePilot) certList.push("Private Pilot (PPL)");
-  if (certs.instrumentRating) certList.push("Instrument Rating");
-  if (certs.commercialPilot) certList.push("Commercial Pilot");
-  if (certs.cfi) certList.push("CFI");
-  if (ratings.length > 0) certList.push(...ratings);
+  const certList = certs.map((c) => c.type).filter(Boolean);
+  const ratingList = ratings.map((r) => r.type).filter(Boolean);
 
   return {
     name: pilot.fullName || null,
     email: pilot.email || null,
     phone: pilot.phone || null,
     certificates: certList,
+    ratings: ratingList,
     pilotPhase: profile?.pilotPhase || null,
   };
 }

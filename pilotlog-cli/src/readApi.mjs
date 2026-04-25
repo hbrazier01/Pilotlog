@@ -758,26 +758,26 @@ app.get("/", (_req, res) => {
   </div>
 
   <div class="hero">
-    <div class="big">${fmt(totals.total)} hrs</div>
-    <div class="sub">${pilotName} · PIC ${fmt(totals.pic)} · XC ${fmt(totals.xc)} · Night ${fmt(totals.night)}</div>
+    <div class="big" id="stat-total-hrs">${fmt(totals.total)} hrs</div>
+    <div class="sub" id="stat-sub">${pilotName} · PIC ${fmt(totals.pic)} · XC ${fmt(totals.xc)} · Night ${fmt(totals.night)}</div>
   </div>
 
   <div class="grid">
     <div class="card">
       <div class="label">Total Flights</div>
-      <div class="val">${totalFlights}</div>
+      <div class="val" id="stat-total-flights">${totalFlights}</div>
     </div>
     <div class="card">
       <div class="label">Total Time</div>
-      <div class="val">${fmt(totals.total)} hrs</div>
+      <div class="val" id="stat-total-time">${fmt(totals.total)} hrs</div>
     </div>
     <div class="card">
       <div class="label">Last Flight</div>
-      <div class="val" style="font-size:20px;margin-top:10px;">${lastFlightDate}</div>
+      <div class="val" id="stat-last-flight" style="font-size:20px;margin-top:10px;">${lastFlightDate}</div>
     </div>
     <div class="card">
       <div class="label">Landings</div>
-      <div class="val">${landings}</div>
+      <div class="val" id="stat-landings">${landings}</div>
     </div>
   </div>
 
@@ -1481,7 +1481,7 @@ app.get("/", (_req, res) => {
         );
 
         // Accept txHash or txId depending on SDK version; if wallet resolves with undefined, generate a local fallback ref
-        txHash = result?.public?.txHash || result?.public?.txId || `submitted-${Date.now()}`;
+        txHash = result?.public?.txHash || result?.public?.txId || ('submitted-' + Date.now());
         console.log('[tx] tx ref:', txHash);
 
         // Chain confirmation success — update button immediately
@@ -1538,22 +1538,80 @@ app.get("/", (_req, res) => {
       btn.disabled = false;
       showToast('Flight saved to chain');
       sessionStorage.setItem('airlog_just_logged', '1');
+      refreshEntries();
+    }
+    async function refreshEntries() {
+      try {
+        const res = await fetch('/entries');
+        if (!res.ok) return;
+        const entries = await res.json();
 
-      // Poll once for indexer sync, then reload to refresh Recent Flights
-      (async () => {
-        try {
-          await new Promise(r => setTimeout(r, 2000));
-          const check = await fetch('/entries').catch(() => null);
-          if (check && check.ok) {
-            location.reload();
-          } else {
-            showToast('Saved to chain — refresh to see updated flights');
-            setTimeout(() => location.reload(), 3000);
-          }
-        } catch (_) {
-          setTimeout(() => location.reload(), 3000);
+        // Sort newest first
+        const sorted = [...entries].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+        const recent = sorted.slice(0, 10);
+
+        // Update totals
+        let total = 0, pic = 0, xc = 0, night = 0, dayL = 0, nightL = 0;
+        for (const e of entries) {
+          total += Number(e.totalTime || e.total || 0);
+          pic   += Number(e.pic || 0);
+          xc    += Number(e.xc || 0);
+          night += Number(e.night || 0);
+          dayL  += Number(e.dayLandings || 0);
+          nightL+= Number(e.nightLandings || 0);
         }
-      })();
+        const fmt = v => Number(v).toFixed(1);
+        const lastDate = sorted[0]?.date ? String(sorted[0].date).slice(0, 10) : '—';
+        const landings = dayL + nightL;
+
+        const el = id => document.getElementById(id);
+        if (el('stat-total-hrs'))     el('stat-total-hrs').textContent     = fmt(total) + ' hrs';
+        if (el('stat-total-flights')) el('stat-total-flights').textContent = entries.length;
+        if (el('stat-total-time'))    el('stat-total-time').textContent    = fmt(total) + ' hrs';
+        if (el('stat-last-flight'))   el('stat-last-flight').textContent   = lastDate;
+        if (el('stat-landings'))      el('stat-landings').textContent      = landings;
+        const sub = el('stat-sub');
+        if (sub) {
+          const name = sub.textContent.split('·')[0].trim();
+          sub.textContent = name + ' · PIC ' + fmt(pic) + ' · XC ' + fmt(xc) + ' · Night ' + fmt(night);
+        }
+
+        // Update recent flights table
+        const tbody = el('recent-flights-tbody');
+        if (tbody) {
+          if (recent.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="muted">No flights logged yet.</td></tr>';
+          } else {
+            tbody.innerHTML = recent.map(e => {
+              const anchorObj = e.anchor || null;
+              const status = anchorObj?.status || e.anchorStatus || (e.anchored ? 'anchored' : null);
+              const explorerNetwork = anchorObj?.network || 'preprod';
+              const networkLabel = explorerNetwork === 'preview' ? 'Preview' : explorerNetwork === 'preprod' ? 'PreProd' : explorerNetwork;
+              const explorerLink = (status === 'anchored' && anchorObj?.tx)
+                ? \`<br><a href="https://explorer.1am.xyz/tx/\${anchorObj.tx}?network=\${explorerNetwork}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;font-weight:500;text-decoration:none;">View on chain →</a>\`
+                : '';
+              const statusBadge = status === 'anchored'
+                ? \`<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Saved to chain (\${networkLabel})</span>\${explorerLink}\`
+                : status === 'anchor_failed'
+                ? '<span style="color:#ef4444;font-size:11px;font-weight:600;">&#x2717; Failed</span>'
+                : (status === 'pending_anchor' || status === 'anchored_pending')
+                ? '<span style="color:#f59e0b;font-size:11px;font-weight:600;">&#x29D7; Verified</span>'
+                : '<span style="color:#718096;font-size:11px;">—</span>';
+              return \`<tr>
+                <td>\${String(e.date || '').slice(0, 10)}</td>
+                <td>\${e.aircraftIdent || e.aircraftId || ''} <span class="muted">\${e.aircraftType ? \`(\${e.aircraftType})\` : ''}</span></td>
+                <td>\${e.from || ''} → \${e.to || ''}</td>
+                <td>\${e.totalTime ?? e.total ?? ''}</td>
+                <td>\${e.pic ?? ''}</td>
+                <td class="muted">\${(e.remarks || '').replaceAll('<','&lt;').replaceAll('>','&gt;')}</td>
+                <td>\${statusBadge}</td>
+              </tr>\`;
+            }).join('');
+          }
+        }
+      } catch (_) {
+        // Silent — flight was saved, UI will be stale but not broken
+      }
     }
     function showToast(msg, isError) {
       const t = document.getElementById('toast');
@@ -1585,7 +1643,7 @@ app.get("/", (_req, res) => {
           <th>Date</th><th>Aircraft</th><th>Route</th><th>Total</th><th>PIC</th><th class="muted">Remarks</th><th>Status</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody id="recent-flights-tbody">
         ${recent.map(e => {
           const anchorObj = e.anchor || null;
           const status = anchorObj?.status || e.anchorStatus || (e.anchored ? "anchored" : null);
