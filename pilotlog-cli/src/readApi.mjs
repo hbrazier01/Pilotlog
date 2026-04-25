@@ -1417,10 +1417,32 @@ app.get("/", (_req, res) => {
           console.log('[zk-debug] providers.zkConfigProvider exists:', !!zkConfigProvider);
           console.log('[zk-debug] typeof providers.zkConfigProvider.getVerifierKey:', typeof zkConfigProvider?.getVerifierKey);
           console.log('[zk-debug] providers keys:', ['proofProvider', 'walletProvider', 'midnightProvider', 'publicDataProvider', 'zkConfigProvider'].join(', '));
+
+          // AIR-200: 1AM submitTransaction() returns void — the SDK's internal submitTx calls
+          // publicDataProvider.watchForTxData(txId) which waits forever when txId is undefined.
+          // Fix: pass a deploy-specific publicDataProvider that resolves watchForTxData immediately
+          // after submission (returning SucceedEntirely), and a no-op privateStateProvider.
+          // contractAddress comes from unprovenDeployTxData.public (computed pre-submit by SDK),
+          // so it is available in deployed.deployTxData.public.contractAddress regardless.
+          const deployPublicDataProvider = {
+            queryZSwapAndContractState: (...args) => publicDataProvider.queryZSwapAndContractState(...args),
+            watchForTxData: async (txId) => {
+              console.log('[deploy] watchForTxData called with txId:', txId, '— resolving immediately (AIR-200)');
+              return { status: 'SucceedEntirely' };
+            },
+          };
+          const deployPrivateStateProvider = {
+            setContractAddress: (addr) => { console.log('[deploy] privateStateProvider.setContractAddress:', addr); },
+            set: async () => {},
+            setSigningKey: async () => {},
+            getContractAddress: () => null,
+            get: async () => null,
+          };
+
           let deployed;
           try {
             deployed = await deployContractFn(
-              { proofProvider, walletProvider, midnightProvider, publicDataProvider, zkConfigProvider },
+              { proofProvider, walletProvider, midnightProvider, publicDataProvider: deployPublicDataProvider, zkConfigProvider, privateStateProvider: deployPrivateStateProvider },
               { compiledContract }
             );
           } catch (deployErr) {
