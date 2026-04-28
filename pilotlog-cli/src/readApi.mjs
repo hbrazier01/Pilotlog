@@ -1415,26 +1415,53 @@ app.get("/", (_req, res) => {
 
       // ── BLOCK 5: ensure contract + submitCallTx ───────────────────────────
       try {
-        // localStorage is the source of truth for contract address (AIR-176)
-        let contractAddress = localStorage.getItem('airlog.contractAddress');
-        console.log('[tx] contractAddress from localStorage:', contractAddress);
+        // AIR-208: deployment.json is the source of truth. Always fetch it first.
+        // localStorage stale address must NOT override a valid deployment.json entry.
+        let contractAddress = null;
+        let contractAddressSource = 'none';
+        let deploymentNetworkId = null;
 
-        // AIR-203: If localStorage is empty, seed from server-persisted deployment.json.
-        // This avoids re-deploying on fresh sessions / new browsers when a contract already exists.
-        if (!contractAddress) {
-          try {
-            const deployRes = await fetch('/deployment.json');
-            if (deployRes.ok) {
-              const deployData = await deployRes.json();
-              if (deployData?.contractAddress) {
-                contractAddress = deployData.contractAddress;
-                localStorage.setItem('airlog.contractAddress', contractAddress);
-                console.log('[tx] contractAddress seeded from deployment.json:', contractAddress);
-              }
+        try {
+          const deployRes = await fetch('/deployment.json');
+          if (deployRes.ok) {
+            const deployData = await deployRes.json();
+            if (deployData?.contractAddress) {
+              contractAddress = deployData.contractAddress;
+              contractAddressSource = 'deployment.json';
+              deploymentNetworkId = deployData.networkId || null;
+              // Keep localStorage in sync so deploy-on-first-save still works
+              localStorage.setItem('airlog.contractAddress', contractAddress);
+              console.log('[tx] contractAddress from deployment.json:', contractAddress);
             }
-          } catch (seedErr) {
-            console.warn('[tx] could not fetch deployment.json:', seedErr.message);
           }
+        } catch (deployFetchErr) {
+          console.warn('[tx] could not fetch deployment.json:', deployFetchErr.message);
+        }
+
+        // Fall back to localStorage only when deployment.json has no address
+        if (!contractAddress) {
+          const lsAddr = localStorage.getItem('airlog.contractAddress');
+          if (lsAddr) {
+            contractAddress = lsAddr;
+            contractAddressSource = 'localStorage';
+            console.warn('[tx] contractAddress from localStorage (deployment.json unavailable):', contractAddress);
+          }
+        }
+
+        // Log resolution summary for debugging
+        const walletNetworkId = walletConfig.networkId || 'unknown';
+        console.log('[tx] address-source:', contractAddressSource);
+        console.log('[tx] deployment networkId:', deploymentNetworkId || '(not stored)');
+        console.log('[tx] wallet networkId:', walletNetworkId);
+        console.log('[tx] circuitId: anchorEntry');
+
+        // Network mismatch check: if deployment.json recorded a networkId, it must match wallet
+        if (deploymentNetworkId && deploymentNetworkId !== walletNetworkId) {
+          const msg = `Contract network mismatch: deployment is "${deploymentNetworkId}" but wallet is "${walletNetworkId}". Clear localStorage or redeploy for this network.`;
+          console.error('[tx] NETWORK MISMATCH:', msg);
+          showToast(msg, true);
+          btn.textContent = origBtnText;
+          return;
         }
 
         if (!contractAddress) {
@@ -1493,10 +1520,11 @@ app.get("/", (_req, res) => {
           console.log('[deploy] contract deployed:', contractAddress);
 
           // Persist to backend as well (best-effort, do not await — do not block submitCallTx)
+          // AIR-208: also persist networkId so future sessions can detect network mismatch
           fetch('/deployment', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contractAddress }),
+            body: JSON.stringify({ contractAddress, networkId: walletConfig.networkId }),
           }).catch(() => {});
 
         }
@@ -4803,9 +4831,9 @@ app.get("/deployment.json", (_req, res) => {
   }
 });
 
-// POST /deployment — update contractAddress from browser deploy flow
+// POST /deployment — update contractAddress (and optionally networkId) from browser deploy flow
 app.post("/deployment", (req, res) => {
-  const { contractAddress } = req.body || {};
+  const { contractAddress, networkId } = req.body || {};
   if (!contractAddress || typeof contractAddress !== "string") {
     return res.status(400).json({ error: "contractAddress required" });
   }
@@ -4813,9 +4841,11 @@ app.post("/deployment", (req, res) => {
     const existing = fs.existsSync(deploymentJsonPath)
       ? JSON.parse(fs.readFileSync(deploymentJsonPath, "utf8"))
       : {};
+    // AIR-208: persist networkId alongside contractAddress for future mismatch checks
     const updated = { ...existing, contractAddress, deployedAt: new Date().toISOString() };
+    if (networkId && typeof networkId === "string") updated.networkId = networkId;
     fs.writeFileSync(deploymentJsonPath, JSON.stringify(updated, null, 2));
-    console.log("[deploy] contract address updated:", contractAddress);
+    console.log("[deploy] contract address updated:", contractAddress, "network:", networkId || "(not provided)");
     res.json({ ok: true, contractAddress });
   } catch (err) {
     console.error("[deployment] write failed:", err);
