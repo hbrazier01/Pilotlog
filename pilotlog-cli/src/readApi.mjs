@@ -1556,7 +1556,45 @@ app.get("/", (_req, res) => {
             btn.textContent = 'Syncing… (' + attempt + '/' + maxAttempts + ')';
             await new Promise(r => setTimeout(r, intervalMs));
           }
-          if (!indexed) throw new Error('Contract state cell still null after ' + maxAttempts + ' attempts — indexer may be lagging.');
+          if (!indexed) {
+            // AIR-210: Contract state cell never appeared — stored address is stale (e.g. after preprod network reset).
+            // Redeploy a fresh contract and continue with the new address.
+            console.warn('[tx] stale contract detected (state cell null after ' + maxAttempts + ' attempts) — redeploying');
+            btn.textContent = 'Redeploying contract…';
+            const deployPublicDataProvider2 = {
+              queryZSwapAndContractState: (...args) => publicDataProvider.queryZSwapAndContractState(...args),
+              watchForTxData: async (txId) => {
+                console.log('[redeploy] watchForTxData:', txId, '— resolving immediately (AIR-210)');
+                return { status: 'SucceedEntirely' };
+              },
+            };
+            const deployPrivateStateProvider2 = {
+              setContractAddress: (addr) => { console.log('[redeploy] privateStateProvider.setContractAddress:', addr); },
+              set: async () => {},
+              setSigningKey: async () => {},
+              getContractAddress: () => null,
+              get: async () => null,
+            };
+            let redeployed;
+            try {
+              redeployed = await deployContractFn(
+                { proofProvider, walletProvider, midnightProvider, publicDataProvider: deployPublicDataProvider2, zkConfigProvider, privateStateProvider: deployPrivateStateProvider2 },
+                { compiledContract }
+              );
+            } catch (redeployErr) {
+              console.error('[redeploy] deployContractFn threw:', redeployErr.message);
+              throw redeployErr;
+            }
+            contractAddress = redeployed?.deployTxData?.public?.contractAddress;
+            if (!contractAddress) throw new Error('Redeploy returned no contractAddress — see console for raw result');
+            console.log('[redeploy] new contractAddress:', contractAddress);
+            localStorage.setItem('airlog.contractAddress', contractAddress);
+            fetch('/deployment', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ contractAddress, networkId: walletConfig.networkId }),
+            }).catch(() => {});
+          }
         }
 
         btn.textContent = 'Submitting flight entry…';
