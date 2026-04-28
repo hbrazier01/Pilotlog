@@ -1457,7 +1457,7 @@ app.get("/", (_req, res) => {
 
         // Network mismatch check: if deployment.json recorded a networkId, it must match wallet
         if (deploymentNetworkId && deploymentNetworkId !== walletNetworkId) {
-          const msg = `Contract network mismatch: deployment is "${deploymentNetworkId}" but wallet is "${walletNetworkId}". Clear localStorage or redeploy for this network.`;
+          const msg = \`Contract network mismatch: deployment is "\${deploymentNetworkId}" but wallet is "\${walletNetworkId}". Clear localStorage or redeploy for this network.\`;
           console.error('[tx] NETWORK MISMATCH:', msg);
           showToast(msg, true);
           btn.textContent = origBtnText;
