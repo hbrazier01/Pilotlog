@@ -1299,7 +1299,21 @@ app.get("/", (_req, res) => {
             const serialized = tx.serialize();
             console.log('[tx-debug] balanceTx: tx.serialize() type:', serialized?.constructor?.name, 'length:', serialized?.length);
             const hex = bytesToHex(serialized);
-            const result = await connectedAPI.balanceUnsealedTransaction(hex);
+            // AIR-202: instrument elapsed time and enforce 90s timeout so a hung 1AM
+            // wallet connection fails fast instead of blocking the deploy indefinitely.
+            const balanceTxStart = Date.now();
+            console.log('[balanceTx] calling balanceUnsealedTransaction — start');
+            const BALANCE_TX_TIMEOUT_MS = 90_000;
+            const result = await Promise.race([
+              connectedAPI.balanceUnsealedTransaction(hex),
+              new Promise((_, reject) =>
+                setTimeout(
+                  () => reject(new Error('[balanceTx] timed out after ' + (BALANCE_TX_TIMEOUT_MS / 1000) + 's — 1AM wallet did not respond')),
+                  BALANCE_TX_TIMEOUT_MS
+                )
+              ),
+            ]);
+            console.log('[balanceTx] balanceUnsealedTransaction resolved in', Date.now() - balanceTxStart, 'ms');
             // AIR-143: avoid Transaction.deserialize (ledger-v8/WASM, Node-only).
             // Return a duck-typed proxy that satisfies the serialize()/identifiers() contract
             // expected by midnightProvider.submitTx without importing ledger-v8 at the entry.
@@ -1405,6 +1419,24 @@ app.get("/", (_req, res) => {
         let contractAddress = localStorage.getItem('airlog.contractAddress');
         console.log('[tx] contractAddress from localStorage:', contractAddress);
 
+        // AIR-203: If localStorage is empty, seed from server-persisted deployment.json.
+        // This avoids re-deploying on fresh sessions / new browsers when a contract already exists.
+        if (!contractAddress) {
+          try {
+            const deployRes = await fetch('/deployment.json');
+            if (deployRes.ok) {
+              const deployData = await deployRes.json();
+              if (deployData?.contractAddress) {
+                contractAddress = deployData.contractAddress;
+                localStorage.setItem('airlog.contractAddress', contractAddress);
+                console.log('[tx] contractAddress seeded from deployment.json:', contractAddress);
+              }
+            }
+          } catch (seedErr) {
+            console.warn('[tx] could not fetch deployment.json:', seedErr.message);
+          }
+        }
+
         if (!contractAddress) {
           // No contract deployed yet — deploy now via wallet (deploy-on-first-save)
           console.log('[tx] no contract found -> deploying');
@@ -1450,7 +1482,7 @@ app.get("/", (_req, res) => {
             throw deployErr;
           }
 
-          console.log('[deploy] raw deploy result:', JSON.stringify(deployed, null, 2));
+          console.log('[deploy] raw deploy result:', JSON.stringify(deployed, (_, v) => typeof v === 'bigint' ? v.toString() : v, 2));
           contractAddress = deployed?.deployTxData?.public?.contractAddress;
           console.log('[deploy] contractAddress from result:', contractAddress);
           if (!contractAddress) throw new Error('Deploy returned no contractAddress — see raw result above');
@@ -1467,35 +1499,43 @@ app.get("/", (_req, res) => {
             body: JSON.stringify({ contractAddress }),
           }).catch(() => {});
 
-          // Wait for indexer to sync the deploy tx before submitting the call tx.
-          // Address is already stored above — even if indexer sync fails, next save will reuse address.
-          btn.textContent = 'Syncing…';
-          console.log('[tx] waiting for indexer to sync deploy…');
-          await new Promise(r => setTimeout(r, 6000));
         }
 
         console.log('[tx] using contract:', contractAddress);
+
+        // Poll indexer until the contract state cell (result[1]) is non-null before calling submitCallTx.
+        // Runs for every address source: localStorage, deployment.json, and fresh deploy.
+        // queryZSwapAndContractState returns [zswapState, contractState, ledgerParams] or null.
+        // The outer tuple can be truthy while result[1] (contractState) is still null when the indexer
+        // has the tx but hasn't propagated state — submitCallTx throws "expected a cell, received null"
+        // in that case. We must wait for result[1] to be non-null before proceeding.
+        {
+          const maxAttempts = 20;
+          const intervalMs = 5000;
+          let indexed = false;
+          btn.textContent = 'Syncing…';
+          console.log('[tx] validating contract state cell for:', contractAddress);
+          for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            const queryResult = await publicDataProvider.queryZSwapAndContractState(contractAddress).catch(() => null);
+            const contractStateCell = queryResult ? queryResult[1] : null;
+            console.log('[tx] result[1] (contractState):', contractStateCell === null ? 'null' : contractStateCell === undefined ? 'undefined' : typeof contractStateCell);
+            if (contractStateCell !== null && contractStateCell !== undefined) {
+              indexed = true;
+              console.log('[tx] contract state cell confirmed (attempt ' + attempt + ')');
+              break;
+            }
+            console.log('[tx] contract state cell not ready (' + attempt + '/' + maxAttempts + '), retrying in ' + (intervalMs / 1000) + 's…');
+            btn.textContent = 'Syncing… (' + attempt + '/' + maxAttempts + ')';
+            await new Promise(r => setTimeout(r, intervalMs));
+          }
+          if (!indexed) throw new Error('Contract state cell still null after ' + maxAttempts + ' attempts — indexer may be lagging.');
+        }
+
         btn.textContent = 'Submitting flight entry…';
 
         console.log('[tx] submitting flight entry');
         const recordHashBytes = new Uint8Array(anchorHash.match(/.{2}/g).map(b => parseInt(b, 16)));
         const anchoredAt = BigInt(Math.floor(Date.now() / 1000));
-
-        // AIR-166 / AIR-177: Pre-check for empty contract state (indexer lag after deploy).
-        // Do NOT block the write flow on indexer sync — address is already stored.
-        // If state is missing, log a warning and attempt submitCallTx anyway.
-        const existingState = await publicDataProvider.queryZSwapAndContractState(contractAddress).catch(() => null);
-        if (existingState === null) {
-          console.log('[tx] no public state found — indexer may be lagging, attempting submit anyway');
-          btn.textContent = 'Waiting for chain…';
-          await new Promise(r => setTimeout(r, 8000));
-          const retryState = await publicDataProvider.queryZSwapAndContractState(contractAddress).catch(() => null);
-          if (retryState === null) {
-            console.warn('[tx] state still null after wait — proceeding with submitCallTx (indexer may be slow)');
-          } else {
-            console.log('[tx] state confirmed after wait — proceeding');
-          }
-        }
 
         const result = await submitCallTx(
           { proofProvider, walletProvider, midnightProvider, publicDataProvider },
@@ -4747,18 +4787,21 @@ if (fs.existsSync(midnightSdkDir)) {
 // Serve deployment.json and compiled contract artifacts for browser-side 1AM wallet tx
 // Resolve from actual runtime root (fixes PKG_ROOT mismatch)
 const deploymentJsonPath = path.resolve(process.cwd(), "deployment.json");
-if (fs.existsSync(deploymentJsonPath)) {
-  app.get("/deployment.json", (_req, res) => {
-    try {
-      const raw = fs.readFileSync(deploymentJsonPath, "utf8");
-      const json = JSON.parse(raw);
-      res.json(json);
-    } catch (err) {
-      console.error("[deployment] failed:", err);
-      res.status(500).json({ error: "deployment.json load failed" });
+// AIR-203: Always register GET /deployment.json — reads file on demand so the route
+// works even if the file is created after server start (e.g. first deploy in session).
+app.get("/deployment.json", (_req, res) => {
+  try {
+    if (!fs.existsSync(deploymentJsonPath)) {
+      return res.status(404).json({ error: "no deployment" });
     }
-  });
-}
+    const raw = fs.readFileSync(deploymentJsonPath, "utf8");
+    const json = JSON.parse(raw);
+    res.json(json);
+  } catch (err) {
+    console.error("[deployment] failed:", err);
+    res.status(500).json({ error: "deployment.json load failed" });
+  }
+});
 
 // POST /deployment — update contractAddress from browser deploy flow
 app.post("/deployment", (req, res) => {

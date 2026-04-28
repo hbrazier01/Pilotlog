@@ -297,6 +297,43 @@ async function createProviders(
   };
 }
 
+/**
+ * Poll the indexer until the newly-deployed contract is visible,
+ * then return the joined contract handle.
+ *
+ * The indexer typically lags 1-3 blocks (~5-15 s) behind the node.
+ * Without this wait, callTx calls made immediately after deployContract
+ * can fail with "contract not found" from the public data provider.
+ */
+async function waitForContractIndexed(
+  providers: Awaited<ReturnType<typeof createProviders>>,
+  contractAddress: string,
+  compiledContract: any,
+  maxAttempts = 20,
+  intervalMs = 5_000
+): Promise<any> {
+  console.log(`  Waiting for contract to be indexed (up to ${maxAttempts * intervalMs / 1000}s)…`);
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const found = await findDeployedContract(providers as any, {
+        contractAddress,
+        compiledContract,
+        privateStateId: "airlogPrivateState",
+        initialPrivateState: createAirlogPrivateState(),
+      });
+      if (found) {
+        ok(`Contract indexed (attempt ${attempt})`);
+        return found;
+      }
+    } catch {
+      // not yet visible — keep polling
+    }
+    console.log(`  [${attempt}/${maxAttempts}] Not indexed yet, retrying in ${intervalMs / 1000}s…`);
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  throw new Error(`Contract ${contractAddress} was not indexed after ${maxAttempts} attempts.`);
+}
+
 function step(n: number, label: string) {
   console.log(`\n[${n}] ${label}`);
   console.log("─".repeat(50));
@@ -391,16 +428,38 @@ async function main() {
   step(4, existing ? "Join existing contract" : "Deploy AirLog v2 contract");
 
   let deployedContract: any;
+  let needsIndexingWait = false;
 
   if (existing) {
     console.log(`  Contract address: ${existing.contractAddress}`);
-    deployedContract = await findDeployedContract(providers as any, {
-      contractAddress: existing.contractAddress,
-      compiledContract: airlogCompiledContract,
-      privateStateId: "airlogPrivateState",
-      initialPrivateState: createAirlogPrivateState(),
-    });
-    ok("Contract joined");
+    try {
+      deployedContract = await findDeployedContract(providers as any, {
+        contractAddress: existing.contractAddress,
+        compiledContract: airlogCompiledContract,
+        privateStateId: "airlogPrivateState",
+        initialPrivateState: createAirlogPrivateState(),
+      });
+      if (!deployedContract) {
+        throw new Error("findDeployedContract returned null — address not found on-chain");
+      }
+      ok("Contract joined");
+    } catch (err) {
+      fail(`Persisted contract address is stale or invalid: ${(err as Error).message}`);
+      console.log("  Clearing stale deployment.json and deploying a fresh contract...");
+      fs.unlinkSync(DEPLOYMENT_JSON);
+
+      deployedContract = await deployContract(providers as any, {
+        compiledContract: airlogCompiledContract,
+        privateStateId: "airlogPrivateState",
+        initialPrivateState: createAirlogPrivateState(),
+      });
+      const freshAddress = deployedContract.deployTxData.public.contractAddress;
+      ok(`Fresh contract deployed`);
+      console.log(`  Contract address: ${freshAddress}`);
+      console.log(`  Deploy tx:        ${deployedContract.deployTxData.public.txId}`);
+      saveDeployment(freshAddress);
+      needsIndexingWait = true;
+    }
   } else {
     deployedContract = await deployContract(providers as any, {
       compiledContract: airlogCompiledContract,
@@ -412,9 +471,24 @@ async function main() {
     console.log(`  Contract address: ${contractAddress}`);
     console.log(`  Deploy tx:        ${deployedContract.deployTxData.public.txId}`);
     saveDeployment(contractAddress);
+    needsIndexingWait = true;
   }
 
   const contractAddress = deployedContract.deployTxData.public.contractAddress;
+
+  // After a fresh deploy, wait for the indexer to catch up before calling any
+  // contract methods. deployContract returns as soon as the tx is accepted by
+  // the node, but callTx reads contract state from the indexer which may lag
+  // several blocks behind.
+  if (needsIndexingWait) {
+    console.log("\n[4b] Wait for contract indexing");
+    console.log("─".repeat(50));
+    deployedContract = await waitForContractIndexed(
+      providers,
+      contractAddress,
+      airlogCompiledContract
+    );
+  }
 
   // Build record hash: SHA-256 of a sample pilot log entry
   const sampleRecord = JSON.stringify({
