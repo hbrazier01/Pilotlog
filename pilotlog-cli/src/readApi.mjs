@@ -1594,6 +1594,30 @@ app.get("/", (_req, res) => {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ contractAddress, networkId: walletConfig.networkId }),
             }).catch(() => {});
+
+            // AIR-211: Poll new contract's state cell before submitCallTx — same race
+            // condition applies to freshly-redeployed contracts as to pre-existing ones.
+            {
+              const maxAttempts2 = 20;
+              const intervalMs2 = 5000;
+              let indexed2 = false;
+              btn.textContent = 'Syncing new contract…';
+              console.log('[redeploy] waiting for new contract state cell:', contractAddress);
+              for (let attempt = 1; attempt <= maxAttempts2; attempt++) {
+                const queryResult2 = await publicDataProvider.queryZSwapAndContractState(contractAddress).catch(() => null);
+                const stateCell2 = queryResult2 ? queryResult2[1] : null;
+                console.log('[redeploy] result[1] attempt ' + attempt + ':', stateCell2 === null ? 'null' : stateCell2 === undefined ? 'undefined' : typeof stateCell2);
+                if (stateCell2 !== null && stateCell2 !== undefined) {
+                  indexed2 = true;
+                  console.log('[redeploy] new contract state cell confirmed (attempt ' + attempt + ')');
+                  break;
+                }
+                if (attempt < maxAttempts2) await new Promise(r => setTimeout(r, intervalMs2));
+              }
+              if (!indexed2) {
+                throw new Error('[redeploy] new contract state cell never appeared after ' + maxAttempts2 + ' attempts — cannot submit');
+              }
+            }
           }
         }
 
