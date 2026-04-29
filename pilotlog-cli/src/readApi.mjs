@@ -1643,8 +1643,47 @@ app.get("/", (_req, res) => {
         await callPrivateStateProvider.set('airlogPrivateState', {});
         console.log('[tx-debug] AIR-213: in-memory privateStateProvider seeded with empty private state');
 
+        // AIR-214: Wrap publicDataProvider for submitCallTx with a logging+retry proxy.
+        // queryZSwapAndContractState returns [zswapState, contractState, ledgerParams] but the
+        // SDK calls deserializeContractState(state) with NO null guard on state — if the indexer
+        // has the contract action but state is still null, deserializeContractState(null) may
+        // return a truthy-but-empty ContractState that passes our outer poll check yet causes
+        // "expected a cell, received null" inside the WASM runtime (transactionContext cell null).
+        // This proxy logs the raw tuple and retries up to 5 times if result or result[1] is null.
+        const callPublicDataProvider = {
+          ...publicDataProvider,
+          queryZSwapAndContractState: async (addr, ...rest) => {
+            const maxRetries = 5;
+            const retryDelayMs = 3000;
+            let lastResult = null;
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+              lastResult = await publicDataProvider.queryZSwapAndContractState(addr, ...rest).catch(e => {
+                console.error('[tx-debug][AIR-214] queryZSwapAndContractState threw:', e.message);
+                return null;
+              });
+              const stateCell = lastResult ? lastResult[1] : null;
+              console.log('[tx-debug][AIR-214] queryZSwapAndContractState attempt', attempt,
+                'addr:', addr,
+                'result null?', lastResult === null,
+                'result[1] null?', stateCell === null,
+                'result[1] type:', stateCell === null ? 'null' : stateCell === undefined ? 'undefined' : typeof stateCell,
+                'result[1] keys:', stateCell && typeof stateCell === 'object' ? Object.keys(stateCell).join(',') : 'n/a'
+              );
+              if (lastResult !== null && stateCell !== null && stateCell !== undefined) {
+                return lastResult;
+              }
+              if (attempt < maxRetries) {
+                console.warn('[tx-debug][AIR-214] contractState cell null — retrying in', retryDelayMs / 1000, 's');
+                await new Promise(r => setTimeout(r, retryDelayMs));
+              }
+            }
+            console.error('[tx-debug][AIR-214] contractState cell still null after', maxRetries, 'retries — proceeding anyway');
+            return lastResult;
+          },
+        };
+
         const result = await submitCallTx(
-          { proofProvider, walletProvider, midnightProvider, publicDataProvider, privateStateProvider: callPrivateStateProvider },
+          { proofProvider, walletProvider, midnightProvider, publicDataProvider: callPublicDataProvider, privateStateProvider: callPrivateStateProvider },
           { compiledContract, contractAddress, circuitId: 'anchorEntry', privateStateId: 'airlogPrivateState', args: [recordHashBytes, anchoredAt] }
         );
 
