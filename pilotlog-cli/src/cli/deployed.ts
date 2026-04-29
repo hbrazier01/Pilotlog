@@ -490,6 +490,18 @@ async function main() {
     );
   }
 
+  // Ensure private state is initialized in the LevelDB provider.
+  // submitCallTx reads privateStateProvider.get(privateStateId) before invoking
+  // the circuit — if the entry is absent (fresh storage or new wallet), it returns
+  // null and the call fails with "private state null". Explicitly seed it here.
+  const existingPrivateState = await providers.privateStateProvider.get("airlogPrivateState");
+  if (!existingPrivateState) {
+    console.log("  [tx-debug] privateState not found in LevelDB — seeding initial state");
+    await providers.privateStateProvider.set("airlogPrivateState", createAirlogPrivateState());
+  } else {
+    console.log("  [tx-debug] privateState already present in LevelDB");
+  }
+
   // Build record hash: SHA-256 of a sample pilot log entry
   const sampleRecord = JSON.stringify({
     aircraft: "N12345",
