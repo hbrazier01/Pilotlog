@@ -1627,9 +1627,25 @@ app.get("/", (_req, res) => {
         const recordHashBytes = new Uint8Array(anchorHash.match(/.{2}/g).map(b => parseInt(b, 16)));
         const anchoredAt = BigInt(Math.floor(Date.now() / 1000));
 
+        // AIR-213: submitCallTx requires a privateStateProvider + privateStateId.
+        // The SDK calls privateStateProvider.get(privateStateId) and asserts non-null.
+        // AirLog private state is empty ({}) — use an in-memory provider seeded here.
+        const _callPrivateStateStore = new Map();
+        const callPrivateStateProvider = {
+          setContractAddress: (addr) => { console.log('[tx-debug] callPrivateStateProvider.setContractAddress:', addr); },
+          getContractAddress: () => contractAddress,
+          get: async (id) => _callPrivateStateStore.get(id) ?? null,
+          set: async (id, val) => { _callPrivateStateStore.set(id, val); },
+          setSigningKey: async (addr, key) => { _callPrivateStateStore.set('__signingKey__' + addr, key); },
+          getSigningKey: async (addr) => _callPrivateStateStore.get('__signingKey__' + addr) ?? null,
+        };
+        // Seed initial empty private state so the SDK find it on get()
+        await callPrivateStateProvider.set('airlogPrivateState', {});
+        console.log('[tx-debug] AIR-213: in-memory privateStateProvider seeded with empty private state');
+
         const result = await submitCallTx(
-          { proofProvider, walletProvider, midnightProvider, publicDataProvider },
-          { compiledContract, contractAddress, circuitId: 'anchorEntry', args: [recordHashBytes, anchoredAt] }
+          { proofProvider, walletProvider, midnightProvider, publicDataProvider, privateStateProvider: callPrivateStateProvider },
+          { compiledContract, contractAddress, circuitId: 'anchorEntry', privateStateId: 'airlogPrivateState', args: [recordHashBytes, anchoredAt] }
         );
 
         // Accept txHash or txId depending on SDK version; if wallet resolves with undefined, generate a local fallback ref
