@@ -84,6 +84,69 @@ export async function getMidnameInfo(midname) {
 }
 
 /**
+ * Resolve a midname to its target address.
+ * Wraps resolveDomain for use in verification flows.
+ *
+ * @param {string} midname - e.g. "pilot.night"
+ * @returns {Promise<string|null>} - resolved address or null
+ */
+export async function resolveMidnameToAddress(midname) {
+  if (!midname) return null;
+  try {
+    const provider = getDefaultProvider(NETWORK_ID);
+    const result = await resolveDomain(midname, { provider });
+    if (!result.success) return null;
+    const target = result.value;
+    return (target && target.address) ? target.address : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Verify that a midname resolves to the given wallet address.
+ *
+ * @param {string} midname
+ * @param {string} walletAddress
+ * @returns {Promise<boolean>}
+ */
+export async function verifyMidnameOwnership(midname, walletAddress) {
+  if (!midname || !walletAddress) return false;
+  const resolved = await resolveMidnameToAddress(midname);
+  return resolved === walletAddress;
+}
+
+/**
+ * Reverse lookup: address → midname.
+ *
+ * NOT AVAILABLE: @midnames/sdk v2.0.0 does not expose reverse lookup.
+ * This method is a placeholder for future integration when Midnames
+ * exposes a reverse-lookup API or indexer path.
+ *
+ * @param {string} _walletAddress
+ * @returns {Promise<null>} - always null until SDK exposes reverse lookup
+ */
+export async function getMidnameForWallet(_walletAddress) {
+  // Intentionally unavailable — Midnames SDK does not support reverse lookup.
+  // Re-implement when https://midnames.io or the SDK exposes /reverse or an indexer.
+  return null;
+}
+
+/**
+ * Resolve a DID for a given midname.
+ *
+ * PLACEHOLDER: DID integration is not yet available.
+ * This method is reserved for future W3C DID / Midnight DID support.
+ *
+ * @param {string} _midname
+ * @returns {Promise<null>} - always null until DID resolution is available
+ */
+export async function resolveDidForMidname(_midname) {
+  // Placeholder — DID resolution is not yet implemented.
+  return null;
+}
+
+/**
  * Format wallet address for display: truncate middle.
  *
  * @param {string} address

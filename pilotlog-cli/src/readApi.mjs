@@ -21,6 +21,7 @@ const AIRCRAFT_PATH = path.join(DATA_DIR, "aircraft.json");
 const VERIFICATION_PATH = path.join(DATA_DIR, "verification.json");
 const MAINTENANCE_PATH = path.join(DATA_DIR, "maintenance.json");
 const WALLET_PATH = path.join(DATA_DIR, "wallet.json");
+const IDENTITY_PATH = path.join(DATA_DIR, "identity.json");
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(ENTRIES_PATH)) fs.writeFileSync(ENTRIES_PATH, "[]");
@@ -75,6 +76,25 @@ if (!fs.existsSync(VERIFICATION_PATH)) {
   );
 }
 
+if (!fs.existsSync(IDENTITY_PATH)) {
+  fs.writeFileSync(
+    IDENTITY_PATH,
+    JSON.stringify(
+      {
+        walletAddress: null,
+        midname: null,
+        did: null,
+        midnameVerified: false,
+        verifiedAt: null,
+        identitySource: "wallet",
+        networkId: "preprod"
+      },
+      null,
+      2
+    )
+  );
+}
+
 function readEntries() {
   try {
     const raw = fs.readFileSync(ENTRIES_PATH, "utf-8");
@@ -100,6 +120,19 @@ function saveWalletSession(session) {
   fs.writeFileSync(WALLET_PATH, JSON.stringify(session, null, 2));
 }
 
+function readIdentity() {
+  try {
+    if (!fs.existsSync(IDENTITY_PATH)) return null;
+    return JSON.parse(fs.readFileSync(IDENTITY_PATH, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+function saveIdentity(identity) {
+  fs.writeFileSync(IDENTITY_PATH, JSON.stringify(identity, null, 2));
+}
+
 // --- Shared wallet nav helpers ---
 
 function truncateWalletAddress(address) {
@@ -108,10 +141,12 @@ function truncateWalletAddress(address) {
 }
 
 // Returns the wallet nav element HTML (SSR). Always a <button> — JS updates state in-place.
-function walletNavHtml(session) {
+function walletNavHtml(session, identity) {
   if (session && session.address) {
-    const short = truncateWalletAddress(session.address);
-    return `<button id="wallet-nav-link" data-connected="true" title="${session.address}" style="background:none;border:none;color:#22c55e;font-size:14px;padding:5px 12px;cursor:default;font-weight:600;">&#9679; ${short}</button>`;
+    const displayLabel = (identity && identity.midnameVerified && identity.midname)
+      ? identity.midname
+      : truncateWalletAddress(session.address);
+    return `<button id="wallet-nav-link" data-connected="true" title="${session.address}" style="background:none;border:none;color:#22c55e;font-size:14px;padding:5px 12px;cursor:default;font-weight:600;">&#9679; ${displayLabel}</button>`;
   }
   return `<button id="wallet-nav-link" onclick="connectWalletHeader()" style="background:none;border:1px solid #374151;color:#9aa3ff;font-size:14px;padding:5px 12px;border-radius:6px;cursor:pointer;font-weight:600;">Connect Wallet</button>`;
 }
@@ -143,8 +178,8 @@ function setWalletButtonDisconnected(el) {
 // Inline script injected into every main page — refreshes wallet nav from server session.
 const walletStatusScript = `
 <script>
-function _walletSetConnected(el, addr) {
-  const short = addr.length > 16 ? addr.slice(0, 8) + '\\u2026' + addr.slice(-6) : addr;
+function _walletSetConnected(el, addr, displayLabel) {
+  const short = displayLabel || (addr.length > 16 ? addr.slice(0, 8) + '\\u2026' + addr.slice(-6) : addr);
   el.textContent = '\\u25CF ' + short;
   el.setAttribute('title', addr);
   el.setAttribute('data-connected', 'true');
@@ -167,11 +202,17 @@ function _walletSetDisconnected(el) {
 }
 
 (function() {
-  fetch('/wallet/status').then(r => r.json()).then(data => {
+  Promise.all([
+    fetch('/wallet/status').then(r => r.json()).catch(() => ({})),
+    fetch('/identity').then(r => r.json()).catch(() => ({}))
+  ]).then(([walletData, identityData]) => {
     const el = document.getElementById('wallet-nav-link');
     if (!el) return;
-    if (data.connected && data.session && data.session.address) {
-      _walletSetConnected(el, data.session.address);
+    if (walletData.connected && walletData.session && walletData.session.address) {
+      const displayLabel = (identityData && identityData.midnameVerified && identityData.midname)
+        ? identityData.midname
+        : null;
+      _walletSetConnected(el, walletData.session.address, displayLabel);
     } else {
       _walletSetDisconnected(el);
     }
@@ -230,7 +271,13 @@ async function connectWalletHeader() {
     });
     if (!resp.ok) throw new Error('Server rejected wallet session');
 
-    if (el) { _walletSetConnected(el, addr); }
+    // Refresh identity display after connect (midname may be verified for this address)
+    fetch('/identity').then(r => r.json()).then(identity => {
+      const displayLabel = (identity && identity.midnameVerified && identity.midname) ? identity.midname : null;
+      if (el) { _walletSetConnected(el, addr, displayLabel); }
+    }).catch(() => {
+      if (el) { _walletSetConnected(el, addr); }
+    });
   } catch (err) {
     if (el) { _walletSetDisconnected(el); }
     alert('Wallet connection failed: ' + err.message);
@@ -616,6 +663,7 @@ app.get("/", (_req, res) => {
   const recent = entries.slice(0, 10);
   const profile = readProfile();
   const walletSession = readWalletSession();
+  const identity = readIdentity();
 
   const pilotName = profile?.pilot?.fullName || "Pilot";
 
@@ -752,7 +800,8 @@ app.get("/", (_req, res) => {
   <div class="topbar">
     <div class="brand">PilotLog</div>
     <div class="nav">
-      ${walletNavHtml(walletSession)}
+      ${walletNavHtml(walletSession, identity)}
+      <a href="/identity/card">Identity</a>
       <a href="/pilot-report">Pilot Report →</a>
     </div>
   </div>
@@ -4934,6 +4983,244 @@ if (fs.existsSync(midnightSdkDir)) {
 const deploymentJsonPath = path.resolve(process.cwd(), "deployment.json");
 // AIR-203: Always register GET /deployment.json — reads file on demand so the route
 // works even if the file is created after server start (e.g. first deploy in session).
+// ─── Pilot Identity ───────────────────────────────────────────────────────────
+
+// GET /identity — return current identity JSON
+app.get("/identity", (_req, res) => {
+  const identity = readIdentity() || {
+    walletAddress: null, midname: null, did: null,
+    midnameVerified: false, verifiedAt: null,
+    identitySource: "wallet", networkId: "preprod"
+  };
+  res.json(identity);
+});
+
+// POST /identity/verify-midname — verify midname against connected wallet and persist
+app.post("/identity/verify-midname", async (req, res) => {
+  const { midname } = req.body || {};
+  if (!midname || typeof midname !== "string" || !midname.trim()) {
+    return res.status(400).json({ ok: false, error: "midname required" });
+  }
+  const cleanMidname = midname.trim().toLowerCase();
+  const session = readWalletSession();
+  if (!session || !session.address) {
+    return res.status(400).json({ ok: false, error: "No wallet connected. Connect wallet first." });
+  }
+
+  // Forward-lookup: resolve midname → address via @midnames/sdk
+  let resolvedAddress = null;
+  try {
+    const { getDefaultProvider, resolveDomain } = await import("@midnames/sdk");
+    const provider = getDefaultProvider("preprod");
+    const result = await resolveDomain(cleanMidname, { provider });
+    if (result && result.success && result.value && result.value.address) {
+      resolvedAddress = result.value.address;
+    }
+  } catch (err) {
+    console.warn("[identity] midname resolve failed:", err.message);
+  }
+
+  if (!resolvedAddress) {
+    return res.status(422).json({ ok: false, error: "Midname could not be resolved. Check spelling and try again." });
+  }
+
+  if (resolvedAddress !== session.address) {
+    return res.status(422).json({
+      ok: false,
+      error: "Midname resolves to a different address. Verify you own this midname.",
+      resolved: resolvedAddress,
+      connected: session.address
+    });
+  }
+
+  const identity = {
+    walletAddress: session.address,
+    midname: cleanMidname,
+    did: null,
+    midnameVerified: true,
+    verifiedAt: new Date().toISOString(),
+    identitySource: "midname",
+    networkId: "preprod"
+  };
+  saveIdentity(identity);
+  console.log("[identity] midname verified and persisted:", cleanMidname, "->", session.address);
+  res.json({ ok: true, identity });
+});
+
+// POST /identity/clear-midname — clear verified midname, revert to wallet identity
+app.post("/identity/clear-midname", (req, res) => {
+  const session = readWalletSession();
+  const identity = {
+    walletAddress: session ? session.address : null,
+    midname: null,
+    did: null,
+    midnameVerified: false,
+    verifiedAt: null,
+    identitySource: "wallet",
+    networkId: "preprod"
+  };
+  saveIdentity(identity);
+  res.json({ ok: true, identity });
+});
+
+// GET /identity/card — Pilot Identity HTML page
+app.get("/identity/card", (_req, res) => {
+  const session = readWalletSession();
+  const identity = readIdentity() || {};
+  const walletConnected = !!(session && session.address);
+  const walletDisplay = walletConnected
+    ? (session.address.length > 16 ? session.address.slice(0, 10) + "…" + session.address.slice(-8) : session.address)
+    : "Not connected";
+  const midnameDisplay = identity.midnameVerified && identity.midname ? identity.midname : "—";
+  const midnameStatus = identity.midnameVerified ? "Verified" : (identity.midname ? "Unresolved" : "Not set");
+  const midnameStatusColor = identity.midnameVerified ? "#22c55e" : "#f59e0b";
+  const verifiedAt = identity.verifiedAt ? String(identity.verifiedAt).slice(0, 10) : null;
+
+  res.type("html").send(`<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Pilot Identity — PilotLog</title>
+  <style>
+  body { font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif; background:#0b0f18; color:#fff; margin:0; }
+  .wrap { max-width:680px; margin:0 auto; padding:32px 20px; }
+  .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:28px; flex-wrap:wrap; gap:12px; }
+  .brand { font-size:20px; font-weight:800; letter-spacing:-0.5px; }
+  .nav a { color:#9aa3ff; text-decoration:none; font-size:14px; margin-left:16px; }
+  .nav a:hover { color:#fff; }
+  h1 { font-size:24px; font-weight:800; margin:0 0 6px; }
+  .subtitle { color:#b6b9c6; font-size:14px; margin-bottom:24px; }
+  .card { background:#121624; border:1px solid #222843; border-radius:14px; padding:20px; margin-bottom:16px; }
+  .card-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:#b6b9c6; margin-bottom:14px; }
+  .identity-row { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid #1f2440; }
+  .identity-row:last-child { border-bottom:none; }
+  .identity-label { font-size:13px; color:#b6b9c6; }
+  .identity-value { font-size:13px; font-weight:600; }
+  .status-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+  .verify-form { margin-top:20px; }
+  .verify-form label { display:block; font-size:11px; color:#b6b9c6; text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px; }
+  .verify-form input { width:100%; box-sizing:border-box; background:#0b0f18; border:1px solid #222843; border-radius:8px; padding:10px 12px; color:#fff; font-size:14px; }
+  .verify-form input:focus { outline:none; border-color:#1a3a8f; }
+  .btn { display:inline-block; padding:10px 20px; background:#1a3a8f; color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; margin-top:10px; }
+  .btn:hover { background:#1e46b0; }
+  .btn-outline { background:transparent; border:1px solid #222843; color:#9aa3ff; }
+  .btn-outline:hover { color:#fff; }
+  .btn-danger { background:transparent; border:1px solid #374151; color:#ef4444; }
+  .btn-danger:hover { background:#1a0a0a; }
+  .msg { margin-top:12px; font-size:13px; padding:10px 14px; border-radius:8px; display:none; }
+  .msg.ok { background:#0d1f10; color:#22c55e; border:1px solid #1a3a1a; }
+  .msg.err { background:#1a0a0a; color:#ef4444; border:1px solid #3a1a1a; }
+  .future-tag { font-size:11px; background:#1a1f30; color:#6b7280; padding:2px 8px; border-radius:6px; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">PilotLog</div>
+    <div class="nav">
+      ${walletNavHtml(session, identity)}
+      <a href="/">Home</a>
+      <a href="/pilot-report">Pilot Report →</a>
+    </div>
+  </div>
+
+  <h1>Pilot Identity</h1>
+  <div class="subtitle">Verify your Midnight Midname and manage your on-chain identity layer.</div>
+
+  <div class="card">
+    <div class="card-title">Identity Status</div>
+    <div class="identity-row">
+      <span class="identity-label">Wallet</span>
+      <span class="identity-value" style="color:${walletConnected ? '#22c55e' : '#ef4444'};">
+        <span class="status-dot" style="background:${walletConnected ? '#22c55e' : '#ef4444'};"></span>
+        ${walletConnected ? walletDisplay : "Not connected"}
+      </span>
+    </div>
+    <div class="identity-row">
+      <span class="identity-label">Midname</span>
+      <span class="identity-value" style="color:${midnameStatusColor};">
+        <span class="status-dot" style="background:${midnameStatusColor};"></span>
+        ${midnameDisplay} <span style="font-size:11px;color:#6b7280;font-weight:400;">${midnameStatus}</span>
+        ${verifiedAt ? `<span style="font-size:11px;color:#6b7280;font-weight:400;margin-left:8px;">· ${verifiedAt}</span>` : ""}
+      </span>
+    </div>
+    <div class="identity-row">
+      <span class="identity-label">DID</span>
+      <span class="identity-value" style="color:#6b7280;">
+        <span class="future-tag">Future / Unavailable</span>
+      </span>
+    </div>
+    <div class="identity-row">
+      <span class="identity-label">Network</span>
+      <span class="identity-value" style="color:#9aa3ff;">preprod</span>
+    </div>
+  </div>
+
+  ${walletConnected ? `
+  <div class="card">
+    <div class="card-title">Verify Midname</div>
+    <p style="font-size:13px;color:#b6b9c6;margin:0 0 14px;line-height:1.6;">
+      Enter your Midnight Midname (e.g. <code style="color:#9aa3ff;">pilot.night</code>).
+      The app will resolve it and verify it matches your connected wallet address.
+    </p>
+    <div class="verify-form">
+      <label>Midname</label>
+      <input type="text" id="midname-input" placeholder="e.g. pilot.night" value="${identity.midname || ''}" />
+      <br/>
+      <button class="btn" onclick="verifyMidname()">Verify &amp; Save</button>
+      ${identity.midnameVerified ? `<button class="btn btn-danger" onclick="clearMidname()" style="margin-left:10px;">Clear Midname</button>` : ""}
+    </div>
+    <div class="msg" id="verify-msg"></div>
+  </div>
+  ` : `
+  <div class="card" style="text-align:center;color:#b6b9c6;font-size:14px;">
+    Connect your wallet to verify a Midname.
+  </div>
+  `}
+
+  <script>
+  async function verifyMidname() {
+    const midname = document.getElementById('midname-input').value.trim();
+    const msg = document.getElementById('verify-msg');
+    msg.style.display = 'none';
+    if (!midname) { showMsg('err', 'Enter a midname.'); return; }
+    try {
+      const resp = await fetch('/identity/verify-midname', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ midname })
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        showMsg('ok', 'Midname verified! Reloading…');
+        setTimeout(() => location.reload(), 1200);
+      } else {
+        showMsg('err', data.error || 'Verification failed.');
+      }
+    } catch (e) {
+      showMsg('err', 'Request failed: ' + e.message);
+    }
+  }
+
+  async function clearMidname() {
+    const resp = await fetch('/identity/clear-midname', { method: 'POST' });
+    const data = await resp.json();
+    if (data.ok) location.reload();
+  }
+
+  function showMsg(type, text) {
+    const msg = document.getElementById('verify-msg');
+    msg.className = 'msg ' + type;
+    msg.textContent = text;
+    msg.style.display = 'block';
+  }
+  </script>
+</div>
+</body>
+</html>`);
+});
+
 app.get("/deployment.json", (_req, res) => {
   try {
     if (!fs.existsSync(deploymentJsonPath)) {
