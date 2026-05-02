@@ -1816,8 +1816,9 @@ app.get("/", (_req, res) => {
         );
         console.log('[ui-sync] submitCallTx resolved', result);
 
-        // Accept txHash or txId depending on SDK version; if wallet resolves with undefined, generate a local fallback ref
-        txHash = result?.public?.txHash || result?.public?.txId || ('submitted-' + Date.now());
+        // Accept txHash or txId depending on SDK version; watchForTxData returns { txHash, txId, status } at top level.
+        // Fall back to result.public.* for older SDK shapes, then a local fallback ref.
+        txHash = result?.txHash || result?.txId || result?.public?.txHash || result?.public?.txId || ('submitted-' + Date.now());
         console.log('[tx] tx ref:', txHash);
 
         // Chain confirmation success — update button immediately
@@ -1949,8 +1950,9 @@ app.get("/", (_req, res) => {
               const status = anchorObj?.status || e.anchorStatus || (e.anchored ? 'anchored' : null);
               const explorerNetwork = anchorObj?.network || 'preprod';
               const networkLabel = explorerNetwork === 'preview' ? 'Preview' : explorerNetwork === 'preprod' ? 'PreProd' : explorerNetwork;
-              const explorerLink = (status === 'anchored' && anchorObj?.tx)
-                ? \`<br><a href="https://explorer.1am.xyz/tx/\${anchorObj.tx}?network=\${explorerNetwork}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;font-weight:500;text-decoration:none;">View on chain →</a>\`
+              const anchorTx = anchorObj?.tx || anchorObj?.txHash || null;
+              const explorerLink = (status === 'anchored' && anchorTx)
+                ? \`<br><a href="https://explorer.1am.xyz/tx/\${anchorTx}?network=\${explorerNetwork}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;font-weight:500;text-decoration:none;">View on chain →</a>\`
                 : '';
               const statusBadge = status === 'anchored'
                 ? \`<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Saved to chain (\${networkLabel})</span>\${explorerLink}\`
@@ -4902,8 +4904,9 @@ app.get("/pilot-report", (_req, res) => {
         if (anchor?.status === "anchored") {
           const net = anchor.network || "preprod";
           const netLabel = net === "preview" ? "Preview" : net === "preprod" ? "PreProd" : net;
-          const explorerLink = anchor.tx
-            ? ` <a href="https://explorer.1am.xyz/tx/${anchor.tx}?network=${net}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;text-decoration:none;">View →</a>`
+          const anchorTxId = anchor.tx || anchor.txHash || null;
+          const explorerLink = anchorTxId
+            ? ` <a href="https://explorer.1am.xyz/tx/${anchorTxId}?network=${net}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;text-decoration:none;">View →</a>`
             : "";
           chainCell = `<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Saved to chain (${netLabel})</span>${explorerLink}`;
         }
