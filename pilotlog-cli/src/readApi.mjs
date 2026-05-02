@@ -1444,30 +1444,54 @@ app.get("/", (_req, res) => {
         const contractMod = await import('/contract/compiled/airlog/index.js');
         const { Contract } = contractMod;
 
-        // AIR-182: Bridge cross-WASM ContractMaintenanceAuthority mismatch.
-        // The SDK's deployContract creates a CMA from its own WASM and sets it on
-        // ContractState (from the compiled contract's WASM). The _assertClass instanceof
-        // check fails across WASM boundaries. Patch the setter to serialize/deserialize.
-        const CMA = contractMod.ContractMaintenanceAuthority;
-        const ContractStateClass = contractMod.ContractState;
-        if (CMA && ContractStateClass) {
-          const cmaDesc = Object.getOwnPropertyDescriptor(ContractStateClass.prototype, 'maintenanceAuthority');
-          if (cmaDesc && cmaDesc.set) {
-            Object.defineProperty(ContractStateClass.prototype, 'maintenanceAuthority', {
-              get: cmaDesc.get,
-              set(authority) {
-                if (authority instanceof CMA) {
-                  cmaDesc.set.call(this, authority);
-                } else {
-                  // Cross-WASM: round-trip through serialize/deserialize
-                  cmaDesc.set.call(this, CMA.deserialize(authority.serialize()));
-                }
-              },
-              configurable: true,
-              enumerable: cmaDesc.enumerable,
-            });
-            console.log('[AIR-182] ContractState.maintenanceAuthority setter patched for cross-WASM CMA');
-          }
+        // AIR-227: Bridge cross-WASM ContractMaintenanceAuthority mismatch.
+        // ContractMaintenanceAuthority and ContractState are NOT exported from the
+        // bundled contract module, so we cannot reference their classes directly.
+        // Instead, wrap Contract.prototype.initialState to intercept the returned
+        // ContractState instance at runtime, extract the CMA class from its prototype
+        // (via the maintenanceAuthority getter), and patch the setter to bridge
+        // cross-WASM CMAs via serialize/deserialize.
+        {
+          let cmaPatched = false;
+          const origInitialState = Contract.prototype.initialState;
+          Contract.prototype.initialState = function(context, ...args) {
+            const result = origInitialState.call(this, context, ...args);
+            if (!cmaPatched && result?.currentContractState) {
+              const cs = result.currentContractState;
+              const proto = Object.getPrototypeOf(cs);
+              const desc = Object.getOwnPropertyDescriptor(proto, 'maintenanceAuthority');
+              if (desc && desc.set) {
+                // Get the CMA class from the getter. Even if the initial state has no
+                // CMA set (ptr=0), __wrap(0) returns an object whose constructor is
+                // the contract-native ContractMaintenanceAuthority class.
+                let CMAClass = null;
+                try {
+                  const inst = desc.get.call(cs);
+                  if (inst) CMAClass = inst.constructor;
+                } catch (_) { /* getter may throw for null pointer */ }
+
+                Object.defineProperty(proto, 'maintenanceAuthority', {
+                  get: desc.get,
+                  set(authority) {
+                    if (!authority || (CMAClass && authority instanceof CMAClass)) {
+                      desc.set.call(this, authority);
+                    } else if (CMAClass && typeof authority.serialize === 'function') {
+                      // Cross-WASM: bridge by serializing and deserializing into the
+                      // contract's own ContractMaintenanceAuthority class.
+                      desc.set.call(this, CMAClass.deserialize(authority.serialize()));
+                    } else {
+                      desc.set.call(this, authority);
+                    }
+                  },
+                  configurable: true,
+                  enumerable: desc.enumerable,
+                });
+                cmaPatched = true;
+                console.log('[AIR-227] ContractState.maintenanceAuthority setter patched for cross-WASM CMA');
+              }
+            }
+            return result;
+          };
         }
 
         compiledContract = CompiledContract
