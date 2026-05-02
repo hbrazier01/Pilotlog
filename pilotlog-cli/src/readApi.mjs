@@ -1793,6 +1793,27 @@ app.get("/", (_req, res) => {
         btn.disabled = false;
         showToast('Flight anchored on-chain — saving record...');
 
+        // AIR-228: Immediately prepend local entry row so table updates without waiting for server
+        const txRef = txHash.startsWith('submitted-') ? txHash : ('submitted-' + Date.now());
+        const tbody = document.getElementById('recent-flights-tbody');
+        if (tbody) {
+          const submittedBadge = '<span style="color:#a78bfa;font-size:11px;font-weight:600;">&#x29D6; Submitted</span>';
+          const newRow = \`<tr id="airlog-pending-row">
+            <td>\${body.date}</td>
+            <td>\${body.aircraftId}</td>
+            <td>\${body.from || ''} → \${body.to || ''}</td>
+            <td>\${body.totalTime}</td>
+            <td></td>
+            <td class="muted">\${(body.remarks || '').replaceAll('<','&lt;').replaceAll('>','&gt;')}</td>
+            <td>\${submittedBadge}</td>
+          </tr>\`;
+          // Remove stale placeholder if present
+          const emptyRow = tbody.querySelector('td[colspan="7"]');
+          if (emptyRow) tbody.innerHTML = '';
+          tbody.insertAdjacentHTML('afterbegin', newRow);
+        }
+        console.log('[tx-debug] AIR-228: local row prepended with txRef:', txRef);
+
       } catch (err) {
         btn.textContent = origBtnText;
         btn.disabled = false;
@@ -1900,6 +1921,8 @@ app.get("/", (_req, res) => {
                 ? '<span style="color:#ef4444;font-size:11px;font-weight:600;">&#x2717; Failed</span>'
                 : (status === 'pending_anchor' || status === 'anchored_pending')
                 ? '<span style="color:#f59e0b;font-size:11px;font-weight:600;">&#x29D7; Verified</span>'
+                : status === 'submitted'
+                ? '<span style="color:#a78bfa;font-size:11px;font-weight:600;">&#x29D6; Submitted</span>'
                 : '<span style="color:#718096;font-size:11px;">—</span>';
               return \`<tr>
                 <td>\${String(e.date || '').slice(0, 10)}</td>
