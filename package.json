@@ -17,6 +17,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@midnames/sdk": "^2.0.0",
     "buffer": "^6.0.3",
     "express": "^5.2.1",
     "puppeteer": "^24.40.0"
