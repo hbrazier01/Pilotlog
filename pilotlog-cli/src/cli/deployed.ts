@@ -276,24 +276,61 @@ async function createProviders(
   };
 
   console.log(`  [providers] httpClientProofProvider:`, typeof httpClientProofProvider);
+  console.log(`  [providers] coinPublicKey:`, coinPublicKey);
+
+  const basePublicDataProvider = indexerPublicDataProvider(
+    ACTIVE_CONFIG.indexer,
+    ACTIVE_CONFIG.indexerWS
+  );
+
+  // Wrap publicDataProvider to instrument contractState reads
+  const publicDataProvider = new Proxy(basePublicDataProvider, {
+    get(target, prop) {
+      const val = (target as any)[prop];
+      if (prop === 'contractStateOf') {
+        return async (...args: unknown[]) => {
+          const result = await (val as (...a: unknown[]) => Promise<unknown>).apply(target, args);
+          console.log(`  [provider] contractState for ${args[0]}:`, result == null ? 'NULL' : 'present');
+          return result;
+        };
+      }
+      if (typeof val === 'function') return val.bind(target);
+      return val;
+    },
+  });
+
+  const basePrivateStateProvider = levelPrivateStateProvider({
+    privateStateStoreName: "airlog-private-state",
+    accountId: coinPublicKey,
+    privateStoragePasswordProvider: () => storagePassword,
+  });
+
+  // Wrap privateStateProvider to instrument get/set
+  const privateStateProvider = new Proxy(basePrivateStateProvider, {
+    get(target, prop) {
+      const val = (target as any)[prop];
+      if (prop === 'get') {
+        return async (...args: unknown[]) => {
+          const result = await (val as (...a: unknown[]) => Promise<unknown>).apply(target, args);
+          console.log(`  [provider] privateState get(${args[0]}):`, result == null ? 'NULL' : 'present');
+          return result;
+        };
+      }
+      if (typeof val === 'function') return val.bind(target);
+      return val;
+    },
+  });
 
   return {
     walletProvider: walletAndMidnight,
     midnightProvider: walletAndMidnight,
-    publicDataProvider: indexerPublicDataProvider(
-      ACTIVE_CONFIG.indexer,
-      ACTIVE_CONFIG.indexerWS
-    ),
+    publicDataProvider,
     zkConfigProvider,
     proofProvider: httpClientProofProvider(
       ACTIVE_CONFIG.proofServer,
       zkConfigProvider as any
     ),
-    privateStateProvider: levelPrivateStateProvider({
-      privateStateStoreName: "airlog-private-state",
-      accountId: coinPublicKey,
-      privateStoragePasswordProvider: () => storagePassword,
-    }),
+    privateStateProvider,
   };
 }
 
@@ -502,8 +539,13 @@ async function main() {
     console.log("  [tx-debug] privateState already present in LevelDB");
   }
 
-  // Build record hash: SHA-256 of a sample pilot log entry
+  // Resolve pilot identity from wallet address
+  const pilotId = walletCtx.unshieldedKeystore.getBech32Address();
+  console.log(`  pilotId (wallet): ${pilotId}`);
+
+  // Build record hash: SHA-256 of a pilot log entry bound to pilot identity
   const sampleRecord = JSON.stringify({
+    pilotId,
     aircraft: "N12345",
     date: "2026-04-12",
     totalTime: 1234.5,
@@ -514,16 +556,38 @@ async function main() {
   );
   const anchoredAt = BigInt(Math.floor(Date.now() / 1000));
 
-  step(5, "anchorEntry");
-  console.log(`  recordHash: ${toHex(recordHash)}`);
-  console.log(`  anchoredAt: ${anchoredAt} (unix seconds)`);
-  console.log(`  note: no prior setup required — works on fresh contract`);
+  step(5, "Validate contract state");
+  const contractState = await (providers.publicDataProvider as any).contractStateOf?.(contractAddress)
+    ?? await (providers.publicDataProvider as any).getContractState?.(contractAddress);
+  if (contractState == null) {
+    fail(`Contract state is NULL — contract ${contractAddress} is not indexed`);
+    console.log("  Clearing deployment.json and re-running will deploy a fresh contract.");
+    fs.writeFileSync(DEPLOYMENT_JSON, JSON.stringify({}, null, 2));
+    process.exit(1);
+  }
+  ok(`Contract state present`);
+
+  step(6, "anchorEntry");
+
+  const payload = {
+    recordHash: toHex(recordHash),
+    anchoredAt: anchoredAt.toString(),
+    contractAddress,
+    circuitId: 'anchorEntry',
+    pilotId,
+  };
+  console.log('[anchor-debug] payload:', JSON.stringify(payload, null, 2));
+  console.log(`  recordHash bytes: ${recordHash.length} bytes`);
+  console.log(`  anchoredAt type: ${typeof anchoredAt} = ${anchoredAt}`);
 
   const anchorTxData = await deployedContract.callTx.anchorEntry(recordHash, anchoredAt);
 
   ok(`SUCCESS`);
   console.log(`  tx:       ${anchorTxData.public.txId}`);
   console.log(`  block:    ${anchorTxData.public.blockHeight}`);
+  console.log(`[tx-debug] chainStatus: submitted`);
+  console.log(`[tx-debug] txHash: ${anchorTxData.public.txId}`);
+  console.log(`[tx-debug] entry: ${JSON.stringify({ hash: toHex(recordHash), chainStatus: 'submitted', txHash: anchorTxData.public.txId })}}`);
 
   console.log("\n╔══════════════════════════════════════════════════╗");
   console.log("║  DEMO COMPLETE                                   ║");
