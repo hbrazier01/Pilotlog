@@ -21,8 +21,8 @@ import { canonicalizeLogbook, buildAnchorPayload } from "../lib/canonicalize-ent
 const _require = createRequire(import.meta.url);
 const _dir = dirname(fileURLToPath(import.meta.url));
 
-const CONTRACT_CJS = resolve(_dir, "../../compact/contracts/airlog/src/managed/airlog/contract/index.cjs");
-const RUNTIME_JS = resolve(_dir, "../../compact/contracts/airlog/node_modules/@midnight-ntwrk/compact-runtime/dist/runtime.js");
+const CONTRACT_CJS = resolve(_dir, "../../compact/contracts/airlog/src/managed/airlog/contract/index.js");
+const RUNTIME_JS = resolve(_dir, "../../compact/contracts/airlog/node_modules/@midnight-ntwrk/compact-runtime/dist/index.js");
 
 function loadCompactDeps() {
   if (!existsSync(CONTRACT_CJS) || !existsSync(RUNTIME_JS)) {
@@ -47,23 +47,19 @@ function dummyCoinPublicKey() {
   return { bytes: new Uint8Array(32).fill(1) };
 }
 
-function createCircuitContext(contract, CompactRuntime) {
+function initializeContract(contract, CompactRuntime) {
+  const coinPublicKey = dummyCoinPublicKey();
   const stateResult = contract.initialState({
     initialPrivateState: {},
-    initialZswapLocalState: { coinPublicKey: dummyCoinPublicKey() },
+    initialZswapLocalState: { coinPublicKey },
   });
-  return {
-    originalState: stateResult.currentContractState,
-    currentPrivateState: stateResult.currentPrivateState,
-    currentZswapLocalState: {
-      ...stateResult.currentZswapLocalState,
-      coinPublicKey: dummyCoinPublicKey(),
-    },
-    transactionContext: new CompactRuntime.QueryContext(
-      stateResult.currentContractState.data,
-      CompactRuntime.dummyContractAddress()
-    ),
-  };
+  const context = CompactRuntime.createCircuitContext(
+    CompactRuntime.dummyContractAddress(),
+    coinPublicKey,
+    stateResult.currentContractState,
+    stateResult.currentPrivateState
+  );
+  return { context, stateResult };
 }
 
 /**
@@ -114,11 +110,26 @@ export function simulateAirlogAnchor({ aircraft, entries }) {
   const { ContractModule, CompactRuntime } = compact;
 
   const contract = new ContractModule.Contract({});
-  const context = createCircuitContext(contract, CompactRuntime);
+  const { context, stateResult } = initializeContract(contract, CompactRuntime);
 
   const recordHashBytes = hexToBytes32(logbook.recordHash);
 
-  // anchorEntry(recordHash, anchoredAt) — no prior setup required
+  // Log contract state before execution to verify initialization
+  try {
+    const ledgerState = ContractModule.ledger(stateResult.currentContractState.data);
+    console.log("[contract-state] pre-anchorEntry state:", {
+      nextEntryId: ledgerState.nextEntryId.isEmpty()
+        ? { initialized: false }
+        : { initialized: true, size: String(ledgerState.nextEntryId.size()) },
+      entryStore: ledgerState.entryStore.isEmpty()
+        ? { initialized: false }
+        : { initialized: true, size: String(ledgerState.entryStore.size()) },
+    });
+  } catch (logErr) {
+    console.warn("[contract-state] could not inspect pre-execution state:", logErr?.message);
+  }
+
+  // anchorEntry(recordHash, anchoredAt) — member() guard handles fresh contract state
   const anchorResult = contract.circuits.anchorEntry(context, recordHashBytes, anchoredAt);
 
   return {

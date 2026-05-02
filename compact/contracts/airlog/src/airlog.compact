@@ -49,9 +49,11 @@ export ledger nextEntryId: Map<Uint<64>, Uint<64>>;
 export circuit anchorEntry(recordHash: Bytes<32>, anchoredAt: Uint<64>): Uint<64> {
   const sender = ownPublicKey();
 
-  // Read current counter (defaults to 0 if contract is fresh)
+  // Read current counter; guard against uninitialized state on fresh contract
   const COUNTER_KEY = 0 as Uint<64>;
-  const id: Uint<64> = nextEntryId.lookup(disclose(COUNTER_KEY));
+  const id: Uint<64> = nextEntryId.member(disclose(COUNTER_KEY))
+    ? nextEntryId.lookup(disclose(COUNTER_KEY))
+    : (0 as Uint<64>);
 
   const entry = EntryAnchor {
     owner: sender,
