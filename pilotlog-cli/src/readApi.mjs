@@ -1324,6 +1324,24 @@ app.get("/", (_req, res) => {
             if (!res.ok) throw new Error(\`ZK verifier key not found: \${circuitId} (status \${res.status})\`);
             return new Uint8Array(await res.arrayBuffer());
           },
+          // AIR-225: getProvingProvider calls getZKIR and getProverKey directly on the provider.
+          // Missing these caused: TypeError: e.getZKIR is not a function
+          async getZKIR(circuitId) {
+            console.log('[zk-debug] getZKIR called:', circuitId);
+            const zkirUrl = \`/contract/compiled/airlog/zkir/\${circuitId}.bzkir\`;
+            console.log('[tx-debug] getZKIR fetch:', zkirUrl);
+            const res = await fetch(zkirUrl);
+            if (!res.ok) throw new Error(\`ZK IR not found: \${circuitId} (status \${res.status})\`);
+            return new Uint8Array(await res.arrayBuffer());
+          },
+          async getProverKey(circuitId) {
+            console.log('[zk-debug] getProverKey called:', circuitId);
+            const proverUrl = \`/contract/compiled/airlog/keys/\${circuitId}.prover\`;
+            console.log('[tx-debug] getProverKey fetch:', proverUrl);
+            const res = await fetch(proverUrl);
+            if (!res.ok) throw new Error(\`ZK prover key not found: \${circuitId} (status \${res.status})\`);
+            return new Uint8Array(await res.arrayBuffer());
+          },
         };
 
         // AIR-178: browser-safe hex helpers (no Buffer / no .toString('hex'))
