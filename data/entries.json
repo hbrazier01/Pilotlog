@@ -10,7 +10,9 @@
     "dualReceived": 1.2,
     "dayLandings": 3,
     "nightLandings": 0,
-    "remarks": "First lesson — straight and level, climbs, descents, basic turns"
+    "remarks": "First lesson — straight and level, climbs, descents, basic turns",
+    "pilotId": "harrison.blake",
+    "unverified": true
   },
   {
     "id": "e002",
@@ -23,7 +25,9 @@
     "dualReceived": 1.4,
     "dayLandings": 5,
     "nightLandings": 0,
-    "remarks": "Pattern work, slow flight, stall recognition and recovery"
+    "remarks": "Pattern work, slow flight, stall recognition and recovery",
+    "pilotId": "harrison.blake",
+    "unverified": true
   },
   {
     "id": "e003",
@@ -36,7 +40,9 @@
     "dualReceived": 1.5,
     "dayLandings": 2,
     "nightLandings": 0,
-    "remarks": "Short cross-country with instructor — pilotage and dead reckoning, VFR chart reading"
+    "remarks": "Short cross-country with instructor — pilotage and dead reckoning, VFR chart reading",
+    "pilotId": "harrison.blake",
+    "unverified": true
   },
   {
     "id": "e004",
@@ -49,7 +55,9 @@
     "dualReceived": 1.3,
     "dayLandings": 4,
     "nightLandings": 0,
-    "remarks": "Ground reference maneuvers — turns around a point, S-turns across a road"
+    "remarks": "Ground reference maneuvers — turns around a point, S-turns across a road",
+    "pilotId": "harrison.blake",
+    "unverified": true
   },
   {
     "id": "e005",
@@ -63,6 +71,8 @@
     "dayLandings": 2,
     "nightLandings": 0,
     "remarks": "Annual — N12345 airframe inspection and verification",
+    "pilotId": "harrison.blake",
+    "unverified": true,
     "anchor": {
       "status": "anchored",
       "hash": "91ee77fd525d2e1d7d8eee3ed84c1584d2ca59f912cff8f691e9fad708bca23e",

@@ -24,6 +24,14 @@ export type FlightEntry = {
   dayLandings: number;
   nightLandings: number;
   remarks?: string;
+
+  // Pilot identity — wallet address (bech32); set at time of logging
+  // Must be a wallet address when wallet is connected; NOT a name string.
+  pilotId?: string;
+  // Verified Midnames handle (optional — only included if resolved via Midnames SDK)
+  midname?: string;
+  // true when pilotId was set before wallet connection (name-based legacy entry)
+  unverified?: boolean;
 };
 
 const baseDir = process.env.PILOTLOG_HOME

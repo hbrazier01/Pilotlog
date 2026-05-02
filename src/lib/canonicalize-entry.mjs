@@ -43,6 +43,16 @@ export function canonicalizeFlightEntry(entry, aircraftIdent) {
     xc: Number(entry.xc || 0),
   };
 
+  // Bind wallet identity to hash for verified entries only.
+  // Entries marked unverified (legacy name-based pilotId) are excluded from
+  // the identity binding so the hash remains stable without a wallet address.
+  if (!entry.unverified && entry.pilotId) {
+    canonical.pilotId = String(entry.pilotId).trim();
+    if (entry.midname) {
+      canonical.midname = String(entry.midname).trim();
+    }
+  }
+
   const canonicalJson = JSON.stringify(canonical);
   const recordHash = createHash("sha256").update(canonicalJson).digest("hex");
 
