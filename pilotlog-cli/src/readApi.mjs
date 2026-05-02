@@ -2015,8 +2015,9 @@ app.get("/", (_req, res) => {
           const status = anchorObj?.status || e.anchorStatus || (e.anchored ? "anchored" : null);
           const explorerNetwork = anchorObj?.network || "preprod";
           const networkLabel = explorerNetwork === "preview" ? "Preview" : explorerNetwork === "preprod" ? "PreProd" : explorerNetwork;
-          const explorerLink = (status === "anchored" && anchorObj?.tx)
-            ? `<br><a href="https://explorer.1am.xyz/tx/${anchorObj.tx}?network=${explorerNetwork}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;font-weight:500;text-decoration:none;">View on chain →</a>`
+          const anchorTx = anchorObj?.tx || anchorObj?.txHash || null;
+          const explorerLink = (status === "anchored" && anchorTx)
+            ? `<br><a href="https://explorer.1am.xyz/tx/${anchorTx}?network=${explorerNetwork}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;font-weight:500;text-decoration:none;">View on chain →</a>`
             : "";
           const statusBadge = status === "anchored"
             ? `<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Saved to chain (${networkLabel})</span>${explorerLink}`
