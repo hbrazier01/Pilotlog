@@ -251,6 +251,7 @@ async function createProviders(walletCtx: Awaited<ReturnType<typeof buildWallet>
 const args = process.argv.slice(2);
 const runTestTx = args.includes("--test-tx");
 const disconnect = args.includes("--disconnect");
+const forceReset = args.includes("--force-reset");
 
 async function main() {
   console.log("╔══════════════════════════════════════════════════╗");
@@ -310,9 +311,24 @@ async function main() {
   console.log(`  tNight balance: ${balance}`);
   console.log(`  CoinPublicKey:  ${coinPublicKey.slice(0, 16)}…`);
 
-  // ── Step 4: Store session ────────────────────────────────────────────────
+  // ── Step 4: Store session (with identity guard) ──────────────────────────
   console.log("\n[4] Storing wallet session");
   console.log("─".repeat(50));
+
+  const existingSession = loadWalletSession();
+  if (existingSession && existingSession.address !== address) {
+    console.error("\n  ✗ IDENTITY MISMATCH");
+    console.error("  This wallet does not match your pilot identity.");
+    console.error(`  Stored address:  ${existingSession.address}`);
+    console.error(`  New address:     ${address}`);
+    console.error("\n  To reset your pilot identity and use this wallet instead:");
+    console.error("    npm run wallet:connect -- --force-reset");
+    console.error("\n  WARNING: Resetting will unlink this session from prior entries.");
+    if (!forceReset) {
+      process.exit(1);
+    }
+    console.log("\n  --force-reset supplied. Overwriting stored identity.");
+  }
 
   saveWalletSession({
     address,
