@@ -17,14 +17,14 @@ if (typeof globalThis.Buffer === "undefined") {
 }
 
 export { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
-// CostModel and Transaction from @midnight-ntwrk/ledger-v8 intentionally omitted —
-// ledger-v8 is a Node/WASM package that is not browser-safe at the entry point.
-// Transaction.deserialize is replaced with a duck-typed proxy in readApi.mjs.
-// ledger-v8 types are still present transtively (midnight-js-contracts, httpClientProofProvider)
-// but are not explicitly re-exported here.
+// CostModel is exported for use in the official 1AM proving pattern:
+//   provingProvider = await api.getProvingProvider(zkConfigProvider)
+//   proofProvider = { proveTx: (tx) => tx.prove(provingProvider, CostModel.initialCostModel()) }
+// Transaction from ledger-v8 is still omitted — balanceTx uses a duck-typed proxy (AIR-143).
+// ledger-v8 is WASM and already present transitively; exporting CostModel adds no new bundle risk.
+export { CostModel } from "@midnight-ntwrk/ledger-v8";
 export { CompiledContract } from "@midnight-ntwrk/compact-js";
 export { submitCallTx, deployContract } from "@midnight-ntwrk/midnight-js-contracts";
-export { httpClientProofProvider } from "@midnight-ntwrk/midnight-js-http-client-proof-provider";
 // indexerPublicDataProvider is required by submitCallTx to query on-chain ZSwap state.
 // Missing this causes: TypeError: Cannot read properties of undefined (reading 'queryZSwapAndContractState')
 export { indexerPublicDataProvider } from "@midnight-ntwrk/midnight-js-indexer-public-data-provider";

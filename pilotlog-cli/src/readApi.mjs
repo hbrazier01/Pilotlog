@@ -1249,7 +1249,7 @@ app.get("/", (_req, res) => {
         //    @midnight-ntwrk/compact-runtime (WASM) which CDN cannot inline properly.
         // AIR-143: CostModel and Transaction from ledger-v8 removed from SDK entry —
         // balanceTx uses a duck-typed proxy instead of Transaction.deserialize.
-        ({ setNetworkId, CompiledContract, submitCallTx, deployContract: deployContractFn, httpClientProofProvider, indexerPublicDataProvider } =
+        ({ setNetworkId, CompiledContract, submitCallTx, deployContract: deployContractFn, CostModel, indexerPublicDataProvider } =
           await import('/js/midnight-sdk.js'));
 
         // AIR-135: Log each symbol immediately after SDK import to pinpoint undefined callables
@@ -1259,7 +1259,7 @@ app.get("/", (_req, res) => {
         console.log('CompiledContract.make', CompiledContract?.make);
         console.log('CompiledContract.withVacantWitnesses', CompiledContract?.withVacantWitnesses);
         console.log('setNetworkId', setNetworkId);
-        console.log('httpClientProofProvider', httpClientProofProvider);
+        console.log('CostModel', CostModel);
 
         setNetworkId(walletConfig.networkId);
 
@@ -1329,12 +1329,18 @@ app.get("/", (_req, res) => {
         // AIR-178: browser-safe hex helpers (no Buffer / no .toString('hex'))
         const bytesToHex = (bytes) => Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
 
-        // AIR-183: Always use httpClientProofProvider — it returns a ProofProvider with proveTx().
-        // connectedAPI.getProvingProvider() returns a ProvingProvider (circuit-level, no proveTx),
-        // which causes "providers.proofProvider.proveTx is not a function" in deployContract.
-        const proverServerUri = walletConfig.proverServerUri || 'https://proof-server.testnet-02.midnight.network';
-        console.log('[tx-debug] ProofStation URI:', proverServerUri);
-        proofProvider = httpClientProofProvider(proverServerUri, zkConfigProvider);
+        // AIR-223: Official 1AM pattern — wallet routes all proofs through ProofStation.
+        // api.getProvingProvider(zkConfigProvider) returns a circuit-level ProvingProvider.
+        // We wrap it with proveTx() so it satisfies the ProofProvider interface expected
+        // by deployContract / submitCallTx.
+        console.log('[tx-debug] building provingProvider via api.getProvingProvider');
+        const provingProvider = await connectedAPI.getProvingProvider(zkConfigProvider);
+        proofProvider = {
+          async proveTx(unprovenTx) {
+            console.log('[tx-debug] proofProvider.proveTx: calling unprovenTx.prove');
+            return unprovenTx.prove(provingProvider, CostModel.initialCostModel());
+          },
+        };
         console.log('[tx-debug] proofProvider.proveTx:', typeof proofProvider?.proveTx);
 
         const shielded = await connectedAPI.getShieldedAddresses();
