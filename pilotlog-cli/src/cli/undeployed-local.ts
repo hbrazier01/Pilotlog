@@ -1,5 +1,6 @@
 import { loadEntries, saveEntries } from "../store.js";
 import { loadProfile, saveProfile } from "../profileStore.js";
+import { loadWalletSession } from "../walletSession.js";
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -59,6 +60,13 @@ function usage() {
 // -------------------- FLIGHTS --------------------
 if (command === "add") {
   // flags already parsed (args.slice(1))
+  const walletSession = loadWalletSession();
+  const pilotId = walletSession?.address || undefined;
+
+  if (!pilotId) {
+    console.warn("Warning: no wallet connected — entry will be marked unverified.");
+  }
+
   const entry = {
     id: randomUUID(),
     date: str("date", new Date().toISOString()),
@@ -85,6 +93,8 @@ if (command === "add") {
     nightLandings: num("nightLandings", 0),
 
     remarks: str("remarks", ""),
+
+    ...(pilotId ? { pilotId } : { unverified: true }),
   };
 
   const entries = loadEntries();

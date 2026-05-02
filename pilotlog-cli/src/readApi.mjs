@@ -1990,6 +1990,11 @@ app.post("/entries", (req, res) => {
   }
   const walletSession = readWalletSession();
   const walletAddress = bodyWalletAddress || walletSession?.address || null;
+  if (!walletAddress) {
+    return res.status(400).json({ error: "Wallet not connected — connect your wallet before logging a flight" });
+  }
+  const identity = readIdentity();
+  const midname = (identity && identity.midnameVerified && identity.midname) ? identity.midname : undefined;
   const entryId = randomBytes(8).toString("hex");
   const entryBase = {
     id: entryId,
@@ -2002,9 +2007,9 @@ app.post("/entries", (req, res) => {
     to: to ? String(to).toUpperCase().trim() : "",
     remarks: remarks ? String(remarks).trim() : "",
   };
-  // Compute canonical hash at save time — deterministic, sorted-key SHA-256
+  // Compute canonical hash — pilotId (wallet address) and midname (if verified) are bound into the hash
   const { recordId, recordHash, canonical } = canonicalizeFlightEntry(
-    { ...entryBase, total: entryBase.totalTime },
+    { ...entryBase, total: entryBase.totalTime, pilotId: walletAddress, ...(midname ? { midname } : {}) },
     entryBase.aircraftId
   );
   const anchoredAt = new Date().toISOString();
@@ -2013,6 +2018,8 @@ app.post("/entries", (req, res) => {
   const chainStatus = isFallbackRef ? "submitted" : "anchored";
   const entry = {
     ...entryBase,
+    pilotId: walletAddress,
+    ...(midname ? { midname } : {}),
     recordId,
     createdAt: anchoredAt,
     anchored: !isFallbackRef,
