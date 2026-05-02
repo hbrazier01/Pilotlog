@@ -1777,13 +1777,36 @@ app.get("/", (_req, res) => {
             console.error('[tx-debug][AIR-214] contractState cell still null after', maxRetries, 'retries — proceeding anyway');
             return lastResult;
           },
-          // AIR-229: watchForTxData blocks indefinitely waiting for on-chain confirmation.
-          // When submitTransaction resolves undefined (1AM wallet submitted but returned no txId),
-          // the local tx identifier never matches the indexer query and the button hangs.
-          // Resolve immediately — UI treats submission as success, refreshEntries() syncs later.
+          // AIR-230: Use real watchForTxData with timeout to capture the real txHash from the indexer.
+          // If the indexer confirms within 45s we get txHash for the Explorer link.
+          // If it times out (indexer lag or undefined txId), fall back gracefully (AIR-229 guard).
           watchForTxData: async (txId) => {
-            console.log('[ui-sync] watchForTxData called for txId:', txId, '— resolving immediately as submitted');
-            return { status: 'SucceedEntirely', txId };
+            console.log('[ui-sync] watchForTxData called for txId:', txId);
+            if (!txId || String(txId) === 'undefined') {
+              console.log('[ui-sync] txId invalid — resolving immediately as submitted');
+              return { status: 'SucceedEntirely', txId: null };
+            }
+            const WATCH_TIMEOUT_MS = 45_000;
+            try {
+              const realResult = await Promise.race([
+                publicDataProvider.watchForTxData(txId),
+                new Promise((resolve) =>
+                  setTimeout(
+                    () => resolve({ status: 'SucceedEntirely', txId, timedOut: true }),
+                    WATCH_TIMEOUT_MS
+                  )
+                ),
+              ]);
+              if (realResult?.timedOut) {
+                console.log('[ui-sync] watchForTxData timed out after', WATCH_TIMEOUT_MS / 1000, 's — treating as submitted');
+              } else {
+                console.log('[ui-sync] watchForTxData confirmed — txHash:', realResult?.txHash);
+              }
+              return realResult;
+            } catch (err) {
+              console.warn('[ui-sync] watchForTxData error:', err.message, '— resolving as submitted');
+              return { status: 'SucceedEntirely', txId };
+            }
           },
         };
 
@@ -1802,12 +1825,16 @@ app.get("/", (_req, res) => {
         btn.disabled = false;
         showToast('Flight anchored on-chain — saving record...');
 
-        // AIR-228: Immediately prepend local entry row so table updates without waiting for server
-        const txRef = txHash.startsWith('submitted-') ? txHash : ('submitted-' + Date.now());
-        console.log('[ui-sync] inserting submitted row');
+        // AIR-228/AIR-230: Immediately prepend local entry row so table updates without waiting for server.
+        // If txHash is real (not fallback), show "Saved to chain" badge with View link.
+        const isRealHash = txHash && !txHash.startsWith('submitted-');
+        const explorerUrl = isRealHash ? \`https://explorer.1am.xyz/tx/\${txHash}?network=preprod\` : null;
+        const pendingBadge = isRealHash
+          ? \`<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Saved to chain (PreProd)</span><br><a href="\${explorerUrl}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;font-weight:500;text-decoration:none;">View on chain →</a>\`
+          : '<span style="color:#a78bfa;font-size:11px;font-weight:600;">&#x29D6; Submitted</span>';
+        console.log('[ui-sync] inserting pending row, isRealHash:', isRealHash);
         const tbody = document.getElementById('recent-flights-tbody');
         if (tbody) {
-          const submittedBadge = '<span style="color:#a78bfa;font-size:11px;font-weight:600;">&#x29D6; Submitted</span>';
           const newRow = \`<tr id="airlog-pending-row">
             <td>\${body.date}</td>
             <td>\${body.aircraftId}</td>
@@ -1815,14 +1842,14 @@ app.get("/", (_req, res) => {
             <td>\${body.totalTime}</td>
             <td></td>
             <td class="muted">\${(body.remarks || '').replaceAll('<','&lt;').replaceAll('>','&gt;')}</td>
-            <td>\${submittedBadge}</td>
+            <td>\${pendingBadge}</td>
           </tr>\`;
           // Remove stale placeholder if present
           const emptyRow = tbody.querySelector('td[colspan="7"]');
           if (emptyRow) tbody.innerHTML = '';
           tbody.insertAdjacentHTML('afterbegin', newRow);
         }
-        console.log('[tx-debug] AIR-228: local row prepended with txRef:', txRef);
+        console.log('[tx-debug] AIR-230: local row prepended, txHash:', txHash);
 
       } catch (err) {
         btn.textContent = origBtnText;
