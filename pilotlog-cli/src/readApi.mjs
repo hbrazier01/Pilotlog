@@ -1816,9 +1816,10 @@ app.get("/", (_req, res) => {
         );
         console.log('[ui-sync] submitCallTx resolved', result);
 
-        // Accept txHash or txId depending on SDK version; watchForTxData returns { txHash, txId, status } at top level.
-        // Fall back to result.public.* for older SDK shapes, then a local fallback ref.
-        txHash = result?.txHash || result?.txId || result?.public?.txHash || result?.public?.txId || ('submitted-' + Date.now());
+        // AIR-233: Only use real blockchain txHash for explorer link — never use txId (Midnight contract identifier).
+        // txId is a local contract identifier (e.g. midnight:transaction[v9](...)) and is NOT a valid explorer hash.
+        // watchForTxData returns { txHash: transaction.hash, ... } — only that is a real on-chain hash.
+        txHash = result?.txHash || result?.public?.txHash || ('submitted-' + Date.now());
         console.log('[tx] tx ref:', txHash);
 
         // Chain confirmation success — update button immediately
@@ -2093,12 +2094,16 @@ app.post("/entries", (req, res) => {
   if (!aircraftId) {
     return res.status(400).json({ error: "aircraftId is required" });
   }
-  // Accept any txHash/txRef — a resolved submission (even undefined) is treated as success.
-  // Frontend generates fallback ref `submitted-${Date.now()}` when wallet returns undefined.
+  // Accept real txHash (64-char hex) or fallback sentinel `submitted-${Date.now()}`.
+  // AIR-233: Reject SDK txId values (Midnight contract identifiers, not blockchain hashes).
+  // A real blockchain hash is exactly 64 hex characters; anything else is treated as a fallback.
   const txRef = txHash || null;
   if (!txRef) {
     return res.status(400).json({ error: "Wallet required to save flight — no transaction reference provided" });
   }
+  // Normalise: if txRef is not a 64-char hex string and not a submitted- sentinel, treat as fallback.
+  const isRealHash = /^[0-9a-f]{64}$/i.test(txRef);
+  const normalisedTxRef = isRealHash ? txRef : (txRef.startsWith("submitted-") ? txRef : ("submitted-" + Date.now()));
   const walletSession = readWalletSession();
   const walletAddress = bodyWalletAddress || walletSession?.address || null;
   if (!walletAddress) {
@@ -2124,8 +2129,8 @@ app.post("/entries", (req, res) => {
     entryBase.aircraftId
   );
   const anchoredAt = new Date().toISOString();
-  // Determine chain status: real tx hash = anchored; fallback ref = submitted (pending confirmation)
-  const isFallbackRef = txRef.startsWith("submitted-");
+  // Determine chain status: real tx hash (64-char hex) = anchored; fallback ref = submitted (pending confirmation)
+  const isFallbackRef = normalisedTxRef.startsWith("submitted-");
   const chainStatus = isFallbackRef ? "submitted" : "anchored";
   const entry = {
     ...entryBase,
@@ -2136,13 +2141,13 @@ app.post("/entries", (req, res) => {
     anchored: !isFallbackRef,
     anchorStatus: chainStatus,
     anchoredAt,
-    anchorTx: txRef,
+    anchorTx: normalisedTxRef,
     anchorHash: recordHash,
     canonicalPayload: canonical,
     anchor: {
       hash: recordHash,
       walletAddress,
-      txHash: txRef,
+      txHash: isFallbackRef ? null : normalisedTxRef,
       anchoredAt,
       status: chainStatus,
       network: "preprod",
