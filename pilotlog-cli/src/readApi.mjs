@@ -1777,12 +1777,21 @@ app.get("/", (_req, res) => {
             console.error('[tx-debug][AIR-214] contractState cell still null after', maxRetries, 'retries — proceeding anyway');
             return lastResult;
           },
+          // AIR-229: watchForTxData blocks indefinitely waiting for on-chain confirmation.
+          // When submitTransaction resolves undefined (1AM wallet submitted but returned no txId),
+          // the local tx identifier never matches the indexer query and the button hangs.
+          // Resolve immediately — UI treats submission as success, refreshEntries() syncs later.
+          watchForTxData: async (txId) => {
+            console.log('[ui-sync] watchForTxData called for txId:', txId, '— resolving immediately as submitted');
+            return { status: 'SucceedEntirely', txId };
+          },
         };
 
         const result = await submitCallTx(
           { proofProvider, walletProvider, midnightProvider, publicDataProvider: callPublicDataProvider, privateStateProvider: callPrivateStateProvider },
           { compiledContract, contractAddress, circuitId: 'anchorEntry', privateStateId: 'airlogPrivateState', args: [recordHashBytes, anchoredAt] }
         );
+        console.log('[ui-sync] submitCallTx resolved', result);
 
         // Accept txHash or txId depending on SDK version; if wallet resolves with undefined, generate a local fallback ref
         txHash = result?.public?.txHash || result?.public?.txId || ('submitted-' + Date.now());
@@ -1795,6 +1804,7 @@ app.get("/", (_req, res) => {
 
         // AIR-228: Immediately prepend local entry row so table updates without waiting for server
         const txRef = txHash.startsWith('submitted-') ? txHash : ('submitted-' + Date.now());
+        console.log('[ui-sync] inserting submitted row');
         const tbody = document.getElementById('recent-flights-tbody');
         if (tbody) {
           const submittedBadge = '<span style="color:#a78bfa;font-size:11px;font-weight:600;">&#x29D6; Submitted</span>';
