@@ -1191,6 +1191,7 @@ app.get("/", (_req, res) => {
       btn.disabled = true;
 
       let txHash = null;
+      let backfillTxId = null;
       let walletAddress = walletStatus?.session?.address || null;
 
       // ── BLOCK 1: wallet connect ───────────────────────────────────────────
@@ -1821,7 +1822,7 @@ app.get("/", (_req, res) => {
         // watchForTxData returns { txHash: transaction.hash, ... } — only that is a real on-chain hash.
         txHash = result?.txHash || result?.public?.txHash || ('submitted-' + Date.now());
         // AIR-234: If watchForTxData timed out, capture txId so we can backfill the real txHash in the background.
-        const backfillTxId = (!result?.txHash && !result?.public?.txHash && result?.txId) ? String(result.txId) : null;
+        backfillTxId = (!result?.txHash && !result?.public?.txHash && result?.txId) ? String(result.txId) : null;
         console.log('[tx] tx ref:', txHash, 'backfillTxId:', backfillTxId);
 
         // Chain confirmation success — update button immediately
@@ -1902,7 +1903,8 @@ app.get("/", (_req, res) => {
 
       // AIR-234: If we saved with a fallback txHash and have a txId, backfill the real txHash in the background.
       if (backfillTxId && savedEntryId && txHash.startsWith('submitted-')) {
-        console.log('[backfill] launching background watchForTxData for entry', savedEntryId, 'txId:', backfillTxId);
+        console.log('[backfill] started — entry:', savedEntryId);
+        console.log('[backfill] txId:', backfillTxId);
         (async () => {
           const BACKFILL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
           try {
@@ -1910,8 +1912,9 @@ app.get("/", (_req, res) => {
               publicDataProvider.watchForTxData(backfillTxId),
               new Promise(resolve => setTimeout(() => resolve({ timedOut: true }), BACKFILL_TIMEOUT_MS)),
             ]);
+            console.log('[backfill] watch result:', JSON.stringify(backfillResult));
             if (backfillResult?.timedOut) {
-              console.log('[backfill] timed out after 5 min — giving up for entry', savedEntryId);
+              console.log('[backfill] timed out after 5 min — leaving status as Submitted for entry', savedEntryId);
               return;
             }
             const realTxHash = backfillResult?.txHash;
@@ -1926,7 +1929,7 @@ app.get("/", (_req, res) => {
               body: JSON.stringify({ txHash: realTxHash }),
             });
             if (patchRes.ok) {
-              console.log('[backfill] entry', savedEntryId, 'updated with real txHash');
+              console.log('[backfill] PATCH success — entry', savedEntryId, 'updated with real txHash');
               // Update any pending row in the table
               const pendingRow = document.getElementById('airlog-pending-row');
               if (pendingRow) {
@@ -1938,7 +1941,7 @@ app.get("/", (_req, res) => {
               }
               refreshEntries();
             } else {
-              console.warn('[backfill] PATCH failed:', patchRes.status);
+              console.warn('[backfill] PATCH failure:', patchRes.status);
             }
           } catch (backfillErr) {
             console.warn('[backfill] error:', backfillErr.message);
@@ -2003,7 +2006,8 @@ app.get("/", (_req, res) => {
               const explorerNetwork = anchorObj?.network || 'preprod';
               const networkLabel = explorerNetwork === 'preview' ? 'Preview' : explorerNetwork === 'preprod' ? 'PreProd' : explorerNetwork;
               const anchorTx = anchorObj?.tx || anchorObj?.txHash || null;
-              const explorerLink = (status === 'anchored' && anchorTx)
+              const isRealAnchorTx = anchorTx && /^[0-9a-f]{64}$/i.test(anchorTx);
+              const explorerLink = (status === 'anchored' && isRealAnchorTx)
                 ? \`<br><a href="https://explorer.1am.xyz/tx/\${anchorTx}?network=\${explorerNetwork}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;font-weight:500;text-decoration:none;">View on chain →</a>\`
                 : '';
               const statusBadge = status === 'anchored'
@@ -2068,7 +2072,8 @@ app.get("/", (_req, res) => {
           const explorerNetwork = anchorObj?.network || "preprod";
           const networkLabel = explorerNetwork === "preview" ? "Preview" : explorerNetwork === "preprod" ? "PreProd" : explorerNetwork;
           const anchorTx = anchorObj?.tx || anchorObj?.txHash || null;
-          const explorerLink = (status === "anchored" && anchorTx)
+          const isRealAnchorTx = anchorTx && /^[0-9a-f]{64}$/i.test(anchorTx);
+          const explorerLink = (status === "anchored" && isRealAnchorTx)
             ? `<br><a href="https://explorer.1am.xyz/tx/${anchorTx}?network=${explorerNetwork}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;font-weight:500;text-decoration:none;">View on chain →</a>`
             : "";
           const statusBadge = status === "anchored"
@@ -2077,6 +2082,8 @@ app.get("/", (_req, res) => {
             ? '<span style="color:#ef4444;font-size:11px;font-weight:600;">&#x2717; Failed</span>'
             : (status === "pending_anchor" || status === "anchored_pending")
             ? '<span style="color:#f59e0b;font-size:11px;font-weight:600;">&#x29D7; Verified</span>'
+            : status === "submitted"
+            ? '<span style="color:#a78bfa;font-size:11px;font-weight:600;">&#x29D6; Submitted</span>'
             : '<span style="color:#718096;font-size:11px;">—</span>';
           return `
           <tr>
