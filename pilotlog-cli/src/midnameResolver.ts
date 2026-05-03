@@ -1,0 +1,126 @@
+/**
+ * midnameResolver.ts — CLI adapter for @midnames/sdk
+ *
+ * Resolves a .night domain and returns structured identity data.
+ * Never throws — all errors return null or an error result.
+ * Does not block flight logging on any failure.
+ */
+
+import type { MidnameIdentity } from "./midnameStore.js";
+
+const NETWORK_ID = "preprod";
+
+/**
+ * Validate a .night domain name per AIR-237 requirements.
+ * Returns null if valid, or an error message if invalid.
+ */
+export function validateMidname(domain: string): string | null {
+  if (!domain || typeof domain !== "string") return "Domain is required.";
+  if (domain !== domain.toLowerCase()) return "Domain must be lowercase.";
+  if (/\s/.test(domain)) return "Domain must not contain spaces.";
+  if (/_/.test(domain)) return "Domain must not contain underscores.";
+  if (!domain.endsWith(".night")) return "Domain must end in .night";
+
+  const sections = domain.split(".");
+  // Last section is "night" (TLD), validate all others
+  for (const section of sections) {
+    if (section.length === 0) return "Domain must not have empty sections.";
+    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(section) && section !== "night") {
+      return `Invalid section "${section}": must match [a-z0-9]([a-z0-9-]*[a-z0-9])?`;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Resolve a midname and return a MidnameIdentity for storage.
+ * Compares to walletAddress if provided to set verificationStatus.
+ */
+export async function resolveMidnameIdentity(
+  midname: string,
+  walletAddress: string | null
+): Promise<MidnameIdentity | { error: string }> {
+  try {
+    const { createDefaultProvider, resolveDomain, getDomainFields } = await import("@midnames/sdk");
+
+    const provider = createDefaultProvider({ networkId: NETWORK_ID });
+
+    const resolveResult = await resolveDomain(midname, { provider });
+    if (!resolveResult.success) {
+      return { error: `Domain not resolved: ${(resolveResult as any).error ?? "unknown"}` };
+    }
+
+    const target = resolveResult.data as { type: string; address: string } | null;
+    if (!target || !target.address) {
+      return { error: "Domain resolved but has no address target." };
+    }
+
+    const resolvedAddress = target.address;
+    const rawType = target.type;
+    const resolvedType: MidnameIdentity["resolvedType"] =
+      rawType === "shielded" ? "shielded"
+      : rawType === "contract" ? "contract"
+      : "unshielded";
+
+    // Get optional profile fields
+    let fields: Record<string, string> = {};
+    try {
+      const fieldsResult = await getDomainFields(midname, { provider });
+      if (fieldsResult.success && fieldsResult.data) {
+        const map = fieldsResult.data as Map<string, string>;
+        const wanted = ["name", "avatar", "bio", "website", "github", "twitter"];
+        for (const key of wanted) {
+          const val = map.get(key);
+          if (val) fields[key] = val;
+        }
+      }
+    } catch {
+      // fields are optional — ignore errors
+    }
+
+    const verificationStatus: MidnameIdentity["verificationStatus"] =
+      walletAddress && resolvedAddress === walletAddress
+        ? "verified"
+        : "resolved_unverified";
+
+    return {
+      midname,
+      resolvedAddress,
+      resolvedType,
+      fields,
+      verificationStatus,
+      resolvedAt: new Date().toISOString(),
+    };
+  } catch (err: any) {
+    return { error: err?.message ?? String(err) };
+  }
+}
+
+/**
+ * Format and print a MidnameIdentity as an identity card to stdout.
+ */
+export function printMidnameCard(identity: MidnameIdentity): void {
+  const badge =
+    identity.verificationStatus === "verified"
+      ? "[Verified Midname]"
+      : identity.verificationStatus === "resolved_unverified"
+      ? "[Resolved — not verified against wallet]"
+      : "[Unresolved]";
+
+  console.log("─".repeat(50));
+  console.log(`  Midname:  ${identity.midname}  ${badge}`);
+  console.log(`  Type:     ${identity.resolvedType}`);
+  console.log(`  Address:  ${identity.resolvedAddress}`);
+
+  const { name, avatar, bio, website, github, twitter } = identity.fields;
+  if (name) console.log(`  Name:     ${name}`);
+  if (bio) console.log(`  Bio:      ${bio}`);
+  if (website) console.log(`  Website:  ${website}`);
+  if (github) console.log(`  GitHub:   ${github}`);
+  if (twitter) console.log(`  Twitter:  ${twitter}`);
+  if (avatar) console.log(`  Avatar:   ${avatar}`);
+
+  console.log(`  Resolved: ${identity.resolvedAt}`);
+  console.log("─".repeat(50));
+}

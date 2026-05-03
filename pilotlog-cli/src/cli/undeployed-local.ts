@@ -1,6 +1,8 @@
 import { loadEntries, saveEntries } from "../store.js";
 import { loadProfile, saveProfile } from "../profileStore.js";
 import { loadWalletSession } from "../walletSession.js";
+import { loadMidnameIdentity, saveMidnameIdentity, clearMidnameIdentity } from "../midnameStore.js";
+import { validateMidname, resolveMidnameIdentity, printMidnameCard } from "../midnameResolver.js";
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -55,6 +57,10 @@ function usage() {
   console.log("");
   console.log('  endorse add --text "Solo endorsement..." --date 2026-03-01');
   console.log("  endorse list");
+  console.log("");
+  console.log("  midname set --midname pilot.night  Resolve & store Midnames identity");
+  console.log("  midname get                        Display stored identity card");
+  console.log("  midname clear                      Remove stored identity");
 }
 
 // -------------------- FLIGHTS --------------------
@@ -378,6 +384,50 @@ else if (command === "trust-report") {
   });
 
   process.exit(res.status ?? 1);
+}
+
+// -------------------- MIDNAMES IDENTITY --------------------
+else if (command === "midname") {
+  if (sub === "set") {
+    const midname = str("midname", "");
+    if (!midname.trim()) {
+      console.error('midname set: required --midname "pilot.night"');
+      process.exit(1);
+    }
+
+    const validationError = validateMidname(midname);
+    if (validationError) {
+      console.error(`midname set: invalid domain — ${validationError}`);
+      process.exit(1);
+    }
+
+    const walletSession = loadWalletSession();
+    const walletAddress = walletSession?.address ?? null;
+
+    console.log(`Resolving ${midname} on preprod...`);
+    const result = await resolveMidnameIdentity(midname, walletAddress);
+
+    if ("error" in result) {
+      console.error(`midname set: resolution failed — ${result.error}`);
+      process.exit(1);
+    }
+
+    saveMidnameIdentity(result);
+    console.log("Midnames identity stored.");
+    printMidnameCard(result);
+  } else if (!sub || sub === "get") {
+    const identity = loadMidnameIdentity();
+    if (!identity) {
+      console.log("No Midnames identity on file. Use: midname set --midname pilot.night");
+    } else {
+      printMidnameCard(identity);
+    }
+  } else if (sub === "clear") {
+    clearMidnameIdentity();
+    console.log("Midnames identity cleared.");
+  } else {
+    usage();
+  }
 }
 
 else {
