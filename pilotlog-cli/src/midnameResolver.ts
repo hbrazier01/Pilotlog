@@ -6,6 +6,7 @@
  * Does not block flight logging on any failure.
  */
 
+import WebSocket from "ws";
 import type { MidnameIdentity } from "./midnameStore.js";
 
 const NETWORK_ID = "preprod";
@@ -42,11 +43,13 @@ export async function resolveMidnameIdentity(
   walletAddress: string | null
 ): Promise<MidnameIdentity | { error: string }> {
   try {
-    const { createDefaultProvider, resolveDomain, getDomainFields } = await import("@midnames/sdk");
+    const { getNetworkConfig, resolveDomain, getDomainFields } = await import("@midnames/sdk");
+    const { indexerPublicDataProvider } = await import("@midnight-ntwrk/midnight-js-indexer-public-data-provider");
 
-    const provider = createDefaultProvider({ networkId: NETWORK_ID });
+    const netConfig = getNetworkConfig(NETWORK_ID);
+    const provider = indexerPublicDataProvider(netConfig.indexerUrl, netConfig.indexerWsUrl, WebSocket as any);
 
-    const resolveResult = await resolveDomain(midname, { provider });
+    const resolveResult = await resolveDomain(midname, { provider, contractAddress: netConfig.contractAddress });
     if (!resolveResult.success) {
       return { error: `Domain not resolved: ${(resolveResult as any).error ?? "unknown"}` };
     }
@@ -66,7 +69,7 @@ export async function resolveMidnameIdentity(
     // Get optional profile fields
     let fields: Record<string, string> = {};
     try {
-      const fieldsResult = await getDomainFields(midname, { provider });
+      const fieldsResult = await getDomainFields(midname, { provider, contractAddress: netConfig.contractAddress });
       if (fieldsResult.success && fieldsResult.data) {
         const map = fieldsResult.data as Map<string, string>;
         const wanted = ["name", "avatar", "bio", "website", "github", "twitter"];
