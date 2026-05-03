@@ -1820,7 +1820,9 @@ app.get("/", (_req, res) => {
         // txId is a local contract identifier (e.g. midnight:transaction[v9](...)) and is NOT a valid explorer hash.
         // watchForTxData returns { txHash: transaction.hash, ... } — only that is a real on-chain hash.
         txHash = result?.txHash || result?.public?.txHash || ('submitted-' + Date.now());
-        console.log('[tx] tx ref:', txHash);
+        // AIR-234: If watchForTxData timed out, capture txId so we can backfill the real txHash in the background.
+        const backfillTxId = (!result?.txHash && !result?.public?.txHash && result?.txId) ? String(result.txId) : null;
+        console.log('[tx] tx ref:', txHash, 'backfillTxId:', backfillTxId);
 
         // Chain confirmation success — update button immediately
         btn.textContent = 'Saved to chain';
@@ -1895,6 +1897,55 @@ app.get("/", (_req, res) => {
       }
 
       // Full success: chain confirmed + local saved
+      const savedEntry = await res.json().catch(() => null);
+      const savedEntryId = savedEntry?.id || null;
+
+      // AIR-234: If we saved with a fallback txHash and have a txId, backfill the real txHash in the background.
+      if (backfillTxId && savedEntryId && txHash.startsWith('submitted-')) {
+        console.log('[backfill] launching background watchForTxData for entry', savedEntryId, 'txId:', backfillTxId);
+        (async () => {
+          const BACKFILL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+          try {
+            const backfillResult = await Promise.race([
+              publicDataProvider.watchForTxData(backfillTxId),
+              new Promise(resolve => setTimeout(() => resolve({ timedOut: true }), BACKFILL_TIMEOUT_MS)),
+            ]);
+            if (backfillResult?.timedOut) {
+              console.log('[backfill] timed out after 5 min — giving up for entry', savedEntryId);
+              return;
+            }
+            const realTxHash = backfillResult?.txHash;
+            if (!realTxHash || !/^[0-9a-f]{64}$/i.test(realTxHash)) {
+              console.log('[backfill] no real txHash in result — skipping patch');
+              return;
+            }
+            console.log('[backfill] real txHash received:', realTxHash, '— patching entry', savedEntryId);
+            const patchRes = await fetch(\`/entries/\${savedEntryId}/txhash\`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ txHash: realTxHash }),
+            });
+            if (patchRes.ok) {
+              console.log('[backfill] entry', savedEntryId, 'updated with real txHash');
+              // Update any pending row in the table
+              const pendingRow = document.getElementById('airlog-pending-row');
+              if (pendingRow) {
+                const explorerUrl = \`https://explorer.1am.xyz/tx/\${realTxHash}?network=preprod\`;
+                const lastCell = pendingRow.querySelector('td:last-child');
+                if (lastCell) {
+                  lastCell.innerHTML = \`<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Saved to chain (PreProd)</span><br><a href="\${explorerUrl}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;font-weight:500;text-decoration:none;">View on chain →</a>\`;
+                }
+              }
+              refreshEntries();
+            } else {
+              console.warn('[backfill] PATCH failed:', patchRes.status);
+            }
+          } catch (backfillErr) {
+            console.warn('[backfill] error:', backfillErr.message);
+          }
+        })();
+      }
+
       e.target.reset();
       e.target.querySelector('input[name="date"]').value = new Date().toISOString().slice(0,10);
       toggleForm();
@@ -2160,6 +2211,38 @@ app.post("/entries", (req, res) => {
 });
 
 // /entries/chain-submit is REMOVED — transactions are executed browser-side via 1AM wallet
+
+// PATCH /entries/:id/txhash — AIR-234: backfill real txHash after submission timeout
+app.patch("/entries/:id/txhash", (req, res) => {
+  const { id } = req.params;
+  const { txHash: newTxHash } = req.body || {};
+  if (!newTxHash || !/^[0-9a-f]{64}$/i.test(newTxHash)) {
+    return res.status(400).json({ error: "txHash must be a 64-char hex string" });
+  }
+  const entries = readEntries();
+  const idx = entries.findIndex((e) => e.id === id);
+  if (idx === -1) return res.status(404).json({ error: "entry not found" });
+  const entry = entries[idx];
+  // Only backfill if currently in submitted state
+  const currentStatus = entry.anchor?.status || entry.anchorStatus;
+  if (currentStatus === "anchored") {
+    return res.json({ status: "anchored", message: "already anchored — no change" });
+  }
+  entries[idx] = {
+    ...entry,
+    anchored: true,
+    anchorStatus: "anchored",
+    anchorTx: newTxHash,
+    anchor: {
+      ...(entry.anchor || {}),
+      txHash: newTxHash,
+      status: "anchored",
+    },
+  };
+  fs.writeFileSync(ENTRIES_PATH, JSON.stringify(entries, null, 2));
+  console.log('[backfill] entry', id, 'patched with real txHash:', newTxHash);
+  res.json(entries[idx]);
+});
 
 // POST /entries/:id/anchor — trigger or re-trigger background anchor for a specific entry
 app.post("/entries/:id/anchor", (req, res) => {
