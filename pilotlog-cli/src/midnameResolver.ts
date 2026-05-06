@@ -2,11 +2,11 @@
  * midnameResolver.ts — CLI adapter for @midnames/sdk
  *
  * Resolves a .night domain and returns structured identity data.
+ * Uses the official preprod flow via getDefaultProvider (AIR-239).
  * Never throws — all errors return null or an error result.
  * Does not block flight logging on any failure.
  */
 
-import WebSocket from "ws";
 import type { MidnameIdentity } from "./midnameStore.js";
 
 const NETWORK_ID = "preprod";
@@ -43,13 +43,11 @@ export async function resolveMidnameIdentity(
   walletAddress: string | null
 ): Promise<MidnameIdentity | { error: string }> {
   try {
-    const { getNetworkConfig, resolveDomain, getDomainFields } = await import("@midnames/sdk");
-    const { indexerPublicDataProvider } = await import("@midnight-ntwrk/midnight-js-indexer-public-data-provider");
+    const { getDefaultProvider, resolveDomain, getDomainFields } = await import("@midnames/sdk");
 
-    const netConfig = getNetworkConfig(NETWORK_ID);
-    const provider = indexerPublicDataProvider(netConfig.indexerUrl, netConfig.indexerWsUrl, WebSocket as any);
+    const provider = getDefaultProvider(NETWORK_ID);
 
-    const resolveResult = await resolveDomain(midname, { provider, contractAddress: netConfig.contractAddress });
+    const resolveResult = await resolveDomain(midname, { provider });
     if (!resolveResult.success) {
       return { error: `Domain not resolved: ${(resolveResult as any).error ?? "unknown"}` };
     }
@@ -69,7 +67,7 @@ export async function resolveMidnameIdentity(
     // Get optional profile fields
     let fields: Record<string, string> = {};
     try {
-      const fieldsResult = await getDomainFields(midname, { provider, contractAddress: netConfig.contractAddress });
+      const fieldsResult = await getDomainFields(midname, { provider });
       if (fieldsResult.success && fieldsResult.data) {
         const map = fieldsResult.data as Map<string, string>;
         const wanted = ["name", "avatar", "bio", "website", "github", "twitter"];
