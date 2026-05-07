@@ -4905,8 +4905,12 @@ app.patch("/profile/phase", (req, res) => {
 // POST /wallet/connect — browser posts connected wallet address here
 app.post("/wallet/connect", (req, res) => {
   const { address, coinPublicKey, shieldedAddress } = req.body || {};
+  console.log("[wallet/connect] raw body:", JSON.stringify({ address, coinPublicKey, shieldedAddress }));
   if (!address) return res.status(400).json({ error: "address required" });
   const session = { address, coinPublicKey: coinPublicKey || null, shieldedAddress: shieldedAddress || null, connectedAt: new Date().toISOString() };
+  console.log("[wallet/connect] stored session.address:", session.address);
+  console.log("[wallet/connect] stored session.shieldedAddress:", session.shieldedAddress);
+  console.log("[wallet/connect] stored session.coinPublicKey:", session.coinPublicKey);
   saveWalletSession(session);
   res.json({ ok: true, session });
 });
@@ -5276,25 +5280,44 @@ app.post("/identity/verify-midname", async (req, res) => {
     return res.status(422).json({ ok: false, error: "Midname could not be resolved. Check spelling and try again." });
   }
 
+  // Debug: log resolved values and session state
+  console.log("[identity/verify-midname] resolved type:", resolvedType);
+  console.log("[identity/verify-midname] resolved address:", resolvedAddress);
+  console.log("[identity/verify-midname] session.address:", session.address);
+  console.log("[identity/verify-midname] session.shieldedAddress:", session.shieldedAddress || "(none)");
+  console.log("[identity/verify-midname] session.coinPublicKey:", session.coinPublicKey || "(none)");
+
   // Verify ownership: compare resolved address against connected wallet
-  // For shielded midnames: compare against session.shieldedAddress (bech32) or session.coinPublicKey
+  // For shielded midnames: compare against session.shieldedAddress (bech32), session.coinPublicKey
+  //   (which may be a bech32 mn_shield-cpk_* string from getShieldedAddresses()), or unshielded address
   // For unshielded midnames: compare against session.address
   let verified = false;
   if (resolvedType === "shielded") {
     const norm = (s) => (s || "").trim().toLowerCase();
-    if (session.shieldedAddress && norm(resolvedAddress) === norm(session.shieldedAddress)) {
+    const normResolved = norm(resolvedAddress);
+    if (session.shieldedAddress && normResolved === norm(session.shieldedAddress)) {
+      console.log("[identity/verify-midname] matched via session.shieldedAddress");
+      verified = true;
+    } else if (session.coinPublicKey && normResolved === norm(session.coinPublicKey)) {
+      // Direct match: wallet's shieldedCoinPublicKey is stored as-is (bech32 mn_shield-cpk_* or hex)
+      console.log("[identity/verify-midname] matched via session.coinPublicKey (direct)");
       verified = true;
     } else if (session.coinPublicKey) {
-      // coinPublicKey is hex; resolvedAddress is bech32 — attempt substring match as fallback
-      const cpk = (session.coinPublicKey || "").toLowerCase();
-      const resolved = (resolvedAddress || "").toLowerCase();
-      // The bech32 data portion encodes the CPK; check if CPK appears in decoded form
-      // This is a conservative fallback — primary comparison is bech32 vs bech32
-      if (cpk.length > 16 && resolved.includes(cpk.slice(0, 16))) verified = true;
+      // Fallback: check if one is a substring of the other (handles hex vs bech32 partial overlap)
+      const cpk = norm(session.coinPublicKey);
+      if (cpk.length > 16 && normResolved.includes(cpk.slice(0, 16))) {
+        console.log("[identity/verify-midname] matched via session.coinPublicKey (substring fallback)");
+        verified = true;
+      }
+    }
+    if (!verified) {
+      console.log("[identity/verify-midname] shielded mismatch — resolved:", normResolved,
+        "shieldedAddress:", norm(session.shieldedAddress), "coinPublicKey:", norm(session.coinPublicKey));
     }
   } else {
     // unshielded: direct comparison
     verified = (resolvedAddress.trim().toLowerCase() === session.address.trim().toLowerCase());
+    console.log("[identity/verify-midname] unshielded match:", verified);
   }
 
   if (!verified) {
