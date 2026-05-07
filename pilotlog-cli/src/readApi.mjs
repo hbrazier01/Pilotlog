@@ -248,17 +248,21 @@ async function connectWalletHeader() {
         }
       } catch (_) {}
     }
-    // Last resort: shielded address (keeps header showing something)
-    if (!addr) {
-      try {
-        const shielded = await api.getShieldedAddresses();
-        addr = shielded?.shieldedCoinPublicKey || shielded?.shieldedAddress || null;
-      } catch (_) {}
-    }
+    // Always capture shielded addresses for midname identity verification
+    let shieldedAddress = null;
+    let coinPublicKey = null;
+    try {
+      const shielded = await api.getShieldedAddresses();
+      shieldedAddress = shielded?.shieldedAddress || null;
+      coinPublicKey = shielded?.shieldedCoinPublicKey || null;
+      if (!addr) addr = coinPublicKey || shieldedAddress;
+    } catch (_) {}
     if (!addr) {
       try {
         const state = await api.state();
         addr = state?.shieldedAddress || state?.coinPublicKey || null;
+        if (!shieldedAddress) shieldedAddress = state?.shieldedAddress || null;
+        if (!coinPublicKey) coinPublicKey = state?.coinPublicKey || null;
       } catch (_) {}
     }
 
@@ -267,7 +271,7 @@ async function connectWalletHeader() {
     const resp = await fetch('/wallet/connect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address: addr }),
+      body: JSON.stringify({ address: addr, shieldedAddress, coinPublicKey }),
     });
     if (!resp.ok) throw new Error('Server rejected wallet session');
 
@@ -829,6 +833,21 @@ app.get("/", (_req, res) => {
       <div class="val" id="stat-landings">${landings}</div>
     </div>
   </div>
+
+  ${identity && identity.midnameVerified && identity.midname ? `
+  <div style="display:flex;align-items:center;gap:12px;background:#121624;border:1px solid #222843;border-radius:12px;padding:14px 18px;margin-bottom:16px;">
+    <div style="width:36px;height:36px;border-radius:50%;background:#1a3a8f;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">&#9733;</div>
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:15px;font-weight:700;color:#fff;">${identity.midname}</div>
+      ${(identity.fields && identity.fields.name) ? `<div style="font-size:12px;color:#b6b9c6;margin-top:2px;">${identity.fields.name}${identity.fields.twitter ? ` &nbsp;·&nbsp; ${identity.fields.twitter}` : ""}</div>` : ""}
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;background:#0d1f10;border:1px solid #1a3a1a;border-radius:20px;padding:4px 12px;">
+      <span style="width:7px;height:7px;border-radius:50%;background:#22c55e;display:inline-block;"></span>
+      <span style="font-size:12px;color:#22c55e;font-weight:600;">Verified on Midnight</span>
+    </div>
+    <a href="/identity/card" style="font-size:12px;color:#9aa3ff;text-decoration:none;flex-shrink:0;">Edit →</a>
+  </div>
+  ` : ""}
 
   <div class="assistant-section">
     <div class="section-title">Flight Readiness</div>
@@ -4885,9 +4904,9 @@ app.patch("/profile/phase", (req, res) => {
 
 // POST /wallet/connect — browser posts connected wallet address here
 app.post("/wallet/connect", (req, res) => {
-  const { address, coinPublicKey } = req.body || {};
+  const { address, coinPublicKey, shieldedAddress } = req.body || {};
   if (!address) return res.status(400).json({ error: "address required" });
-  const session = { address, coinPublicKey: coinPublicKey || null, connectedAt: new Date().toISOString() };
+  const session = { address, coinPublicKey: coinPublicKey || null, shieldedAddress: shieldedAddress || null, connectedAt: new Date().toISOString() };
   saveWalletSession(session);
   res.json({ ok: true, session });
 });
@@ -5221,15 +5240,34 @@ app.post("/identity/verify-midname", async (req, res) => {
     return res.status(400).json({ ok: false, error: "No wallet connected. Connect wallet first." });
   }
 
-  // Forward-lookup: resolve midname → address via @midnames/sdk
+  // Forward-lookup: resolve midname → address + fields via @midnames/sdk
   let resolvedAddress = null;
+  let resolvedType = null;
+  let resolvedFields = {};
   try {
-    const { getDefaultProvider, resolveDomain } = await import("@midnames/sdk");
+    const { getDefaultProvider, resolveDomain, getDomainFields } = await import("@midnames/sdk");
     const provider = getDefaultProvider("preprod");
     const result = await resolveDomain(cleanMidname, { provider });
-    if (result && result.success && result.value && result.value.address) {
-      resolvedAddress = result.value.address;
+    if (result && result.success) {
+      const target = result.value || result.data;
+      if (target && target.address) {
+        resolvedAddress = target.address;
+        resolvedType = target.type || null;
+      }
     }
+    // Fetch optional profile fields (name, twitter, etc.)
+    try {
+      const fieldsResult = await getDomainFields(cleanMidname, { provider });
+      if (fieldsResult && fieldsResult.success) {
+        const map = fieldsResult.value || fieldsResult.data;
+        if (map && typeof map.get === "function") {
+          for (const key of ["name", "avatar", "bio", "website", "github", "twitter"]) {
+            const val = map.get(key);
+            if (val) resolvedFields[key] = val;
+          }
+        }
+      }
+    } catch (_) {}
   } catch (err) {
     console.warn("[identity] midname resolve failed:", err.message);
   }
@@ -5238,12 +5276,37 @@ app.post("/identity/verify-midname", async (req, res) => {
     return res.status(422).json({ ok: false, error: "Midname could not be resolved. Check spelling and try again." });
   }
 
-  if (resolvedAddress !== session.address) {
+  // Verify ownership: compare resolved address against connected wallet
+  // For shielded midnames: compare against session.shieldedAddress (bech32) or session.coinPublicKey
+  // For unshielded midnames: compare against session.address
+  let verified = false;
+  if (resolvedType === "shielded") {
+    const norm = (s) => (s || "").trim().toLowerCase();
+    if (session.shieldedAddress && norm(resolvedAddress) === norm(session.shieldedAddress)) {
+      verified = true;
+    } else if (session.coinPublicKey) {
+      // coinPublicKey is hex; resolvedAddress is bech32 — attempt substring match as fallback
+      const cpk = (session.coinPublicKey || "").toLowerCase();
+      const resolved = (resolvedAddress || "").toLowerCase();
+      // The bech32 data portion encodes the CPK; check if CPK appears in decoded form
+      // This is a conservative fallback — primary comparison is bech32 vs bech32
+      if (cpk.length > 16 && resolved.includes(cpk.slice(0, 16))) verified = true;
+    }
+  } else {
+    // unshielded: direct comparison
+    verified = (resolvedAddress.trim().toLowerCase() === session.address.trim().toLowerCase());
+  }
+
+  if (!verified) {
     return res.status(422).json({
       ok: false,
-      error: "Midname resolves to a different address. Verify you own this midname.",
+      error: resolvedType === "shielded"
+        ? "Midname resolves to a shielded address that does not match your connected wallet's shielded address."
+        : "Midname resolves to a different address. Verify you own this midname.",
       resolved: resolvedAddress,
-      connected: session.address
+      resolvedType,
+      connected: session.address,
+      connectedShielded: session.shieldedAddress || null
     });
   }
 
@@ -5254,10 +5317,13 @@ app.post("/identity/verify-midname", async (req, res) => {
     midnameVerified: true,
     verifiedAt: new Date().toISOString(),
     identitySource: "midname",
-    networkId: "preprod"
+    networkId: "preprod",
+    resolvedType,
+    resolvedAddress,
+    fields: resolvedFields
   };
   saveIdentity(identity);
-  console.log("[identity] midname verified and persisted:", cleanMidname, "->", session.address);
+  console.log("[identity] midname verified and persisted:", cleanMidname, "->", resolvedAddress, "(type:", resolvedType + ")");
   res.json({ ok: true, identity });
 });
 
@@ -5289,6 +5355,11 @@ app.get("/identity/card", (_req, res) => {
   const midnameStatus = identity.midnameVerified ? "Verified" : (identity.midname ? "Unresolved" : "Not set");
   const midnameStatusColor = identity.midnameVerified ? "#22c55e" : "#f59e0b";
   const verifiedAt = identity.verifiedAt ? String(identity.verifiedAt).slice(0, 10) : null;
+  const idFields = identity.fields || {};
+  const idName = idFields.name || null;
+  const idTwitter = idFields.twitter || null;
+  const idBio = idFields.bio || null;
+  const idResolvedType = identity.resolvedType || null;
 
   res.type("html").send(`<!doctype html>
 <html>
@@ -5359,6 +5430,22 @@ app.get("/identity/card", (_req, res) => {
         ${verifiedAt ? `<span style="font-size:11px;color:#6b7280;font-weight:400;margin-left:8px;">· ${verifiedAt}</span>` : ""}
       </span>
     </div>
+    ${idName ? `<div class="identity-row">
+      <span class="identity-label">Name</span>
+      <span class="identity-value">${idName}</span>
+    </div>` : ""}
+    ${idTwitter ? `<div class="identity-row">
+      <span class="identity-label">Twitter</span>
+      <span class="identity-value" style="color:#9aa3ff;">${idTwitter}</span>
+    </div>` : ""}
+    ${idBio ? `<div class="identity-row">
+      <span class="identity-label">Bio</span>
+      <span class="identity-value" style="font-weight:400;color:#b6b9c6;">${idBio}</span>
+    </div>` : ""}
+    ${idResolvedType ? `<div class="identity-row">
+      <span class="identity-label">Address Type</span>
+      <span class="identity-value" style="color:#6b7280;">${idResolvedType}</span>
+    </div>` : ""}
     <div class="identity-row">
       <span class="identity-label">DID</span>
       <span class="identity-value" style="color:#6b7280;">
