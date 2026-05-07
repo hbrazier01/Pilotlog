@@ -151,6 +151,116 @@ function walletNavHtml(session, identity) {
   return `<button id="wallet-nav-link" onclick="connectWalletHeader()" style="background:none;border:1px solid #374151;color:#9aa3ff;font-size:14px;padding:5px 12px;border-radius:6px;cursor:pointer;font-weight:600;">Connect Wallet</button>`;
 }
 
+// ─── Reusable Pilot Passport Card ────────────────────────────────────────────
+// Returns an HTML string for the Pilot Passport identity card.
+// Used on: dashboard, /passport route, pilot-report.
+// mode: "compact" (dashboard strip) | "full" (passport page)
+function pilotPassportCardHtml(session, identity, profile, totals, { mode = "full", aircraftCount = 0 } = {}) {
+  const walletConnected = !!(session && session.address);
+  const midnameVerified = !!(identity && identity.midnameVerified && identity.midname);
+  const midname = midnameVerified ? identity.midname : null;
+  const idFields = (identity && identity.fields) || {};
+  const idName = idFields.name || (profile && profile.pilot && profile.pilot.fullName) || null;
+  const pilotPhase = (profile && profile.pilotPhase) || null;
+  const totalHrs = totals ? Number(totals.total || 0).toFixed(1) : "—";
+  const privacyEnabled = !!(identity && identity.resolvedType === "shielded");
+  const networkLabel = (identity && identity.networkId === "preprod") ? "Midnight PreProd" : (identity && identity.networkId) || "Midnight";
+  const verificationBadge = midnameVerified
+    ? `<div style="display:flex;align-items:center;gap:6px;background:#0d1f10;border:1px solid #1a4a20;border-radius:20px;padding:4px 12px;flex-shrink:0;">
+        <span style="width:7px;height:7px;border-radius:50%;background:#22c55e;display:inline-block;"></span>
+        <span style="font-size:12px;color:#22c55e;font-weight:700;">Verified</span>
+       </div>`
+    : walletConnected
+    ? `<div style="display:flex;align-items:center;gap:6px;background:#1a1203;border:1px solid #3a2a0a;border-radius:20px;padding:4px 12px;flex-shrink:0;">
+        <span style="width:7px;height:7px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>
+        <span style="font-size:12px;color:#f59e0b;font-weight:700;">Wallet Connected</span>
+       </div>`
+    : `<div style="display:flex;align-items:center;gap:6px;background:#111827;border:1px solid #222843;border-radius:20px;padding:4px 12px;flex-shrink:0;">
+        <span style="width:7px;height:7px;border-radius:50%;background:#6b7280;display:inline-block;"></span>
+        <span style="font-size:12px;color:#6b7280;font-weight:700;">Not Verified</span>
+       </div>`;
+
+  const phaseLabel = pilotPhase
+    ? pilotPhase.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+    : null;
+
+  if (mode === "compact") {
+    // Compact card for dashboard
+    return `<div style="display:flex;align-items:center;gap:12px;background:#121624;border:1px solid #222843;border-radius:12px;padding:14px 18px;margin-bottom:16px;">
+      <div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#1a3a8f,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">&#9992;</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:16px;font-weight:800;color:#fff;">${midname || idName || "Pilot"}</div>
+        <div style="font-size:12px;color:#b6b9c6;margin-top:2px;">
+          ${phaseLabel ? `<span>${phaseLabel}</span>` : ""}
+          ${phaseLabel && totalHrs !== "—" ? `<span style="color:#374151;"> · </span>` : ""}
+          ${totalHrs !== "—" ? `<span>${totalHrs} hrs total</span>` : ""}
+          ${aircraftCount > 0 ? `<span style="color:#374151;"> · </span><span>${aircraftCount} aircraft</span>` : ""}
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+        ${verificationBadge}
+        <a href="/passport" style="font-size:12px;color:#9aa3ff;text-decoration:none;">Passport →</a>
+      </div>
+    </div>`;
+  }
+
+  // Full passport card
+  const privacyRow = privacyEnabled
+    ? `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1f2440;">
+        <span style="font-size:13px;color:#b6b9c6;">Privacy</span>
+        <span style="font-size:13px;font-weight:600;color:#9aa3ff;">Private · Shielded Identity</span>
+       </div>`
+    : "";
+
+  return `
+  <div style="background:linear-gradient(135deg,#0f1835 0%,#121624 100%);border:1px solid #2a3060;border-radius:20px;padding:28px;margin-bottom:24px;">
+    <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:20px;">
+      <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#1a3a8f,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;">&#9992;</div>
+      <div style="flex:1;">
+        <div style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-0.3px;">${midname || idName || "Pilot"}</div>
+        ${idName && midname && idName !== midname ? `<div style="font-size:14px;color:#b6b9c6;margin-top:2px;">${idName}</div>` : ""}
+        <div style="margin-top:10px;">
+          ${verificationBadge}
+        </div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px;">
+      <div style="background:#0b0f18;border:1px solid #1f2440;border-radius:12px;padding:14px;">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:6px;">Total Time</div>
+        <div style="font-size:22px;font-weight:800;color:#fff;">${totalHrs} hrs</div>
+      </div>
+      ${aircraftCount > 0 ? `<div style="background:#0b0f18;border:1px solid #1f2440;border-radius:12px;padding:14px;">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:6px;">Aircraft</div>
+        <div style="font-size:22px;font-weight:800;color:#fff;">${aircraftCount}</div>
+      </div>` : ""}
+      ${phaseLabel ? `<div style="background:#0b0f18;border:1px solid #1f2440;border-radius:12px;padding:14px;">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:6px;">Phase</div>
+        <div style="font-size:14px;font-weight:700;color:#fff;margin-top:4px;">${phaseLabel}</div>
+      </div>` : ""}
+      <div style="background:#0b0f18;border:1px solid #1f2440;border-radius:12px;padding:14px;">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:6px;">Network</div>
+        <div style="font-size:12px;font-weight:700;color:#9aa3ff;margin-top:4px;">${midnameVerified ? networkLabel : "—"}</div>
+      </div>
+    </div>
+    <div style="background:#0b0f18;border:1px solid #1f2440;border-radius:12px;padding:16px;">
+      ${midnameVerified ? `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1f2440;">
+        <span style="font-size:13px;color:#b6b9c6;">Pilot Identity</span>
+        <span style="font-size:13px;font-weight:700;color:#fff;">${midname}</span>
+      </div>` : ""}
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1f2440;">
+        <span style="font-size:13px;color:#b6b9c6;">Verification</span>
+        <span style="font-size:13px;font-weight:600;color:${midnameVerified ? "#22c55e" : "#6b7280"};">${midnameVerified ? "Verified on Midnight" : "Not yet verified"}</span>
+      </div>
+      ${privacyRow}
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;">
+        <span style="font-size:13px;color:#b6b9c6;">Portable</span>
+        <span style="font-size:13px;font-weight:600;color:#9aa3ff;">${midnameVerified ? "Yes · Linked to Midnight" : "—"}</span>
+      </div>
+    </div>
+  </div>`;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Helper: update wallet button state without replacing the element.
 function setWalletButtonConnected(el, addr) {
   const short = addr.length > 16 ? addr.slice(0, 8) + '\u2026' + addr.slice(-6) : addr;
@@ -828,7 +938,7 @@ app.get("/", (_req, res) => {
     <div class="brand">PilotLog</div>
     <div class="nav">
       ${walletNavHtml(walletSession, identity)}
-      <a href="/identity/card">Identity</a>
+      <a href="/passport">Passport</a>
       <a href="/pilot-report">Pilot Report →</a>
     </div>
   </div>
@@ -857,20 +967,7 @@ app.get("/", (_req, res) => {
     </div>
   </div>
 
-  ${identity && identity.midnameVerified && identity.midname ? `
-  <div style="display:flex;align-items:center;gap:12px;background:#121624;border:1px solid #222843;border-radius:12px;padding:14px 18px;margin-bottom:16px;">
-    <div style="width:36px;height:36px;border-radius:50%;background:#1a3a8f;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">&#9733;</div>
-    <div style="flex:1;min-width:0;">
-      <div style="font-size:15px;font-weight:700;color:#fff;">${identity.midname}</div>
-      ${(identity.fields && identity.fields.name) ? `<div style="font-size:12px;color:#b6b9c6;margin-top:2px;">${identity.fields.name}${identity.fields.twitter ? ` &nbsp;·&nbsp; ${identity.fields.twitter}` : ""}</div>` : ""}
-    </div>
-    <div style="display:flex;align-items:center;gap:6px;background:#0d1f10;border:1px solid #1a3a1a;border-radius:20px;padding:4px 12px;">
-      <span style="width:7px;height:7px;border-radius:50%;background:#22c55e;display:inline-block;"></span>
-      <span style="font-size:12px;color:#22c55e;font-weight:600;">Verified on Midnight</span>
-    </div>
-    <a href="/identity/card" style="font-size:12px;color:#9aa3ff;text-decoration:none;flex-shrink:0;">Edit →</a>
-  </div>
-  ` : ""}
+  ${pilotPassportCardHtml(walletSession, identity, profile, totals, { mode: "compact", aircraftCount: sortedAircraft.length })}
 
   <div class="assistant-section">
     <div class="section-title">Flight Readiness</div>
@@ -4979,6 +5076,8 @@ app.get("/pilot-report", (_req, res) => {
   const aircraft = readAircraft();
   const maintenance = readMaintenance();
   const verification = readVerification();
+  const walletSessionPR = readWalletSession();
+  const identityPR = readIdentity() || {};
   const report = buildPilotReport({ profile, entries, aircraft, maintenance, verification });
 
   const r = report;
@@ -5145,6 +5244,15 @@ app.get("/pilot-report", (_req, res) => {
           ${row("Email", id.email)}
           ${row("Phone", id.phone)}
           ${row("Pilot Phase", id.pilotPhase)}
+          ${identityPR.midnameVerified && identityPR.midname
+            ? row("Pilot Identity (Midname)", `<span style="font-weight:700;">${identityPR.midname}</span>`)
+            : ""}
+          ${identityPR.midnameVerified
+            ? row("Verification", `<span style="color:#166534;font-weight:700;">&#10003; Verified on Midnight</span>${identityPR.verifiedAt ? ` <span style="color:#6b7280;font-size:11px;">· ${String(identityPR.verifiedAt).slice(0,10)}</span>` : ""}`)
+            : row("Verification", `<span style="color:#6b7280;">Not verified</span>`)}
+          ${identityPR.resolvedType === "shielded"
+            ? row("Privacy", `<span style="color:#1a3a8f;font-weight:600;">Private · Shielded Identity</span>`)
+            : ""}
         </tbody>
       </table>
     </div>
@@ -5504,13 +5612,14 @@ app.get("/identity/card", (_req, res) => {
     <div class="brand">PilotLog</div>
     <div class="nav">
       ${walletNavHtml(session, identity)}
-      <a href="/">Home</a>
+      <a href="/">Dashboard</a>
+      <a href="/passport">Passport</a>
       <a href="/pilot-report">Pilot Report →</a>
     </div>
   </div>
 
-  <h1>Pilot Identity</h1>
-  <div class="subtitle">Verify your Midnight Midname and manage your on-chain identity layer.</div>
+  <h1>Verify Identity</h1>
+  <div class="subtitle">Link your Midnight Midname to your pilot identity.</div>
 
   <div class="card">
     <div class="card-title">Identity Status</div>
@@ -5546,14 +5655,14 @@ app.get("/identity/card", (_req, res) => {
       <span class="identity-value" style="color:#6b7280;">${idResolvedType}</span>
     </div>` : ""}
     <div class="identity-row">
-      <span class="identity-label">Shielded Identity</span>
-      <span class="identity-value" style="color:${shieldedStatusColor};">
-        <span class="status-dot" style="background:${shieldedStatusColor};"></span>
-        ${shieldedDisplay
-          ? `<span title="${shieldedRawAddr || shieldedRawCpk}">${shieldedDisplay}</span><span style="font-size:11px;color:#6b7280;font-weight:400;margin-left:6px;">· ${shieldedRawAddr ? "shield-addr" : "coinPublicKey"}</span>`
-          : shieldedStatus
+      <span class="identity-label">Privacy</span>
+      <span class="identity-value" style="color:${shieldedIdentityAvailable ? '#9aa3ff' : '#6b7280'};">
+        ${shieldedIdentityAvailable
+          ? `<span class="status-dot" style="background:#9aa3ff;"></span>Private · Shielded`
+          : walletConnected
+          ? `<span class="status-dot" style="background:#6b7280;"></span>Standard`
+          : `<span class="status-dot" style="background:#6b7280;"></span>—`
         }
-        ${walletConnected && !shieldedIdentityAvailable ? `<span style="font-size:11px;color:#f59e0b;font-weight:400;margin-left:6px;">· reconnect wallet to capture</span>` : ""}
       </span>
     </div>
     <div class="identity-row">
@@ -5698,6 +5807,121 @@ const keysDir = path.resolve(
 if (fs.existsSync(keysDir)) {
   app.use("/contract/compiled/airlog/keys", express.static(keysDir));
 }
+
+// ─── /passport — Pilot Passport v1 ───────────────────────────────────────────
+app.get("/passport", (_req, res) => {
+  const session = readWalletSession();
+  const identity = readIdentity() || {};
+  const profile = readProfile();
+  const entries = readEntries();
+  const totals = computeTotals(entries);
+  const walletConnected = !!(session && session.address);
+  const midnameVerified = !!(identity && identity.midnameVerified && identity.midname);
+  const idName = (identity.fields && identity.fields.name) || (profile && profile.pilot && profile.pilot.fullName) || "";
+  const aircraftSet = new Set();
+  for (const e of entries) {
+    const ident = e.aircraftIdent || e.aircraftId;
+    if (ident) aircraftSet.add(ident);
+  }
+  const aircraftCount = aircraftSet.size;
+  const certs = (profile && profile.certificates) || [];
+  const ratings = (profile && profile.ratings) || [];
+  const anchored = entries.filter(e => e.anchored === true || e.anchorStatus === "anchored").length;
+
+  const passportCard = pilotPassportCardHtml(session, identity, profile, totals, { mode: "full", aircraftCount });
+
+  const certListHtml = certs.length
+    ? certs.map(c => `<li style="padding:7px 0;border-bottom:1px solid #1f2440;font-size:14px;color:#e2e8f0;">${c.type}${c.number ? ` <span style="color:#6b7280;font-size:12px;">#${c.number}</span>` : ""}${c.issued ? ` <span style="color:#6b7280;font-size:12px;">· ${c.issued}</span>` : ""}</li>`).join("")
+    : `<li style="padding:7px 0;font-size:13px;color:#374151;">None on file — add via profile</li>`;
+
+  const ratingListHtml = ratings.length
+    ? ratings.map(r => `<li style="padding:7px 0;border-bottom:1px solid #1f2440;font-size:14px;color:#e2e8f0;">${r.type}${r.issued ? ` <span style="color:#6b7280;font-size:12px;">· ${r.issued}</span>` : ""}</li>`).join("")
+    : `<li style="padding:7px 0;font-size:13px;color:#374151;">None on file</li>`;
+
+  function placeholderSection(label) {
+    return `<div style="background:#0b0f18;border:1px solid #1f2440;border-radius:12px;padding:16px;margin-bottom:12px;opacity:0.5;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:8px;">${label}</div>
+      <div style="font-size:13px;color:#374151;font-style:italic;">Coming soon</div>
+    </div>`;
+  }
+
+  res.type("html").send(`<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Pilot Passport — PilotLog</title>
+  <style>
+  body { font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif; background:#0b0f18; color:#fff; margin:0; }
+  .wrap { max-width:720px; margin:0 auto; padding:32px 20px 60px; }
+  .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:32px; flex-wrap:wrap; gap:12px; }
+  .brand { font-size:20px; font-weight:800; letter-spacing:-0.5px; }
+  .nav a { color:#9aa3ff; text-decoration:none; font-size:14px; margin-left:16px; }
+  .nav a:hover { color:#fff; }
+  .section-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:#6b7280; margin:24px 0 12px; }
+  .two-col { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media(max-width:560px) { .two-col { grid-template-columns:1fr; } }
+  ul { list-style:none; padding:0; margin:0; }
+  .section-card { background:#121624; border:1px solid #222843; border-radius:14px; padding:18px 20px; margin-bottom:14px; }
+  .actions { display:flex; gap:12px; margin-top:24px; flex-wrap:wrap; }
+  .btn { display:inline-block; padding:10px 20px; background:#1a3a8f; color:#fff; border-radius:8px; font-size:14px; font-weight:700; text-decoration:none; border:none; cursor:pointer; }
+  .btn:hover { background:#1e46b0; }
+  .btn-outline { background:transparent; border:1px solid #222843; color:#9aa3ff; }
+  .btn-outline:hover { color:#fff; }
+  .stat-chip { background:#0b0f18; border:1px solid #1f2440; border-radius:10px; padding:8px 14px; font-size:13px; color:#b6b9c6; display:inline-flex; align-items:center; gap:6px; }
+  .stat-chip strong { color:#fff; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">PilotLog</div>
+    <div class="nav">
+      ${walletNavHtml(session, identity)}
+      <a href="/">Dashboard</a>
+      <a href="/pilot-report">Pilot Report →</a>
+    </div>
+  </div>
+
+  <div style="margin-bottom:8px;">
+    <h1 style="font-size:28px;font-weight:800;margin:0 0 4px;letter-spacing:-0.5px;">Pilot Passport</h1>
+    <p style="color:#b6b9c6;font-size:14px;margin:0;">Your verified aviation identity on Midnight.</p>
+  </div>
+
+  ${passportCard}
+
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px;">
+    <div class="stat-chip"><strong>${entries.length}</strong> flights logged</div>
+    <div class="stat-chip"><strong>${anchored}</strong> anchored on-chain</div>
+    ${aircraftCount > 0 ? `<div class="stat-chip"><strong>${aircraftCount}</strong> aircraft</div>` : ""}
+  </div>
+
+  <div class="section-label">Certificates &amp; Ratings</div>
+  <div class="section-card">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;margin-bottom:10px;">Certificates</div>
+    <ul>${certListHtml}</ul>
+    ${ratings.length > 0 ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;margin:14px 0 10px;">Ratings</div><ul>${ratingListHtml}</ul>` : ""}
+  </div>
+
+  <div class="section-label">Future Trust Layer</div>
+  <div class="two-col">
+    ${placeholderSection("Instructor Attestations")}
+    ${placeholderSection("FAA Verification")}
+    ${placeholderSection("Trust Level")}
+    ${placeholderSection("Maintenance Signatures")}
+  </div>
+
+  <div class="actions">
+    <a href="/" class="btn btn-outline">← Dashboard</a>
+    ${!midnameVerified ? `<a href="/identity/card" class="btn">Verify Identity →</a>` : ""}
+    <a href="/pilot-report" class="btn btn-outline">Pilot Report →</a>
+  </div>
+</div>
+${walletStatusScript}
+</body>
+</html>`);
+});
+// ─────────────────────────────────────────────────────────────────────────────
 
 const zkirDir = path.resolve(
   process.cwd(),
