@@ -5424,6 +5424,13 @@ app.get("/identity/card", (_req, res) => {
   const idBio = idFields.bio || null;
   const idResolvedType = identity.resolvedType || null;
   const shieldedIdentityAvailable = !!(session && (session.coinPublicKey || session.shieldedAddress));
+  const shieldedRawAddr = (session && session.shieldedAddress) || null;
+  const shieldedRawCpk = (session && session.coinPublicKey) || null;
+  const shieldedDisplay = shieldedRawAddr
+    ? (shieldedRawAddr.length > 20 ? shieldedRawAddr.slice(0, 12) + "…" + shieldedRawAddr.slice(-8) : shieldedRawAddr)
+    : shieldedRawCpk
+    ? (shieldedRawCpk.length > 20 ? shieldedRawCpk.slice(0, 12) + "…" + shieldedRawCpk.slice(-8) : shieldedRawCpk)
+    : null;
   const shieldedStatus = !walletConnected ? "not connected" : shieldedIdentityAvailable ? "available" : "not captured";
   const shieldedStatusColor = !walletConnected ? "#6b7280" : shieldedIdentityAvailable ? "#22c55e" : "#f59e0b";
 
@@ -5516,7 +5523,10 @@ app.get("/identity/card", (_req, res) => {
       <span class="identity-label">Shielded Identity</span>
       <span class="identity-value" style="color:${shieldedStatusColor};">
         <span class="status-dot" style="background:${shieldedStatusColor};"></span>
-        ${shieldedStatus}
+        ${shieldedDisplay
+          ? `<span title="${shieldedRawAddr || shieldedRawCpk}">${shieldedDisplay}</span><span style="font-size:11px;color:#6b7280;font-weight:400;margin-left:6px;">· ${shieldedRawAddr ? "shield-addr" : "coinPublicKey"}</span>`
+          : shieldedStatus
+        }
         ${walletConnected && !shieldedIdentityAvailable ? `<span style="font-size:11px;color:#f59e0b;font-weight:400;margin-left:6px;">· reconnect wallet to capture</span>` : ""}
       </span>
     </div>
