@@ -405,6 +405,11 @@ else if (command === "midname") {
     const walletAddress = walletSession?.address ?? null;
     const coinPublicKey = walletSession?.coinPublicKey ?? null;
 
+    if (!walletSession) {
+      console.warn("No wallet session found. Connect/create wallet first.");
+      console.warn("Midname will be resolved but cannot be verified against your wallet.");
+    }
+
     console.log(`Resolving ${midname} on preprod...`);
     const result = await resolveMidnameIdentity(midname, walletAddress, coinPublicKey);
 
