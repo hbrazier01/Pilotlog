@@ -6,7 +6,7 @@ export type MidnameIdentity = {
   resolvedAddress: string;
   resolvedType: "shielded" | "unshielded" | "contract";
   fields: Record<string, string>;
-  verificationStatus: "verified" | "resolved_unverified" | "unresolved";
+  verificationStatus: "verified" | "resolved_unverified" | "shielded_unverifiable" | "unresolved";
   resolvedAt: string; // ISO timestamp
 };
 

@@ -90,7 +90,11 @@ export async function resolveMidnameIdentity(
     console.log(`[midname-verify] wallet unshielded=${walletAddress ?? "(none)"} coinPublicKey=${coinPublicKey ? coinPublicKey.slice(0, 16) + "…" : "(none)"}`);
 
     let verificationStatus: MidnameIdentity["verificationStatus"] = "resolved_unverified";
-    if (resolvedType === "shielded" && coinPublicKey) {
+    if (resolvedType === "shielded" && !coinPublicKey) {
+      // Wallet only exposes unshielded address — shielded verification is not possible
+      verificationStatus = "shielded_unverifiable";
+      console.log(`[midname-verify] shielded midname but no coinPublicKey available — marking shielded_unverifiable`);
+    } else if (resolvedType === "shielded" && coinPublicKey) {
       try {
         const parsed = MidnightBech32m.parse(resolvedAddress);
         const cpk = ShieldedCoinPublicKey.codec.decode(NETWORK_ID, parsed);
@@ -100,7 +104,8 @@ export async function resolveMidnameIdentity(
       } catch (e) {
         console.log(`[midname-verify] shielded decode failed: ${e}`);
       }
-    } else if (resolvedType === "unshielded" && walletAddress) {
+    }
+    if (resolvedType === "unshielded" && walletAddress) {
       const normResolved = resolvedAddress.trim().toLowerCase();
       const normWallet = walletAddress.trim().toLowerCase();
       const match = normResolved === normWallet;
@@ -128,6 +133,8 @@ export function printMidnameCard(identity: MidnameIdentity): void {
   const badge =
     identity.verificationStatus === "verified"
       ? "[Verified Midname]"
+      : identity.verificationStatus === "shielded_unverifiable"
+      ? "[Resolved — shielded verification unavailable]"
       : identity.verificationStatus === "resolved_unverified"
       ? "[Resolved — not verified against wallet]"
       : "[Unresolved]";
