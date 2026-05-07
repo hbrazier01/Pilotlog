@@ -251,9 +251,20 @@ async function connectWalletHeader() {
     // Always capture shielded addresses for midname identity verification
     let shieldedAddress = null;
     let coinPublicKey = null;
+    let _rawShieldedResult = null;
     try {
+      console.log('[wallet-connect] typeof api.getShieldedAddresses:', typeof api.getShieldedAddresses);
+      console.log('[wallet-connect] calling getShieldedAddresses...');
       const shielded = await api.getShieldedAddresses();
-      console.log('[wallet-connect] getShieldedAddresses result:', JSON.stringify({
+      _rawShieldedResult = shielded;
+      // AIR-247: log raw result and all keys to detect field name mismatches
+      try {
+        console.log('[wallet-connect] getShieldedAddresses RAW keys:', shielded ? Object.keys(shielded) : 'null/undefined');
+        console.log('[wallet-connect] getShieldedAddresses RAW result:', JSON.stringify(shielded));
+      } catch (_) {
+        console.log('[wallet-connect] getShieldedAddresses RAW result (non-serializable):', String(shielded));
+      }
+      console.log('[wallet-connect] getShieldedAddresses extracted:', JSON.stringify({
         shieldedAddress: shielded?.shieldedAddress || null,
         shieldedCoinPublicKey: shielded?.shieldedCoinPublicKey || null,
         shieldedEncryptionPublicKey: shielded?.shieldedEncryptionPublicKey ? '(present)' : null,
@@ -263,7 +274,12 @@ async function connectWalletHeader() {
       if (!addr) addr = coinPublicKey || shieldedAddress;
     } catch (e) {
       console.warn('[wallet-connect] getShieldedAddresses failed:', e?.message || String(e));
+      console.warn('[wallet-connect] getShieldedAddresses error stack:', e?.stack || 'no stack');
+      _rawShieldedResult = { error: e?.message || String(e) };
     }
+    // AIR-247: persist raw shielded result in session-level debug state
+    try { window.__pilotlog_shielded_debug = _rawShieldedResult; } catch (_) {}
+    console.log('[wallet-connect] final shieldedAddress:', shieldedAddress, '| coinPublicKey:', coinPublicKey ? '(present)' : 'null');
     if (!addr) {
       try {
         const state = await api.state();
@@ -1388,7 +1404,17 @@ app.get("/", (_req, res) => {
         };
         console.log('[tx-debug] proofProvider.proveTx:', typeof proofProvider?.proveTx);
 
+        // AIR-247: log raw result before field extraction
+        console.log('[tx-debug] typeof connectedAPI.getShieldedAddresses:', typeof connectedAPI.getShieldedAddresses);
         const shielded = await connectedAPI.getShieldedAddresses();
+        try {
+          console.log('[tx-debug] getShieldedAddresses RAW keys:', shielded ? Object.keys(shielded) : 'null/undefined');
+          console.log('[tx-debug] getShieldedAddresses RAW result:', JSON.stringify(shielded));
+        } catch (_) {
+          console.log('[tx-debug] getShieldedAddresses RAW result (non-serializable):', String(shielded));
+        }
+        console.log('[tx-debug] shieldedCoinPublicKey:', shielded?.shieldedCoinPublicKey ? '(present)' : 'null');
+        console.log('[tx-debug] shieldedEncryptionPublicKey:', shielded?.shieldedEncryptionPublicKey ? '(present)' : 'null');
         walletAddress = shielded.shieldedCoinPublicKey || walletAddress;
 
         walletProvider = {
