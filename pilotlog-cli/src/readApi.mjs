@@ -253,10 +253,17 @@ async function connectWalletHeader() {
     let coinPublicKey = null;
     try {
       const shielded = await api.getShieldedAddresses();
+      console.log('[wallet-connect] getShieldedAddresses result:', JSON.stringify({
+        shieldedAddress: shielded?.shieldedAddress || null,
+        shieldedCoinPublicKey: shielded?.shieldedCoinPublicKey || null,
+        shieldedEncryptionPublicKey: shielded?.shieldedEncryptionPublicKey ? '(present)' : null,
+      }));
       shieldedAddress = shielded?.shieldedAddress || null;
       coinPublicKey = shielded?.shieldedCoinPublicKey || null;
       if (!addr) addr = coinPublicKey || shieldedAddress;
-    } catch (_) {}
+    } catch (e) {
+      console.warn('[wallet-connect] getShieldedAddresses failed:', e?.message || String(e));
+    }
     if (!addr) {
       try {
         const state = await api.state();
@@ -5288,31 +5295,63 @@ app.post("/identity/verify-midname", async (req, res) => {
   console.log("[identity/verify-midname] session.coinPublicKey:", session.coinPublicKey || "(none)");
 
   // Verify ownership: compare resolved address against connected wallet
-  // For shielded midnames: compare against session.shieldedAddress (bech32), session.coinPublicKey
-  //   (which may be a bech32 mn_shield-cpk_* string from getShieldedAddresses()), or unshielded address
-  // For unshielded midnames: compare against session.address
   let verified = false;
   if (resolvedType === "shielded") {
-    const norm = (s) => (s || "").trim().toLowerCase();
-    const normResolved = norm(resolvedAddress);
-    if (session.shieldedAddress && normResolved === norm(session.shieldedAddress)) {
-      console.log("[identity/verify-midname] matched via session.shieldedAddress");
-      verified = true;
-    } else if (session.coinPublicKey && normResolved === norm(session.coinPublicKey)) {
-      // Direct match: wallet's shieldedCoinPublicKey is stored as-is (bech32 mn_shield-cpk_* or hex)
-      console.log("[identity/verify-midname] matched via session.coinPublicKey (direct)");
-      verified = true;
-    } else if (session.coinPublicKey) {
-      // Fallback: check if one is a substring of the other (handles hex vs bech32 partial overlap)
-      const cpk = norm(session.coinPublicKey);
-      if (cpk.length > 16 && normResolved.includes(cpk.slice(0, 16))) {
-        console.log("[identity/verify-midname] matched via session.coinPublicKey (substring fallback)");
-        verified = true;
-      }
+    if (!session.coinPublicKey && !session.shieldedAddress) {
+      // Wallet session has no shielded identity — wallet did not expose it at connect time
+      console.log("[identity/verify-midname] no shielded identity in session — shielded_unverifiable");
+      return res.status(422).json({
+        ok: false,
+        error: "Your wallet did not expose shielded identity when you connected. Disconnect and reconnect your wallet, then try again.",
+        verificationStatus: "shielded_unverifiable",
+        resolved: resolvedAddress,
+        resolvedType,
+      });
     }
+
+    // Primary: bech32 decode — extract coinPublicKey bytes from both sides and compare.
+    // resolvedAddress is a shield-addr bech32 (cpk + epk encoded together).
+    // session.coinPublicKey is mn_shield-cpk_... bech32 (just the cpk).
+    // Direct string comparison always fails — we must decode both.
+    if (session.coinPublicKey) {
+      try {
+        const { MidnightBech32m, ShieldedCoinPublicKey, ShieldedAddress } =
+          await import("@midnight-ntwrk/wallet-sdk-address-format");
+
+        const parsedResolved = MidnightBech32m.parse(resolvedAddress);
+        let resolvedCpk;
+        if (parsedResolved.type === "shield-addr") {
+          const shieldedAddr = ShieldedAddress.codec.decode("preprod", parsedResolved);
+          resolvedCpk = shieldedAddr.coinPublicKey;
+        } else {
+          resolvedCpk = ShieldedCoinPublicKey.codec.decode("preprod", parsedResolved);
+        }
+
+        const parsedWalletCpk = MidnightBech32m.parse(session.coinPublicKey);
+        const walletCpk = ShieldedCoinPublicKey.codec.decode("preprod", parsedWalletCpk);
+
+        verified = resolvedCpk.equals(walletCpk);
+        console.log("[identity/verify-midname] bech32 cpk comparison:", verified,
+          "resolved cpk hex:", resolvedCpk.toHexString?.() || "(no toHexString)",
+          "wallet cpk hex:", walletCpk.toHexString?.() || "(no toHexString)");
+      } catch (e) {
+        console.log("[identity/verify-midname] bech32 decode failed:", e.message, "— falling back to string compare");
+        // Fallback: direct string comparison
+        const norm = (s) => (s || "").trim().toLowerCase();
+        verified = norm(resolvedAddress) === norm(session.coinPublicKey) ||
+                   norm(resolvedAddress) === norm(session.shieldedAddress);
+        console.log("[identity/verify-midname] string fallback match:", verified);
+      }
+    } else if (session.shieldedAddress) {
+      // Only shieldedAddress available (no coinPublicKey), try direct compare
+      verified = resolvedAddress.trim().toLowerCase() === session.shieldedAddress.trim().toLowerCase();
+      console.log("[identity/verify-midname] shieldedAddress direct match:", verified);
+    }
+
     if (!verified) {
-      console.log("[identity/verify-midname] shielded mismatch — resolved:", normResolved,
-        "shieldedAddress:", norm(session.shieldedAddress), "coinPublicKey:", norm(session.coinPublicKey));
+      console.log("[identity/verify-midname] shielded mismatch — resolved:", resolvedAddress,
+        "session.coinPublicKey:", session.coinPublicKey || "(none)",
+        "session.shieldedAddress:", session.shieldedAddress || "(none)");
     }
   } else {
     // unshielded: direct comparison
@@ -5324,12 +5363,13 @@ app.post("/identity/verify-midname", async (req, res) => {
     return res.status(422).json({
       ok: false,
       error: resolvedType === "shielded"
-        ? "Midname resolves to a shielded address that does not match your connected wallet's shielded address."
+        ? "Midname resolves to a shielded address that does not match your connected wallet's shielded identity."
         : "Midname resolves to a different address. Verify you own this midname.",
       resolved: resolvedAddress,
       resolvedType,
       connected: session.address,
-      connectedShielded: session.shieldedAddress || null
+      connectedShielded: session.shieldedAddress || null,
+      connectedCoinPublicKey: session.coinPublicKey ? "(present)" : null,
     });
   }
 
@@ -5383,6 +5423,9 @@ app.get("/identity/card", (_req, res) => {
   const idTwitter = idFields.twitter || null;
   const idBio = idFields.bio || null;
   const idResolvedType = identity.resolvedType || null;
+  const shieldedIdentityAvailable = !!(session && (session.coinPublicKey || session.shieldedAddress));
+  const shieldedStatus = !walletConnected ? "not connected" : shieldedIdentityAvailable ? "available" : "not captured";
+  const shieldedStatusColor = !walletConnected ? "#6b7280" : shieldedIdentityAvailable ? "#22c55e" : "#f59e0b";
 
   res.type("html").send(`<!doctype html>
 <html>
@@ -5470,6 +5513,14 @@ app.get("/identity/card", (_req, res) => {
       <span class="identity-value" style="color:#6b7280;">${idResolvedType}</span>
     </div>` : ""}
     <div class="identity-row">
+      <span class="identity-label">Shielded Identity</span>
+      <span class="identity-value" style="color:${shieldedStatusColor};">
+        <span class="status-dot" style="background:${shieldedStatusColor};"></span>
+        ${shieldedStatus}
+        ${walletConnected && !shieldedIdentityAvailable ? `<span style="font-size:11px;color:#f59e0b;font-weight:400;margin-left:6px;">· reconnect wallet to capture</span>` : ""}
+      </span>
+    </div>
+    <div class="identity-row">
       <span class="identity-label">DID</span>
       <span class="identity-value" style="color:#6b7280;">
         <span class="future-tag">Future / Unavailable</span>
@@ -5488,6 +5539,10 @@ app.get("/identity/card", (_req, res) => {
       Enter your Midnight Midname (e.g. <code style="color:#9aa3ff;">pilot.night</code>).
       The app will resolve it and verify it matches your connected wallet address.
     </p>
+    ${!shieldedIdentityAvailable ? `<div style="font-size:12px;background:#1a1200;border:1px solid #3a2a00;color:#f59e0b;padding:10px 14px;border-radius:8px;margin-bottom:12px;">
+      ⚠ Shielded identity not captured from wallet. Shielded midnames (.night shielded) cannot be verified until you disconnect and reconnect your wallet.
+      Unshielded midnames will still work.
+    </div>` : ""}
     <div class="verify-form">
       <label>Midname</label>
       <input type="text" id="midname-input" placeholder="e.g. pilot.night" value="${identity.midname || ''}" />
