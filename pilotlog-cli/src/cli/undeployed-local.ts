@@ -403,9 +403,10 @@ else if (command === "midname") {
 
     const walletSession = loadWalletSession();
     const walletAddress = walletSession?.address ?? null;
+    const coinPublicKey = walletSession?.coinPublicKey ?? null;
 
     console.log(`Resolving ${midname} on preprod...`);
-    const result = await resolveMidnameIdentity(midname, walletAddress);
+    const result = await resolveMidnameIdentity(midname, walletAddress, coinPublicKey);
 
     if ("error" in result) {
       console.error(`midname set: resolution failed — ${result.error}`);

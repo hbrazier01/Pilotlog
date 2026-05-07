@@ -7,6 +7,7 @@
  * Does not block flight logging on any failure.
  */
 
+import { MidnightBech32m, ShieldedCoinPublicKey } from "@midnight-ntwrk/wallet-sdk-address-format";
 import type { MidnameIdentity } from "./midnameStore.js";
 
 const NETWORK_ID = "preprod";
@@ -36,11 +37,15 @@ export function validateMidname(domain: string): string | null {
 
 /**
  * Resolve a midname and return a MidnameIdentity for storage.
- * Compares to walletAddress if provided to set verificationStatus.
+ * Compares to walletAddress / coinPublicKey to set verificationStatus.
+ *
+ * @param walletAddress - bech32 unshielded address (for unshielded midnames)
+ * @param coinPublicKey - hex coin public key (for shielded midnames)
  */
 export async function resolveMidnameIdentity(
   midname: string,
-  walletAddress: string | null
+  walletAddress: string | null,
+  coinPublicKey: string | null = null
 ): Promise<MidnameIdentity | { error: string }> {
   try {
     const { getDefaultProvider, resolveDomain, getDomainFields } = await import("@midnames/sdk");
@@ -80,10 +85,28 @@ export async function resolveMidnameIdentity(
       // fields are optional — ignore errors
     }
 
-    const verificationStatus: MidnameIdentity["verificationStatus"] =
-      walletAddress && resolvedAddress === walletAddress
-        ? "verified"
-        : "resolved_unverified";
+    // Log both values before comparison for debug visibility
+    console.log(`[midname-verify] resolved type=${resolvedType} address=${resolvedAddress}`);
+    console.log(`[midname-verify] wallet unshielded=${walletAddress ?? "(none)"} coinPublicKey=${coinPublicKey ? coinPublicKey.slice(0, 16) + "…" : "(none)"}`);
+
+    let verificationStatus: MidnameIdentity["verificationStatus"] = "resolved_unverified";
+    if (resolvedType === "shielded" && coinPublicKey) {
+      try {
+        const parsed = MidnightBech32m.parse(resolvedAddress);
+        const cpk = ShieldedCoinPublicKey.codec.decode(NETWORK_ID, parsed);
+        const match = cpk.equals(coinPublicKey);
+        console.log(`[midname-verify] shielded cpk match=${match}`);
+        if (match) verificationStatus = "verified";
+      } catch (e) {
+        console.log(`[midname-verify] shielded decode failed: ${e}`);
+      }
+    } else if (resolvedType === "unshielded" && walletAddress) {
+      const normResolved = resolvedAddress.trim().toLowerCase();
+      const normWallet = walletAddress.trim().toLowerCase();
+      const match = normResolved === normWallet;
+      console.log(`[midname-verify] unshielded match=${match}`);
+      if (match) verificationStatus = "verified";
+    }
 
     return {
       midname,
