@@ -1023,7 +1023,7 @@ app.get("/", (_req, res) => {
     <div class="nav">
       ${walletNavHtml(walletSession, identity)}
       <a href="/passport">Passport</a>
-      <a href="/progression">Progression</a>
+      <a href="/progression">Journey</a>
       <a href="/pilot-report">Pilot Report →</a>
     </div>
   </div>
@@ -6345,6 +6345,39 @@ app.get("/api/progression", (req, res) => {
   res.json(computeProgression(profile, entries, attestations, asOf));
 });
 
+app.get("/api/whats-next", (req, res) => {
+  const asOf = String(req.query.asOf || new Date().toISOString());
+  const profile = readProfile();
+  const entries = readEntries();
+  const attestations = readAttestations();
+  const prog = computeProgression(profile, entries, attestations, asOf);
+  res.json({
+    asOf,
+    progressionState: prog.progressionState,
+    label: prog.label,
+    guidanceCards: prog.guidanceCards,
+    recommendations: prog.recommendations,
+  });
+});
+
+app.get("/api/milestones", (req, res) => {
+  const asOf = String(req.query.asOf || new Date().toISOString());
+  const profile = readProfile();
+  const entries = readEntries();
+  const attestations = readAttestations();
+  const prog = computeProgression(profile, entries, attestations, asOf);
+  res.json({
+    asOf,
+    progressionState: prog.progressionState,
+    label: prog.label,
+    progressPct: prog.progressPct,
+    milestones: prog.milestones,
+  });
+});
+
+// /journey is an alias for /progression
+app.get("/journey", (req, res) => res.redirect("/progression"));
+
 app.get("/progression", (_req, res) => {
   const profile = readProfile();
   const entries = readEntries();
@@ -6443,6 +6476,53 @@ app.get("/progression", (_req, res) => {
   const completedCount = prog.milestones.filter(m => m.status === 'completed').length;
   const inProgCount = prog.milestones.filter(m => m.status === 'in_progress').length;
 
+  // Journey Timeline
+  const PROGRESSION_PHASES = [
+    { key: 'discovery',           label: 'Discovery',          short: 'Discovery',      order: 0 },
+    { key: 'student_pilot',       label: 'Student Pilot',      short: 'Student',        order: 1 },
+    { key: 'solo_ready',          label: 'Solo Ready',         short: 'Solo Ready',     order: 2 },
+    { key: 'solo_complete',       label: 'Solo Complete',      short: 'Solo',           order: 3 },
+    { key: 'xc_ready',            label: 'Cross-Country',      short: 'XC',             order: 4 },
+    { key: 'checkride_ready',     label: 'Checkride Ready',    short: 'Checkride',      order: 5 },
+    { key: 'private_pilot',       label: 'Private Pilot',      short: 'PPL',            order: 6 },
+    { key: 'instrument_training', label: 'Instrument Training', short: 'IFR Training',  order: 7 },
+    { key: 'instrument_ready',    label: 'Instrument Ready',   short: 'IFR Ready',      order: 8 },
+    { key: 'instrument_rated',    label: 'Instrument Rated',   short: 'IFR Rated',      order: 9 },
+    { key: 'commercial_track',    label: 'Commercial Track',   short: 'Commercial',     order: 10 },
+    { key: 'cfi_track',           label: 'CFI Track',          short: 'CFI',            order: 11 },
+  ];
+
+  const currentOrder = PROGRESSION_PHASES.find(p => p.key === prog.progressionState)?.order ?? 0;
+
+  const timelineHtml = PROGRESSION_PHASES.map((phase, idx) => {
+    const isCompleted = phase.order < currentOrder;
+    const isActive    = phase.key === prog.progressionState;
+    const isUpcoming  = phase.order > currentOrder;
+
+    const dotColor    = isCompleted ? '#22c55e' : isActive ? '#818cf8' : '#1e293b';
+    const dotBorder   = isCompleted ? '#22c55e' : isActive ? '#818cf8' : '#334155';
+    const dotShadow   = isActive ? '0 0 0 4px rgba(129,140,248,0.2)' : 'none';
+    const labelColor  = isCompleted ? '#22c55e' : isActive ? '#818cf8' : '#374151';
+    const labelWeight = isActive ? '700' : '600';
+    const dotSize     = isActive ? '14px' : '10px';
+
+    const connectorColor = isCompleted ? '#22c55e' : '#1e293b';
+    const connectorHtml  = idx < PROGRESSION_PHASES.length - 1
+      ? `<div style="flex:1;height:2px;background:${connectorColor};align-self:flex-start;margin-top:${isActive ? '7px' : '5px'};"></div>`
+      : '';
+
+    return `
+      <div style="display:flex;align-items:flex-start;flex:1;">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+          <div style="width:${dotSize};height:${dotSize};border-radius:50%;background:${dotColor};border:2px solid ${dotBorder};box-shadow:${dotShadow};flex-shrink:0;"></div>
+          <div style="font-size:9px;font-weight:${labelWeight};color:${labelColor};text-align:center;white-space:nowrap;text-transform:uppercase;letter-spacing:0.05em;">${phase.short}</div>
+          ${isActive ? `<div style="font-size:8px;color:#6366f1;text-align:center;white-space:nowrap;">← you are here</div>` : ''}
+        </div>
+        ${connectorHtml}
+      </div>
+    `;
+  }).join('');
+
   res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -6471,7 +6551,7 @@ app.get("/progression", (_req, res) => {
   <nav>
     <a href="/">Dashboard</a>
     <a href="/passport">Passport</a>
-    <a href="/progression" class="active">Progression</a>
+    <a href="/progression" class="active">Journey</a>
     <a href="/pilot-report">Pilot Report</a>
   </nav>
 
@@ -6495,34 +6575,43 @@ app.get("/progression", (_req, res) => {
     </div>
   </div>
 
+  <!-- Journey Timeline -->
+  <div class="card" style="margin-bottom:20px;">
+    <div class="section-title">Pilot Journey Timeline</div>
+    <div style="display:flex;align-items:flex-start;gap:0;overflow-x:auto;padding:8px 0 16px;">
+      ${timelineHtml}
+    </div>
+    <div style="color:#475569;font-size:11px;margin-top:4px;">${prog.description}</div>
+  </div>
+
   <!-- Stats Grid -->
   <div class="grid-stats">
     ${statsHtml}
   </div>
 
+  <!-- What's Next (full width) -->
+  ${prog.guidanceCards.length > 0 ? `
+  <div class="card" style="margin-bottom:20px;">
+    <div class="section-title">What's Next</div>
+    ${cardsHtml}
+    ${recsHtml ? `<div style="margin-top:16px;"><div class="section-title">Recommendations</div>${recsHtml}</div>` : ''}
+  </div>
+  ` : ''}
+
   <!-- Cards + Milestones -->
   <div class="grid-2" style="margin-bottom:20px;">
-    <!-- Guidance Cards -->
-    <div class="card">
-      <div class="section-title">Guidance</div>
-      ${cardsHtml}
-    </div>
-
     <!-- Readiness Layers -->
     <div class="card">
       <div class="section-title">Readiness</div>
       ${readinessHtml}
-      <div style="margin-top:20px;">
-        <div class="section-title">Recommendations</div>
-        ${recsHtml}
-      </div>
+      ${prog.guidanceCards.length === 0 && recsHtml ? `<div style="margin-top:20px;"><div class="section-title">Recommendations</div>${recsHtml}</div>` : ''}
     </div>
-  </div>
 
-  <!-- Milestones -->
-  <div class="card">
-    <div class="section-title">Milestones</div>
-    ${milestonesHtml}
+    <!-- Milestones Summary -->
+    <div class="card">
+      <div class="section-title">Milestones</div>
+      ${milestonesHtml}
+    </div>
   </div>
 
   <div style="margin-top:16px;color:#334155;font-size:11px;text-align:center;">

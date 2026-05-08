@@ -41,6 +41,12 @@ function usage() {
   console.log("  report [--out <path>]          Pilot report (currency, certs, hours)");
   console.log("  trust-report [--out <path>]    Buyer-facing trust dossier (provenance, compliance, risk)");
   console.log("");
+  console.log("  dashboard                      Pilot journey overview (progression + readiness + guidance)");
+  console.log("  journey                        Visual pilot progression timeline");
+  console.log("  milestones                     Milestone achievement tracker");
+  console.log("  whats-next                     Personalized next-step guidance");
+  console.log("  readiness                      Readiness status at a glance");
+  console.log("");
   console.log("  profile get");
   console.log('  profile set --fullName "H B" --email "you@example.com" --phone "555-555-5555" [--phase student_ppl|ppl_complete|instrument_training|instrument_rated|commercial|cfi]');
   console.log("");
@@ -379,6 +385,29 @@ else if (command === "trust-report") {
   if (flags["out"]) extraArgs.push("--out", flags["out"]);
 
   const res = spawnSync(process.execPath, [scriptPath, ...extraArgs], {
+    stdio: "inherit",
+    env: { ...process.env, PILOTLOG_HOME: dataDir },
+  });
+
+  process.exit(res.status ?? 1);
+}
+
+// -------------------- JOURNEY / DASHBOARD --------------------
+else if (command === "dashboard" || command === "journey" || command === "milestones" || command === "whats-next" || command === "readiness") {
+  const thisFile = fileURLToPath(import.meta.url);
+  const pkgRoot = path.resolve(path.dirname(thisFile), "../../..");
+  const scriptPath = path.join(pkgRoot, "scripts", "pilot-journey.mjs");
+  const dataDir = process.env.PILOTLOG_HOME || path.join(process.cwd(), ".pilotlog");
+
+  const viewMap: Record<string, string> = {
+    dashboard:   "dashboard",
+    journey:     "timeline",
+    milestones:  "milestones",
+    "whats-next": "whats-next",
+    readiness:   "readiness",
+  };
+
+  const res = spawnSync(process.execPath, [scriptPath, viewMap[command] || "dashboard"], {
     stdio: "inherit",
     env: { ...process.env, PILOTLOG_HOME: dataDir },
   });
