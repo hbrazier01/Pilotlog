@@ -46,6 +46,7 @@ function usage() {
   console.log("  milestones                     Milestone achievement tracker");
   console.log("  whats-next                     Personalized next-step guidance");
   console.log("  readiness                      Readiness status at a glance");
+  console.log("  mentor                         Smart Aviation Mentor — insights, trends, guidance");
   console.log("");
   console.log("  profile get");
   console.log('  profile set --fullName "H B" --email "you@example.com" --phone "555-555-5555" [--phase student_ppl|ppl_complete|instrument_training|instrument_rated|commercial|cfi]');
@@ -393,7 +394,7 @@ else if (command === "trust-report") {
 }
 
 // -------------------- JOURNEY / DASHBOARD --------------------
-else if (command === "dashboard" || command === "journey" || command === "milestones" || command === "whats-next" || command === "readiness") {
+else if (command === "dashboard" || command === "journey" || command === "milestones" || command === "whats-next" || command === "readiness" || command === "mentor") {
   const thisFile = fileURLToPath(import.meta.url);
   const pkgRoot = path.resolve(path.dirname(thisFile), "../../..");
   const scriptPath = path.join(pkgRoot, "scripts", "pilot-journey.mjs");
@@ -405,6 +406,7 @@ else if (command === "dashboard" || command === "journey" || command === "milest
     milestones:  "milestones",
     "whats-next": "whats-next",
     readiness:   "readiness",
+    mentor:      "mentor",
   };
 
   const res = spawnSync(process.execPath, [scriptPath, viewMap[command] || "dashboard"], {

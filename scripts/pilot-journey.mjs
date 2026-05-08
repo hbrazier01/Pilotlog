@@ -11,6 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { computeProgression, PROGRESSION_STATES } from "../pilotlog-cli/src/lib/progression-engine.mjs";
+import { computeMentorInsights } from "../pilotlog-cli/src/lib/mentor-engine.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.PILOTLOG_HOME || path.join(__dirname, "../data");
@@ -23,8 +24,9 @@ const profile      = readJSON(path.join(DATA_DIR, "profile.json"), {});
 const entries      = readJSON(path.join(DATA_DIR, "entries.json"), []);
 const attestations = readJSON(path.join(DATA_DIR, "attestations.json"), []);
 
-const asOf = new Date().toISOString();
-const prog = computeProgression(profile, entries, attestations, asOf);
+const asOf   = new Date().toISOString();
+const prog   = computeProgression(profile, entries, attestations, asOf);
+const mentor = computeMentorInsights(profile, entries, attestations, prog, asOf);
 
 // ─── ANSI Colors ──────────────────────────────────────────────────────────────
 const C = {
@@ -217,7 +219,76 @@ function renderReadiness() {
   console.log();
 }
 
-// ─── VIEW: DASHBOARD (default) ────────────────────────────────────────────────
+// ─── VIEW: MENTOR ─────────────────────────────────────────────────────────────
+
+function priorityLabel(p) {
+  if (p === "critical")    return "\x1b[31m[CRITICAL]\x1b[0m";
+  if (p === "important")   return yellow("[IMPORTANT]");
+  if (p === "milestone")   return cyan("[MILESTONE]");
+  if (p === "recommended") return blue("[RECOMMENDED]");
+  return gray("[OPTIONAL]");
+}
+
+function renderMentor() {
+  section("Aviation Mentor");
+
+  // Summary line
+  console.log();
+  console.log(`  ${bold("Mentor:")} ${bold(yellow(mentor.summary))}`);
+  console.log();
+
+  // Trends
+  if (mentor.trends.length) {
+    const positiveTrends = mentor.trends.filter(t => t.type === "positive");
+    const warningTrends  = mentor.trends.filter(t => t.type === "warning");
+
+    if (positiveTrends.length) {
+      console.log(`  ${bold(green("Positive Trends"))}`);
+      for (const t of positiveTrends) {
+        console.log(`    ${green("↑")}  ${bold(t.headline)}`);
+        console.log(gray(`       ${t.body}`));
+      }
+      console.log();
+    }
+
+    if (warningTrends.length) {
+      console.log(`  ${bold(yellow("Trends to Watch"))}`);
+      for (const t of warningTrends) {
+        console.log(`    ${yellow("⚠")}  ${bold(t.headline)}`);
+        console.log(gray(`       ${t.body}`));
+      }
+      console.log();
+    }
+  }
+
+  // Mentor insight cards
+  if (mentor.insights.length) {
+    console.log(`  ${bold("Guidance")}`);
+    console.log();
+    for (const ins of mentor.insights.slice(0, 7)) {
+      console.log(`  ${priorityLabel(ins.priority)}  ${bold(ins.headline)}`);
+      console.log(gray(`     ${ins.body}`));
+      if (ins.action) console.log(`     ${cyan("→")} ${ins.action}`);
+      console.log();
+    }
+  }
+
+  // Positive reinforcement
+  if (mentor.reinforcements.length) {
+    console.log(`  ${bold(green("Reinforcement"))}`);
+    for (const r of mentor.reinforcements) {
+      console.log(`  ${green("✦")}  ${r}`);
+    }
+    console.log();
+  }
+
+  if (!mentor.insights.length && !mentor.trends.length) {
+    console.log(`  ${green("No active alerts.")} Keep flying and logging.`);
+    console.log();
+  }
+}
+
+// ─── VIEW: DASHBOARD (with mentor integration) ────────────────────────────────
 
 function renderDashboard() {
   const name = profile?.pilot?.fullName || "Pilot";
@@ -236,8 +307,15 @@ function renderDashboard() {
   console.log(`  ${bold("Progress:")}  ${prog.progressPct}%  ${bar(prog.progressPct, 30)}`);
   console.log(`  ${bold("Flights:")}   ${prog.stats.totalFlights}  |  ${bold("Total:")} ${totalH}h  |  ${bold("PIC:")} ${prog.stats.picHours}h  |  ${bold("XC:")} ${prog.stats.xcHours}h  |  ${bold("Night:")} ${prog.stats.nightHours}h`);
 
+  // Mentor summary line in dashboard header
+  if (mentor.summary) {
+    console.log();
+    console.log(`  ${bold("Mentor:")}    ${yellow(mentor.summary)}`);
+  }
+
   renderTimeline();
   renderReadiness();
+  renderMentor();
   renderWhatsNext();
   renderMilestones();
 
@@ -257,5 +335,6 @@ switch (view) {
   case "milestones": renderMilestones(); break;
   case "whats-next": renderWhatsNext();  break;
   case "readiness":  renderReadiness();  break;
+  case "mentor":     renderMentor();     break;
   default:           renderDashboard();  break;
 }
