@@ -874,6 +874,16 @@ app.get("/", (_req, res) => {
   const profile = readProfile();
   const walletSession = readWalletSession();
   const identity = readIdentity();
+  const allAttestationsForDash = readAttestations();
+  // Build a map: flightId -> best attestation status for dashboard badge
+  const flightAttestationMap = {};
+  for (const a of allAttestationsForDash) {
+    const prev = flightAttestationMap[a.flightId];
+    // Priority: verified > pending > rejected
+    if (!prev || (a.status === "verified") || (a.status === "pending" && prev.status !== "verified")) {
+      flightAttestationMap[a.flightId] = a;
+    }
+  }
 
   const pilotName = profile?.pilot?.fullName || "Pilot";
 
@@ -1111,6 +1121,7 @@ app.get("/", (_req, res) => {
 
   <script>
     const lastUsedAircraft = ${JSON.stringify(lastUsedAircraft)};
+    window.pilotlogAttestationMap = ${JSON.stringify(flightAttestationMap)};
 
     // Phase-aware readiness assistant
     (async function loadReadiness() {
@@ -2241,7 +2252,15 @@ app.get("/", (_req, res) => {
                 : status === 'submitted'
                 ? '<span style="color:#a78bfa;font-size:11px;font-weight:600;">&#x29D6; Submitted</span>'
                 : '<span style="color:#718096;font-size:11px;">—</span>';
-              const verifyBtn = \`<button onclick="requestVerification('\${e.id}')" style="font-size:10px;padding:3px 8px;border:1px solid #374151;background:none;color:#9aa3ff;border-radius:5px;cursor:pointer;white-space:nowrap;">Request Verify</button>\`;
+              const attest = window.pilotlogAttestationMap && window.pilotlogAttestationMap[e.id];
+              const attestBadge = attest && attest.status === 'verified'
+                ? \`<span style="color:#22c55e;font-size:10px;font-weight:700;display:block;margin-top:2px;">&#9989; Instructor Verified\${attest.attestorMidname ? ' · ' + attest.attestorMidname : ''}</span>\`
+                : attest && attest.status === 'pending'
+                ? \`<span style="color:#f59e0b;font-size:10px;font-weight:600;display:block;margin-top:2px;">&#9711; Pending Review</span>\`
+                : '';
+              const verifyBtn = attest && attest.status === 'verified'
+                ? \`<span style="font-size:10px;color:#22c55e;font-weight:600;">&#10003; Verified</span>\`
+                : \`<button onclick="requestVerification('\${e.id}')" style="font-size:10px;padding:3px 8px;border:1px solid #374151;background:none;color:#9aa3ff;border-radius:5px;cursor:pointer;white-space:nowrap;">Request Verify</button>\`;
               return \`<tr>
                 <td>\${String(e.date || '').slice(0, 10)}</td>
                 <td>\${e.aircraftIdent || e.aircraftId || ''} <span class="muted">\${e.aircraftType ? \`(\${e.aircraftType})\` : ''}</span></td>
@@ -2249,7 +2268,7 @@ app.get("/", (_req, res) => {
                 <td>\${e.totalTime ?? e.total ?? ''}</td>
                 <td>\${e.pic ?? ''}</td>
                 <td class="muted">\${(e.remarks || '').replaceAll('<','&lt;').replaceAll('>','&gt;')}</td>
-                <td>\${statusBadge}</td>
+                <td>\${statusBadge}\${attestBadge}</td>
                 <td>\${verifyBtn}</td>
               </tr>\`;
             }).join('');
@@ -2538,6 +2557,35 @@ app.post("/attestations", (req, res) => {
   all.push(attestation);
   saveAttestations(all);
   res.status(201).json(attestation);
+});
+
+app.patch("/attestations/:id", (req, res) => {
+  const { action, reviewerMidname, reviewerRole, notes } = req.body || {};
+  if (!action || !["approve", "reject"].includes(action)) {
+    return res.status(400).json({ error: "action must be 'approve' or 'reject'" });
+  }
+  const all = readAttestations();
+  const idx = all.findIndex(a => a.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: "attestation not found" });
+  const attestation = all[idx];
+  if (attestation.status !== "pending") {
+    return res.status(409).json({ error: "attestation is not pending" });
+  }
+  if (action === "approve") {
+    attestation.status = "verified";
+    attestation.signedAt = new Date().toISOString();
+    attestation.attestorMidname = reviewerMidname || attestation.attestorMidname || null;
+    attestation.attestorRole = reviewerRole || attestation.attestorRole || null;
+    if (notes) attestation.notes = notes;
+  } else {
+    attestation.status = "rejected";
+    attestation.rejectedAt = new Date().toISOString();
+    attestation.rejectedBy = reviewerMidname || null;
+    if (notes) attestation.notes = notes;
+  }
+  all[idx] = attestation;
+  saveAttestations(all);
+  res.json(attestation);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -6046,21 +6094,230 @@ app.get("/passport", (_req, res) => {
   </div>
 
   <div class="section-label">Attestations</div>
-  <div class="section-card">
-    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;margin-bottom:12px;">Flight Verifications</div>
-    ${attestationsSectionHtml(allAttestations, { theme: "dark", emptyMsg: "No attestations yet. Use the dashboard to request verification on a flight." })}
+
+  ${(() => {
+    const pending = allAttestations.filter(a => a.status === "pending");
+    const verified = allAttestations.filter(a => a.status === "verified");
+    const rejected = allAttestations.filter(a => a.status === "rejected");
+
+    const pendingHtml = pending.length > 0
+      ? pending.map(a => {
+          const entries2 = readEntries();
+          const flight = entries2.find(e => e.id === a.flightId);
+          const flightLabel = flight
+            ? `${String(flight.date || "").slice(0,10)} · ${flight.from || ""}→${flight.to || ""}`
+            : a.flightId.slice(0, 8) + "…";
+          const typeLabel = { instruction_verified: "Instructor Verified", flight_verified: "Flight Confirmed", endorsement_verified: "Endorsement Signed Off", aircraft_checkout: "Aircraft Checkout", maintenance_verified: "Maintenance Signed Off" }[a.type] || a.type;
+          return `<div style="background:#0b0f18;border:1px solid #2d2209;border-radius:10px;padding:14px 16px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:3px;">${typeLabel}</div>
+              <div style="font-size:12px;color:#b6b9c6;margin-bottom:2px;">${flightLabel}</div>
+              ${a.attestorMidname ? `<div style="font-size:11px;color:#6b7280;">Requested from <strong>${a.attestorMidname}</strong></div>` : `<div style="font-size:11px;color:#6b7280;">Awaiting reviewer</div>`}
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;background:#1a1203;border:1px solid #f59e0b33;border-radius:20px;padding:3px 10px;flex-shrink:0;">
+              <span style="width:6px;height:6px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>
+              <span style="font-size:11px;font-weight:700;color:#f59e0b;">Pending</span>
+            </div>
+          </div>`;
+        }).join("")
+      : `<div style="font-size:13px;color:#374151;font-style:italic;padding:8px 0;">No pending requests.</div>`;
+
+    const verifiedHtml = verified.length > 0
+      ? attestationsSectionHtml(verified, { theme: "dark" })
+      : `<div style="font-size:13px;color:#374151;font-style:italic;padding:8px 0;">No verified attestations yet.</div>`;
+
+    const rejectedHtml = rejected.length > 0
+      ? attestationsSectionHtml(rejected, { theme: "dark" })
+      : `<div style="font-size:13px;color:#374151;font-style:italic;padding:8px 0;">No rejected requests.</div>`;
+
+    return `
+  <div class="section-card" style="margin-bottom:12px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;">Pending Requests</div>
+      ${pending.length > 0 ? `<a href="/review" style="font-size:12px;font-weight:700;color:#9aa3ff;text-decoration:none;background:#0f1628;border:1px solid #222843;border-radius:6px;padding:4px 12px;">Review →</a>` : ""}
+    </div>
+    ${pendingHtml}
   </div>
-  <div class="two-col" style="margin-top:12px;">
-    ${placeholderSection("FAA Verification")}
-    ${placeholderSection("Instructor Trust Level")}
+
+  <div class="section-card" style="margin-bottom:12px;">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;margin-bottom:12px;">Verified Attestations</div>
+    ${verifiedHtml}
   </div>
+
+  ${rejected.length > 0 ? `<div class="section-card" style="margin-bottom:12px;">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;margin-bottom:12px;">Rejected Requests</div>
+    ${rejectedHtml}
+  </div>` : ""}
+    `;
+  })()}
 
   <div class="actions">
     <a href="/" class="btn btn-outline">← Dashboard</a>
-    ${!midnameVerified ? `<a href="/identity/card" class="btn">Verify Identity →</a>` : ""}
+    <a href="/review" class="btn">Review Requests →</a>
+    ${!midnameVerified ? `<a href="/identity/card" class="btn btn-outline">Verify Identity →</a>` : ""}
     <a href="/pilot-report" class="btn btn-outline">Pilot Report →</a>
   </div>
 </div>
+${walletStatusScript}
+</body>
+</html>`);
+});
+// ─── /review — Attestation Review Panel ───────────────────────────────────────
+app.get("/review", (_req, res) => {
+  const session = readWalletSession();
+  const identity = readIdentity() || {};
+  const allAttestations = readAttestations();
+  const entries = readEntries();
+  const pending = allAttestations.filter(a => a.status === "pending");
+
+  function flightSummary(flightId) {
+    const f = entries.find(e => e.id === flightId);
+    if (!f) return { label: flightId.slice(0, 8) + "…", route: "—", date: "—", aircraft: "—" };
+    return {
+      label: `${String(f.date || "").slice(0, 10)} · ${f.from || "?"}→${f.to || "?"}`,
+      route: `${f.from || "?"}→${f.to || "?"}`,
+      date: String(f.date || "").slice(0, 10),
+      aircraft: f.aircraftIdent || f.aircraftId || "—",
+    };
+  }
+
+  const MOCK_REVIEWERS = ["cfi.night", "school.night", "instructor.night", "checkpilot.night", "dpe.night"];
+
+  const pendingCardsHtml = pending.length === 0
+    ? `<div style="text-align:center;padding:48px 24px;color:#4a5568;font-size:14px;font-style:italic;">No pending verification requests.</div>`
+    : pending.map(a => {
+        const fl = flightSummary(a.flightId);
+        const typeLabel = { instruction_verified: "Instructor Verified", flight_verified: "Flight Confirmed", endorsement_verified: "Endorsement Signed Off", aircraft_checkout: "Aircraft Checkout", maintenance_verified: "Maintenance Signed Off" }[a.type] || a.type;
+        const requested = String(a.createdAt || "").slice(0, 10);
+        return `<div id="card-${a.id}" style="background:#0f1628;border:1px solid #222843;border-radius:14px;padding:22px 24px;margin-bottom:18px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:16px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">${typeLabel}</div>
+              <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;">
+                <span style="font-size:12px;color:#9aa3ff;font-weight:600;">&#9992; ${fl.route}</span>
+                <span style="font-size:12px;color:#b6b9c6;">${fl.aircraft}</span>
+                <span style="font-size:12px;color:#6b7280;">${fl.date}</span>
+              </div>
+              ${a.attestorMidname ? `<div style="font-size:12px;color:#b6b9c6;margin-bottom:6px;">Requested from: <strong style="color:#9aa3ff;">${a.attestorMidname}</strong></div>` : ""}
+              <div style="font-size:11px;color:#4a5568;">Requested ${requested}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;background:#1a1203;border:1px solid #f59e0b33;border-radius:20px;padding:4px 12px;flex-shrink:0;align-self:flex-start;">
+              <span style="width:6px;height:6px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>
+              <span style="font-size:11px;font-weight:700;color:#f59e0b;">Pending</span>
+            </div>
+          </div>
+          <div style="margin-top:16px;padding-top:16px;border-top:1px solid #1a1f33;">
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;margin-bottom:10px;">Reviewing as</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+              <select id="reviewer-${a.id}" style="background:#0b0f18;border:1px solid #222843;color:#e2e8f0;border-radius:7px;padding:7px 12px;font-size:13px;min-width:180px;">
+                ${MOCK_REVIEWERS.map(m => `<option value="${m}"${a.attestorMidname === m ? " selected" : ""}>${m}</option>`).join("")}
+              </select>
+              <button onclick="approveAttestation('${a.id}')" style="background:#14532d;border:1px solid #16a34a55;color:#4ade80;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;">
+                &#10003; Approve
+              </button>
+              <button onclick="rejectAttestation('${a.id}')" style="background:#450a0a;border:1px solid #dc262655;color:#f87171;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;">
+                &#10007; Reject
+              </button>
+            </div>
+          </div>
+        </div>`;
+      }).join("");
+
+  res.type("html").send(`<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Review Attestations — PilotLog</title>
+  <style>
+  body { font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif; background:#0b0f18; color:#fff; margin:0; }
+  .wrap { max-width:720px; margin:0 auto; padding:32px 20px 60px; }
+  .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:32px; flex-wrap:wrap; gap:12px; }
+  .brand { font-size:20px; font-weight:800; letter-spacing:-0.5px; }
+  .nav a { color:#9aa3ff; text-decoration:none; font-size:14px; margin-left:16px; }
+  .nav a:hover { color:#fff; }
+  #toast { position:fixed;bottom:24px;right:24px;background:#1a3a8f;color:#fff;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:600;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none; }
+  #toast.show { opacity:1; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">PilotLog</div>
+    <div class="nav">
+      ${walletNavHtml(session, identity)}
+      <a href="/">Dashboard</a>
+      <a href="/passport">Passport</a>
+    </div>
+  </div>
+
+  <div style="margin-bottom:24px;">
+    <h1 style="font-size:28px;font-weight:800;margin:0 0 6px;letter-spacing:-0.5px;">Verification Review</h1>
+    <p style="color:#b6b9c6;font-size:14px;margin:0;">Review and sign off pending flight verification requests.</p>
+  </div>
+
+  <div id="pending-list">
+    ${pendingCardsHtml}
+  </div>
+
+  <div style="margin-top:32px;">
+    <a href="/passport" style="color:#9aa3ff;font-size:14px;text-decoration:none;">← Back to Passport</a>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  function showToast(msg, isError) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.style.background = isError ? '#7f1d1d' : '#14532d';
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), isError ? 4000 : 2500);
+  }
+
+  async function approveAttestation(id) {
+    const sel = document.getElementById('reviewer-' + id);
+    const reviewerMidname = sel ? sel.value : 'cfi.night';
+    try {
+      const res = await fetch('/attestations/' + id, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'approve', reviewerMidname }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const card = document.getElementById('card-' + id);
+      if (card) {
+        card.style.opacity = '0.4';
+        card.style.pointerEvents = 'none';
+        card.querySelector('[style*="Pending"]')?.parentElement && Object.assign(card.querySelector('[style*="1a1203"]').style, { background: '#0d1f10', borderColor: '#22c55e33' });
+      }
+      showToast('Flight Confirmed — Instructor Verified');
+      setTimeout(() => { window.location.reload(); }, 1400);
+    } catch (err) {
+      showToast('Failed to approve: ' + err.message, true);
+    }
+  }
+
+  async function rejectAttestation(id) {
+    const sel = document.getElementById('reviewer-' + id);
+    const reviewerMidname = sel ? sel.value : 'cfi.night';
+    const notes = prompt('Reason for rejection (optional):', '');
+    if (notes === null) return;
+    try {
+      const res = await fetch('/attestations/' + id, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reject', reviewerMidname, notes: notes || undefined }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      showToast('Verification request rejected.');
+      setTimeout(() => { window.location.reload(); }, 1400);
+    } catch (err) {
+      showToast('Failed to reject: ' + err.message, true);
+    }
+  }
+</script>
 ${walletStatusScript}
 </body>
 </html>`);
