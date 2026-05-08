@@ -12,6 +12,7 @@ import { buildTrustReport } from "../../src/services/build-trust-report.mjs";
 import { buildPilotReport } from "../../src/services/build-pilot-report.mjs";
 import { anchorRecord, verifyRecord, grantAccess, revokeAccess } from "../../src/services/airlog-anchor-service.mjs";
 import { computeReadiness, PILOT_PHASES } from "./lib/readiness.mjs";
+import { computeProgression } from "./lib/progression-engine.mjs";
 
 const PORT = Number(process.env.PORT || 8788);
 const DATA_DIR = process.env.PILOTLOG_HOME || process.env.PILOTLOG_DIR || path.resolve(process.cwd(), "data");
@@ -1022,6 +1023,7 @@ app.get("/", (_req, res) => {
     <div class="nav">
       ${walletNavHtml(walletSession, identity)}
       <a href="/passport">Passport</a>
+      <a href="/progression">Progression</a>
       <a href="/pilot-report">Pilot Report →</a>
     </div>
   </div>
@@ -6332,6 +6334,204 @@ const zkirDir = path.resolve(
 if (fs.existsSync(zkirDir)) {
   app.use("/contract/compiled/airlog/zkir", express.static(zkirDir));
 }
+
+// ─── Pilot Progression Engine ─────────────────────────────────────────────────
+
+app.get("/api/progression", (req, res) => {
+  const asOf = String(req.query.asOf || new Date().toISOString());
+  const profile = readProfile();
+  const entries = readEntries();
+  const attestations = readAttestations();
+  res.json(computeProgression(profile, entries, attestations, asOf));
+});
+
+app.get("/progression", (_req, res) => {
+  const profile = readProfile();
+  const entries = readEntries();
+  const attestations = readAttestations();
+  const asOf = new Date().toISOString();
+  const prog = computeProgression(profile, entries, attestations, asOf);
+
+  const pilotName = profile?.pilot?.fullName || "Pilot";
+
+  function statusColor(status) {
+    if (status === 'completed' || status === 'ready') return '#22c55e';
+    if (status === 'in_progress' || status === 'close') return '#f59e0b';
+    if (status === 'building') return '#60a5fa';
+    if (status === 'not_started') return '#6b7280';
+    return '#6b7280';
+  }
+
+  function priorityColor(p) {
+    if (p === 'critical') return '#ef4444';
+    if (p === 'high') return '#f97316';
+    if (p === 'medium') return '#f59e0b';
+    return '#60a5fa';
+  }
+
+  function milestoneStatusBadge(status) {
+    if (status === 'completed') return '<span style="background:#14532d;color:#4ade80;padding:2px 10px;border-radius:99px;font-size:11px;font-weight:700;">✓ Complete</span>';
+    if (status === 'in_progress') return '<span style="background:#78350f;color:#fbbf24;padding:2px 10px;border-radius:99px;font-size:11px;font-weight:700;">In Progress</span>';
+    return '<span style="background:#1e293b;color:#64748b;padding:2px 10px;border-radius:99px;font-size:11px;font-weight:700;">Upcoming</span>';
+  }
+
+  const milestonesHtml = prog.milestones.map(m => `
+    <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid #1e293b;">
+      <span style="font-size:22px;margin-top:2px;">${m.icon}</span>
+      <div style="flex:1;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+          <span style="color:#e2e8f0;font-size:14px;font-weight:600;">${m.label}</span>
+          ${milestoneStatusBadge(m.status)}
+        </div>
+        <div style="color:#64748b;font-size:12px;">${m.detail || ''}</div>
+      </div>
+    </div>
+  `).join('');
+
+  const readinessHtml = Object.values(prog.readiness).map(r => `
+    <div style="margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="color:#cbd5e1;font-size:13px;font-weight:600;">${r.label}</span>
+        <span style="color:${statusColor(r.status)};font-size:12px;font-weight:700;">${r.score}%</span>
+      </div>
+      <div style="background:#1e293b;border-radius:4px;height:6px;overflow:hidden;">
+        <div style="background:${statusColor(r.status)};width:${r.score}%;height:6px;border-radius:4px;transition:width 0.3s;"></div>
+      </div>
+      <div style="color:#475569;font-size:11px;margin-top:4px;">${r.detail}</div>
+    </div>
+  `).join('');
+
+  const cardsHtml = prog.guidanceCards.length === 0
+    ? '<div style="color:#64748b;font-size:13px;padding:16px 0;">All clear — no active alerts.</div>'
+    : prog.guidanceCards.map(c => `
+      <div style="background:#0f172a;border:1px solid #1e293b;border-left:3px solid ${priorityColor(c.priority)};border-radius:8px;padding:14px 16px;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <span style="font-size:18px;">${c.icon}</span>
+          <span style="color:#e2e8f0;font-size:14px;font-weight:700;">${c.title}</span>
+          <span style="margin-left:auto;background:${priorityColor(c.priority)}22;color:${priorityColor(c.priority)};padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700;text-transform:uppercase;">${c.priority}</span>
+        </div>
+        <div style="color:#94a3b8;font-size:13px;margin-bottom:6px;">${c.body}</div>
+        <div style="color:#60a5fa;font-size:12px;">→ ${c.action}</div>
+      </div>
+    `).join('');
+
+  const recsHtml = prog.recommendations.map(r => `
+    <div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid #1e293b;">
+      <span style="color:#818cf8;font-size:16px;flex-shrink:0;">✦</span>
+      <span style="color:#cbd5e1;font-size:13px;line-height:1.5;">${r}</span>
+    </div>
+  `).join('');
+
+  const statsHtml = [
+    ['Total Hours', prog.stats.totalHours + 'h'],
+    ['PIC Hours', prog.stats.picHours + 'h'],
+    ['XC Hours', prog.stats.xcHours + 'h'],
+    ['Night Hours', prog.stats.nightHours + 'h'],
+    ['Dual Received', prog.stats.dualReceived + 'h'],
+    ['Solo Hours', prog.stats.soloHours + 'h'],
+    ['Instrument', prog.stats.instrumentHours + 'h'],
+    ['Day Landings', prog.stats.totalDayLandings],
+    ['Night Landings', prog.stats.totalNightLandings],
+    ['Total Flights', prog.stats.totalFlights],
+  ].map(([k, v]) => `
+    <div style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:12px 14px;text-align:center;">
+      <div style="color:#e2e8f0;font-size:18px;font-weight:700;">${v}</div>
+      <div style="color:#64748b;font-size:11px;margin-top:2px;">${k}</div>
+    </div>
+  `).join('');
+
+  const completedCount = prog.milestones.filter(m => m.status === 'completed').length;
+  const inProgCount = prog.milestones.filter(m => m.status === 'in_progress').length;
+
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pilot Progression — ${pilotName}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #020817; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
+  a { color: #818cf8; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .page { max-width: 960px; margin: 0 auto; padding: 32px 20px 60px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .grid-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 28px; }
+  @media(max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } .grid-stats { grid-template-columns: repeat(2, 1fr); } }
+  .card { background: #0b1120; border: 1px solid #1e293b; border-radius: 12px; padding: 20px 22px; }
+  .section-title { color: #94a3b8; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 14px; }
+  nav { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 28px; padding: 12px 0; border-bottom: 1px solid #1e293b; }
+  nav a { color: #64748b; font-size: 13px; padding: 4px 10px; border-radius: 6px; }
+  nav a:hover { color: #e2e8f0; background: #1e293b; text-decoration: none; }
+  nav a.active { color: #818cf8; background: #1e293b; }
+</style>
+</head>
+<body>
+<div class="page">
+  <nav>
+    <a href="/">Dashboard</a>
+    <a href="/passport">Passport</a>
+    <a href="/progression" class="active">Progression</a>
+    <a href="/pilot-report">Pilot Report</a>
+  </nav>
+
+  <!-- Header -->
+  <div style="margin-bottom:28px;">
+    <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+      <div>
+        <h1 style="font-size:26px;font-weight:800;color:#f1f5f9;letter-spacing:-0.02em;">${pilotName}</h1>
+        <div style="color:#818cf8;font-size:14px;font-weight:600;margin-top:2px;">${prog.label}</div>
+        <div style="color:#64748b;font-size:12px;margin-top:2px;">${prog.description}</div>
+      </div>
+      <div style="margin-left:auto;text-align:right;">
+        <div style="color:#e2e8f0;font-size:28px;font-weight:800;">${prog.progressPct}%</div>
+        <div style="color:#64748b;font-size:11px;">milestones complete</div>
+        <div style="color:#64748b;font-size:11px;">${completedCount} done · ${inProgCount} in progress</div>
+      </div>
+    </div>
+    <!-- Progress bar -->
+    <div style="background:#1e293b;border-radius:6px;height:8px;margin-top:16px;overflow:hidden;">
+      <div style="background:linear-gradient(90deg,#6366f1,#818cf8);width:${prog.progressPct}%;height:8px;border-radius:6px;"></div>
+    </div>
+  </div>
+
+  <!-- Stats Grid -->
+  <div class="grid-stats">
+    ${statsHtml}
+  </div>
+
+  <!-- Cards + Milestones -->
+  <div class="grid-2" style="margin-bottom:20px;">
+    <!-- Guidance Cards -->
+    <div class="card">
+      <div class="section-title">Guidance</div>
+      ${cardsHtml}
+    </div>
+
+    <!-- Readiness Layers -->
+    <div class="card">
+      <div class="section-title">Readiness</div>
+      ${readinessHtml}
+      <div style="margin-top:20px;">
+        <div class="section-title">Recommendations</div>
+        ${recsHtml}
+      </div>
+    </div>
+  </div>
+
+  <!-- Milestones -->
+  <div class="card">
+    <div class="section-title">Milestones</div>
+    ${milestonesHtml}
+  </div>
+
+  <div style="margin-top:16px;color:#334155;font-size:11px;text-align:center;">
+    Generated ${new Date(asOf).toLocaleString()} · PilotLog Progression Engine v1
+  </div>
+</div>
+</body>
+</html>`);
+});
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`pilotlog-read-api listening on :${PORT}`);
