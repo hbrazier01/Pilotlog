@@ -22,6 +22,7 @@ const VERIFICATION_PATH = path.join(DATA_DIR, "verification.json");
 const MAINTENANCE_PATH = path.join(DATA_DIR, "maintenance.json");
 const WALLET_PATH = path.join(DATA_DIR, "wallet.json");
 const IDENTITY_PATH = path.join(DATA_DIR, "identity.json");
+const ATTESTATIONS_PATH = path.join(DATA_DIR, "attestations.json");
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(ENTRIES_PATH)) fs.writeFileSync(ENTRIES_PATH, "[]");
@@ -95,6 +96,10 @@ if (!fs.existsSync(IDENTITY_PATH)) {
   );
 }
 
+if (!fs.existsSync(ATTESTATIONS_PATH)) {
+  fs.writeFileSync(ATTESTATIONS_PATH, JSON.stringify([], null, 2));
+}
+
 function readEntries() {
   try {
     const raw = fs.readFileSync(ENTRIES_PATH, "utf-8");
@@ -132,6 +137,74 @@ function readIdentity() {
 function saveIdentity(identity) {
   fs.writeFileSync(IDENTITY_PATH, JSON.stringify(identity, null, 2));
 }
+
+function readAttestations() {
+  try {
+    if (!fs.existsSync(ATTESTATIONS_PATH)) return [];
+    const raw = fs.readFileSync(ATTESTATIONS_PATH, "utf-8");
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveAttestations(attestations) {
+  fs.writeFileSync(ATTESTATIONS_PATH, JSON.stringify(attestations, null, 2));
+}
+
+// ─── FlightAttestationCard HTML ──────────────────────────────────────────────
+// Renders a single attestation card. Works in both dark (passport) and light
+// (pilot-report) contexts via the `theme` param: "dark" | "light".
+function flightAttestationCardHtml(attestation, { theme = "dark" } = {}) {
+  const dark = theme === "dark";
+  const bg = dark ? "#0b0f18" : "#f8fafc";
+  const border = dark ? "#1f2440" : "#e2e8f0";
+  const labelColor = dark ? "#6b7280" : "#6b7280";
+  const textColor = dark ? "#e2e8f0" : "#1a202c";
+  const dimColor = dark ? "#b6b9c6" : "#4a5568";
+
+  const statusConfig = {
+    pending:  { color: "#f59e0b", bg: dark ? "#1a1203" : "#fef9c3", label: "Pending" },
+    verified: { color: "#22c55e", bg: dark ? "#0d1f10" : "#dcfce7", label: "Confirmed" },
+    rejected: { color: "#ef4444", bg: dark ? "#1f0a0a" : "#fee2e2", label: "Not Confirmed" },
+  };
+  const s = statusConfig[attestation.status] || statusConfig.pending;
+
+  const typeLabel = {
+    instruction_verified: "Instructor Verified",
+    flight_verified: "Flight Confirmed",
+    endorsement_verified: "Endorsement Signed Off",
+    aircraft_checkout: "Aircraft Checkout",
+    maintenance_verified: "Maintenance Signed Off",
+  }[attestation.type] || attestation.type;
+
+  const signedDate = attestation.signedAt ? String(attestation.signedAt).slice(0, 10) : null;
+  const createdDate = attestation.createdAt ? String(attestation.createdAt).slice(0, 10) : "—";
+
+  return `<div style="background:${bg};border:1px solid ${border};border-radius:10px;padding:14px 16px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:13px;font-weight:700;color:${textColor};margin-bottom:4px;">${typeLabel}</div>
+      ${attestation.attestorMidname ? `<div style="font-size:12px;color:${dimColor};margin-bottom:2px;">By <strong>${attestation.attestorMidname}</strong>${attestation.attestorRole ? ` · ${attestation.attestorRole}` : ""}</div>` : ""}
+      <div style="font-size:11px;color:${labelColor};">${signedDate ? `Signed ${signedDate}` : `Requested ${createdDate}`}${attestation.notes ? ` · ${attestation.notes}` : ""}</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;background:${s.bg};border:1px solid ${s.color}33;border-radius:20px;padding:3px 10px;flex-shrink:0;">
+      <span style="width:6px;height:6px;border-radius:50%;background:${s.color};display:inline-block;"></span>
+      <span style="font-size:11px;font-weight:700;color:${s.color};">${s.label}</span>
+    </div>
+  </div>`;
+}
+
+// Returns attestations section HTML for a set of attestations.
+// emptyMsg is shown when no attestations exist.
+function attestationsSectionHtml(attestations, { theme = "dark", emptyMsg = "No attestations yet." } = {}) {
+  if (!attestations || attestations.length === 0) {
+    const dark = theme === "dark";
+    return `<div style="font-size:13px;color:${dark ? "#374151" : "#6b7280"};font-style:italic;padding:12px 0;">${emptyMsg}</div>`;
+  }
+  return attestations.map(a => flightAttestationCardHtml(a, { theme })).join("");
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 // --- Shared wallet nav helpers ---
 
@@ -1999,7 +2072,7 @@ app.get("/", (_req, res) => {
             <td>\${pendingBadge}</td>
           </tr>\`;
           // Remove stale placeholder if present
-          const emptyRow = tbody.querySelector('td[colspan="7"]');
+          const emptyRow = tbody.querySelector('td[colspan="8"]');
           if (emptyRow) tbody.innerHTML = '';
           tbody.insertAdjacentHTML('afterbegin', newRow);
         }
@@ -2147,7 +2220,7 @@ app.get("/", (_req, res) => {
         const tbody = el('recent-flights-tbody');
         if (tbody) {
           if (recent.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="muted">No flights logged yet.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="muted">No flights logged yet.</td></tr>';
           } else {
             tbody.innerHTML = recent.map(e => {
               const anchorObj = e.anchor || null;
@@ -2168,6 +2241,7 @@ app.get("/", (_req, res) => {
                 : status === 'submitted'
                 ? '<span style="color:#a78bfa;font-size:11px;font-weight:600;">&#x29D6; Submitted</span>'
                 : '<span style="color:#718096;font-size:11px;">—</span>';
+              const verifyBtn = \`<button onclick="requestVerification('\${e.id}')" style="font-size:10px;padding:3px 8px;border:1px solid #374151;background:none;color:#9aa3ff;border-radius:5px;cursor:pointer;white-space:nowrap;">Request Verify</button>\`;
               return \`<tr>
                 <td>\${String(e.date || '').slice(0, 10)}</td>
                 <td>\${e.aircraftIdent || e.aircraftId || ''} <span class="muted">\${e.aircraftType ? \`(\${e.aircraftType})\` : ''}</span></td>
@@ -2176,6 +2250,7 @@ app.get("/", (_req, res) => {
                 <td>\${e.pic ?? ''}</td>
                 <td class="muted">\${(e.remarks || '').replaceAll('<','&lt;').replaceAll('>','&gt;')}</td>
                 <td>\${statusBadge}</td>
+                <td>\${verifyBtn}</td>
               </tr>\`;
             }).join('');
           }
@@ -2190,6 +2265,23 @@ app.get("/", (_req, res) => {
       t.style.background = isError ? '#7f1d1d' : '#1a3a8f';
       t.classList.add('show');
       setTimeout(() => t.classList.remove('show'), isError ? 4000 : 2500);
+    }
+
+    async function requestVerification(flightId) {
+      const attestorMidname = prompt('Instructor or verifier Midname (optional):', '');
+      if (attestorMidname === null) return; // cancelled
+      const type = 'flight_verified';
+      try {
+        const res = await fetch('/attestations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ flightId, attestorMidname: attestorMidname || null, type }),
+        });
+        if (!res.ok) throw new Error('Request failed');
+        showToast('Verification requested');
+      } catch (err) {
+        showToast('Failed to request verification', true);
+      }
     }
 
   </script>
@@ -2211,7 +2303,7 @@ app.get("/", (_req, res) => {
     <table>
       <thead>
         <tr>
-          <th>Date</th><th>Aircraft</th><th>Route</th><th>Total</th><th>PIC</th><th class="muted">Remarks</th><th>Status</th>
+          <th>Date</th><th>Aircraft</th><th>Route</th><th>Total</th><th>PIC</th><th class="muted">Remarks</th><th>Status</th><th></th>
         </tr>
       </thead>
       <tbody id="recent-flights-tbody">
@@ -2243,9 +2335,10 @@ app.get("/", (_req, res) => {
             <td>${e.pic ?? ""}</td>
             <td class="muted">${(e.remarks || "").replaceAll("<","&lt;").replaceAll(">","&gt;")}</td>
             <td>${statusBadge}</td>
+            <td><button onclick="requestVerification('${e.id}')" style="font-size:10px;padding:3px 8px;border:1px solid #374151;background:none;color:#9aa3ff;border-radius:5px;cursor:pointer;white-space:nowrap;">Request Verify</button></td>
           </tr>`;
         }).join("")}
-        ${recent.length === 0 ? '<tr><td colspan="7" class="muted">No flights logged yet.</td></tr>' : ""}
+        ${recent.length === 0 ? '<tr><td colspan="8" class="muted">No flights logged yet.</td></tr>' : ""}
       </tbody>
     </table>
   </div>
@@ -2412,6 +2505,42 @@ app.post("/entries/:id/anchor", (req, res) => {
   setImmediate(() => anchorEntryInBackground(entry.id, entry.aircraftId));
   res.json({ status: "anchored_pending", entryId: id });
 });
+
+// ─── Attestation API ──────────────────────────────────────────────────────────
+
+app.get("/attestations", (_req, res) => {
+  res.json(readAttestations());
+});
+
+app.get("/attestations/flight/:flightId", (req, res) => {
+  const all = readAttestations();
+  res.json(all.filter(a => a.flightId === req.params.flightId));
+});
+
+app.post("/attestations", (req, res) => {
+  const { flightId, attestorMidname, attestorRole, type, notes } = req.body || {};
+  if (!flightId || !type) return res.status(400).json({ error: "flightId and type required" });
+  const entries = readEntries();
+  const flight = entries.find(e => e.id === flightId);
+  if (!flight) return res.status(404).json({ error: "flight not found" });
+  const attestation = {
+    id: Math.random().toString(36).slice(2) + Date.now().toString(36),
+    flightId,
+    attestorMidname: attestorMidname || null,
+    attestorRole: attestorRole || null,
+    type,
+    status: "pending",
+    createdAt: new Date().toISOString(),
+    signedAt: null,
+    notes: notes || null,
+  };
+  const all = readAttestations();
+  all.push(attestation);
+  saveAttestations(all);
+  res.status(201).json(attestation);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 app.get("/dashboard", (_req, res) => {
   const entries = readEntries();
@@ -5073,6 +5202,7 @@ app.get("/pilot-report/json", (_req, res) => {
 app.get("/pilot-report", (_req, res) => {
   const entries = readEntries();
   const profile = readProfile();
+  const allAttestationsPR = readAttestations();
   const aircraft = readAircraft();
   const maintenance = readMaintenance();
   const verification = readVerification();
@@ -5334,6 +5464,17 @@ app.get("/pilot-report", (_req, res) => {
           <div class="integrity-val">${integrity.anchorNetwork || "—"}</div>
         </div>
       </div>
+    </div>
+  </section>
+
+  <!-- Attestations -->
+  <section>
+    <div class="section-title">Flight Attestations</div>
+    <div class="section-body">
+      ${allAttestationsPR.length === 0
+        ? `<p style="color:#6b7280;font-size:13px;font-style:italic;margin:0;">No attestations on record. Request verification from your instructor or peers from the dashboard.</p>`
+        : allAttestationsPR.map(a => flightAttestationCardHtml(a, { theme: "light" })).join("")
+      }
     </div>
   </section>
 
@@ -5815,6 +5956,7 @@ app.get("/passport", (_req, res) => {
   const profile = readProfile();
   const entries = readEntries();
   const totals = computeTotals(entries);
+  const allAttestations = readAttestations();
   const walletConnected = !!(session && session.address);
   const midnameVerified = !!(identity && identity.midnameVerified && identity.midname);
   const idName = (identity.fields && identity.fields.name) || (profile && profile.pilot && profile.pilot.fullName) || "";
@@ -5903,12 +6045,14 @@ app.get("/passport", (_req, res) => {
     ${ratings.length > 0 ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;margin:14px 0 10px;">Ratings</div><ul>${ratingListHtml}</ul>` : ""}
   </div>
 
-  <div class="section-label">Future Trust Layer</div>
-  <div class="two-col">
-    ${placeholderSection("Instructor Attestations")}
+  <div class="section-label">Attestations</div>
+  <div class="section-card">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;margin-bottom:12px;">Flight Verifications</div>
+    ${attestationsSectionHtml(allAttestations, { theme: "dark", emptyMsg: "No attestations yet. Use the dashboard to request verification on a flight." })}
+  </div>
+  <div class="two-col" style="margin-top:12px;">
     ${placeholderSection("FAA Verification")}
-    ${placeholderSection("Trust Level")}
-    ${placeholderSection("Maintenance Signatures")}
+    ${placeholderSection("Instructor Trust Level")}
   </div>
 
   <div class="actions">
