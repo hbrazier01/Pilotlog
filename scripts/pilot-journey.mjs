@@ -33,9 +33,11 @@ const C = {
   reset:   "\x1b[0m",
   bold:    "\x1b[1m",
   dim:     "\x1b[2m",
+  red:     "\x1b[31m",
   green:   "\x1b[32m",
   yellow:  "\x1b[33m",
   blue:    "\x1b[34m",
+  magenta: "\x1b[35m",
   cyan:    "\x1b[36m",
   white:   "\x1b[37m",
   gray:    "\x1b[90m",
@@ -43,32 +45,62 @@ const C = {
   bgGreen: "\x1b[42m",
 };
 
-function bold(s)   { return `${C.bold}${s}${C.reset}`; }
-function dim(s)    { return `${C.dim}${s}${C.reset}`; }
-function green(s)  { return `${C.green}${s}${C.reset}`; }
-function yellow(s) { return `${C.yellow}${s}${C.reset}`; }
-function cyan(s)   { return `${C.cyan}${s}${C.reset}`; }
-function blue(s)   { return `${C.blue}${s}${C.reset}`; }
-function gray(s)   { return `${C.gray}${s}${C.reset}`; }
+function bold(s)    { return `${C.bold}${s}${C.reset}`; }
+function dim(s)     { return `${C.dim}${s}${C.reset}`; }
+function green(s)   { return `${C.green}${s}${C.reset}`; }
+function yellow(s)  { return `${C.yellow}${s}${C.reset}`; }
+function cyan(s)    { return `${C.cyan}${s}${C.reset}`; }
+function blue(s)    { return `${C.blue}${s}${C.reset}`; }
+function gray(s)    { return `${C.gray}${s}${C.reset}`; }
+function red(s)     { return `${C.red}${s}${C.reset}`; }
+function magenta(s) { return `${C.magenta}${s}${C.reset}`; }
 
 function bar(pct, width = 24) {
   const filled = Math.round((pct / 100) * width);
   const empty  = width - filled;
-  const fill   = filled > 0 ? "█".repeat(filled) : "";
-  const space  = empty  > 0 ? "░".repeat(empty)  : "";
+  const fill   = filled > 0 ? "\u2588".repeat(filled) : "";
+  const space  = empty  > 0 ? "\u2591".repeat(empty)  : "";
   if (pct >= 100) return green(fill);
   if (pct >= 70)  return yellow(fill) + gray(space);
   return cyan(fill) + gray(space);
 }
 
-function divider(char = "─", len = 60) {
+function divider(char = "\u2500", len = 60) {
   return gray(char.repeat(len));
 }
 
-function section(title) {
+function section(title, icon = "") {
   console.log();
-  console.log(bold(cyan("  " + title)));
+  const label = icon ? `${icon}  ${title}` : title;
+  console.log(bold(cyan(`  ${label}`)));
   console.log("  " + divider());
+}
+
+function num(v) { return Number(v) || 0; }
+
+function daysSinceLastFlight(entries, asOf) {
+  if (!entries.length) return null;
+  const sorted = [...entries].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  return Math.round((new Date(asOf).getTime() - new Date(sorted[0].date).getTime()) / 86400000);
+}
+
+function flightStreakDays(entries, asOf) {
+  // Count consecutive days with at least one flight (rolling back from most recent)
+  if (!entries.length) return 0;
+  const sorted = [...entries].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const dateSet = new Set(sorted.map(e => String(e.date).slice(0, 10)));
+  let streak = 0;
+  let check = new Date(asOf);
+  for (let i = 0; i < 365; i++) {
+    const d = check.toISOString().slice(0, 10);
+    if (dateSet.has(d)) {
+      streak++;
+      check.setDate(check.getDate() - 1);
+    } else {
+      break;
+    }
+  }
+  return streak;
 }
 
 // ─── VIEW: TIMELINE ───────────────────────────────────────────────────────────
@@ -78,26 +110,25 @@ function renderTimeline() {
   const currentOrder = PROGRESSION_STATES[prog.progressionState]?.order ?? 0;
 
   console.log();
-  console.log(bold("  ✈  Pilot Journey Timeline"));
-  console.log("  " + divider("═"));
+  console.log(bold("  \u2708  Pilot Journey Timeline"));
+  console.log("  " + divider("\u2550"));
   console.log();
 
   for (const [key, config] of phases) {
     const order = config.order;
     const isActive    = key === prog.progressionState;
     const isCompleted = order < currentOrder;
-    const isUpcoming  = order > currentOrder;
 
     let marker, label;
 
     if (isCompleted) {
-      marker = green("  ●");
+      marker = green("  \u25cf");
       label  = green(config.label);
     } else if (isActive) {
-      marker = yellow(" ▶ ");
-      label  = bold(yellow(config.label)) + " " + yellow("← you are here");
+      marker = yellow(" \u25b6 ");
+      label  = bold(yellow(config.label)) + "  " + yellow("\u2190 you are here");
     } else {
-      marker = gray("  ○");
+      marker = gray("  \u25cb");
       label  = gray(config.label);
     }
 
@@ -107,12 +138,7 @@ function renderTimeline() {
       console.log(gray(`        ${config.description}`));
     }
 
-    if (!isCompleted && !isActive) {
-      // connector
-      console.log(gray("     │"));
-    } else {
-      console.log(gray("     │"));
-    }
+    console.log(gray("     \u2502"));
   }
 
   console.log();
@@ -123,49 +149,62 @@ function renderTimeline() {
 // ─── VIEW: MILESTONES ─────────────────────────────────────────────────────────
 
 function renderMilestones() {
-  section("Milestones");
+  section("Milestones", "\u{1F3AF}");
 
-  const completed  = prog.milestones.filter(m => m.status === "completed");
-  const active     = prog.milestones.filter(m => m.status === "in_progress");
-  const upcoming   = prog.milestones.filter(m => m.status === "upcoming");
+  const completed = prog.milestones.filter(m => m.status === "completed");
+  const active    = prog.milestones.filter(m => m.status === "in_progress");
+  const upcoming  = prog.milestones.filter(m => m.status === "upcoming");
 
   if (completed.length) {
     console.log();
-    console.log(`  ${bold(green("Achieved"))}`);
+    console.log(`  ${bold(green("  Achieved"))}`);
     for (const m of completed) {
-      console.log(`    ${green("✓")} ${m.icon}  ${green(m.label)}`);
+      console.log(`    ${green("\u2713")} ${m.icon}  ${bold(green(m.label))}`);
       if (m.detail) console.log(gray(`         ${m.detail}`));
     }
   }
 
   if (active.length) {
     console.log();
-    console.log(`  ${bold(yellow("In Progress"))}`);
+    console.log(`  ${bold(yellow("  In Progress"))}`);
     for (const m of active) {
-      console.log(`    ${yellow("▶")} ${m.icon}  ${bold(yellow(m.label))}`);
+      console.log(`    ${yellow("\u25b6")} ${m.icon}  ${bold(yellow(m.label))}`);
       if (m.detail) console.log(`         ${m.detail}`);
     }
   }
 
+  // Show next 3 upcoming prominently
   if (upcoming.length) {
+    const nextMilestone = upcoming[0];
     console.log();
-    console.log(`  ${bold(gray("Upcoming"))}`);
-    for (const m of upcoming) {
-      console.log(`    ${gray("○")} ${m.icon}  ${gray(m.label)}`);
+    console.log(`  ${bold(cyan("  Next Milestone"))}`);
+    console.log(`    ${cyan("\u25cb")} ${nextMilestone.icon}  ${bold(cyan(nextMilestone.label))}`);
+    if (nextMilestone.detail) console.log(gray(`         ${nextMilestone.detail}`));
+
+    if (upcoming.length > 1) {
+      console.log();
+      console.log(`  ${gray("  On the horizon")}`);
+      for (const m of upcoming.slice(1, 4)) {
+        console.log(`    ${gray("\u25cb")} ${m.icon}  ${gray(m.label)}`);
+      }
+      if (upcoming.length > 4) {
+        console.log(gray(`    + ${upcoming.length - 4} more ahead`));
+      }
     }
   }
 
   console.log();
   const doneCount = completed.length;
   const total = prog.milestones.length;
-  console.log(`  ${doneCount}/${total} milestones achieved  ${bar((doneCount / total) * 100, 30)}`);
+  const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+  console.log(`  ${doneCount}/${total} milestones  ${bar(pct, 28)}  ${pct}%`);
   console.log();
 }
 
 // ─── VIEW: WHAT'S NEXT ────────────────────────────────────────────────────────
 
 function renderWhatsNext() {
-  section("What's Next");
+  section("What's Next", "\u{1F4CB}");
 
   if (!prog.guidanceCards.length && !prog.recommendations.length) {
     console.log();
@@ -177,7 +216,7 @@ function renderWhatsNext() {
   if (prog.guidanceCards.length) {
     console.log();
     for (const card of prog.guidanceCards.slice(0, 5)) {
-      const priorityColor = card.priority === "critical" ? (s => `\x1b[31m${s}${C.reset}`) :
+      const priorityColor = card.priority === "critical" ? red :
                             card.priority === "high"     ? yellow : cyan;
 
       const priorityLabel = card.priority === "critical" ? "[CRITICAL]" :
@@ -185,7 +224,7 @@ function renderWhatsNext() {
 
       console.log(`  ${card.icon}  ${bold(card.title)}  ${priorityColor(priorityLabel)}`);
       console.log(gray(`     ${card.body}`));
-      console.log(`     ${cyan("→")} ${card.action}`);
+      console.log(`     ${cyan("\u2192")} ${card.action}`);
       console.log();
     }
   }
@@ -193,7 +232,7 @@ function renderWhatsNext() {
   if (prog.recommendations.length) {
     console.log(`  ${bold("Recommendations")}`);
     for (const rec of prog.recommendations) {
-      console.log(`  ${cyan("·")} ${rec}`);
+      console.log(`  ${cyan("\u00b7")} ${rec}`);
     }
     console.log();
   }
@@ -202,14 +241,14 @@ function renderWhatsNext() {
 // ─── VIEW: READINESS ──────────────────────────────────────────────────────────
 
 function renderReadiness() {
-  section("Readiness at a Glance");
+  section("Readiness", "\u{1F4CA}");
   console.log();
 
   const readinessItems = Object.values(prog.readiness);
   for (const r of readinessItems) {
-    const statusSymbol = r.status === "ready"       ? green("●") :
-                         r.status === "close"        ? yellow("◑") :
-                         r.status === "building"     ? cyan("○") : gray("○");
+    const statusSymbol = r.status === "ready"   ? green("\u25cf") :
+                         r.status === "close"   ? yellow("\u25d1") :
+                         r.status === "building"? cyan("\u25cb") : gray("\u25cb");
 
     const scoreLabel = `${r.score}%`.padStart(4);
     console.log(`  ${statusSymbol}  ${r.label.padEnd(28)} ${scoreLabel}  ${bar(r.score, 20)}`);
@@ -222,7 +261,7 @@ function renderReadiness() {
 // ─── VIEW: MENTOR ─────────────────────────────────────────────────────────────
 
 function priorityLabel(p) {
-  if (p === "critical")    return "\x1b[31m[CRITICAL]\x1b[0m";
+  if (p === "critical")    return red("[CRITICAL]");
   if (p === "important")   return yellow("[IMPORTANT]");
   if (p === "milestone")   return cyan("[MILESTONE]");
   if (p === "recommended") return blue("[RECOMMENDED]");
@@ -230,9 +269,8 @@ function priorityLabel(p) {
 }
 
 function renderMentor() {
-  section("Aviation Mentor");
+  section("Aviation Mentor", "\u{1F9ED}");
 
-  // Summary line
   console.log();
   console.log(`  ${bold("Mentor:")} ${bold(yellow(mentor.summary))}`);
   console.log();
@@ -245,39 +283,37 @@ function renderMentor() {
     if (positiveTrends.length) {
       console.log(`  ${bold(green("Positive Trends"))}`);
       for (const t of positiveTrends) {
-        console.log(`    ${green("↑")}  ${bold(t.headline)}`);
+        console.log(`    ${green("\u2191")}  ${bold(t.headline)}`);
         console.log(gray(`       ${t.body}`));
       }
       console.log();
     }
 
     if (warningTrends.length) {
-      console.log(`  ${bold(yellow("Trends to Watch"))}`);
+      console.log(`  ${bold(yellow("Watch"))}`);
       for (const t of warningTrends) {
-        console.log(`    ${yellow("⚠")}  ${bold(t.headline)}`);
+        console.log(`    ${yellow("\u26a0")}  ${bold(t.headline)}`);
         console.log(gray(`       ${t.body}`));
       }
       console.log();
     }
   }
 
-  // Mentor insight cards
   if (mentor.insights.length) {
     console.log(`  ${bold("Guidance")}`);
     console.log();
     for (const ins of mentor.insights.slice(0, 7)) {
       console.log(`  ${priorityLabel(ins.priority)}  ${bold(ins.headline)}`);
       console.log(gray(`     ${ins.body}`));
-      if (ins.action) console.log(`     ${cyan("→")} ${ins.action}`);
+      if (ins.action) console.log(`     ${cyan("\u2192")} ${ins.action}`);
       console.log();
     }
   }
 
-  // Positive reinforcement
   if (mentor.reinforcements.length) {
-    console.log(`  ${bold(green("Reinforcement"))}`);
+    console.log(`  ${bold(green("Wins"))}`);
     for (const r of mentor.reinforcements) {
-      console.log(`  ${green("✦")}  ${r}`);
+      console.log(`  ${green("\u2726")}  ${r}`);
     }
     console.log();
   }
@@ -288,39 +324,184 @@ function renderMentor() {
   }
 }
 
-// ─── VIEW: DASHBOARD (with mentor integration) ────────────────────────────────
+// ─── VIEW: DASHBOARD (redesigned) ─────────────────────────────────────────────
 
 function renderDashboard() {
-  const name = profile?.pilot?.fullName || "Pilot";
+  const name      = profile?.pilot?.fullName || "Pilot";
+  const totalH    = prog.stats.totalHours;
+  const phase     = prog.label;
+  const sinceLastFlight = daysSinceLastFlight(entries, asOf);
 
+  // ── Header ──────────────────────────────────────────────────────────────────
   console.log();
-  console.log(bold(cyan("  ╔══════════════════════════════════════════════════════════╗")));
-  console.log(bold(cyan("  ║") + "  " + bold("PilotLog — Your Aviation Journey") + "                        " + cyan("║")));
-  console.log(bold(cyan("  ╚══════════════════════════════════════════════════════════╝")));
+  console.log(bold(cyan("  \u250f" + "\u2501".repeat(58) + "\u2513")));
+  console.log(bold(cyan("  \u2503") + `  \u2708  PilotLog  \u2014  ${name}`.padEnd(58) + cyan("\u2503")));
+  console.log(bold(cyan("  \u2517" + "\u2501".repeat(58) + "\u251b")));
   console.log();
 
-  // Pilot summary
-  const totalH   = prog.stats.totalHours;
-  const phase    = prog.label;
-  console.log(`  ${bold("Pilot:")}     ${name}`);
-  console.log(`  ${bold("Phase:")}     ${bold(yellow(phase))}`);
-  console.log(`  ${bold("Progress:")}  ${prog.progressPct}%  ${bar(prog.progressPct, 30)}`);
-  console.log(`  ${bold("Flights:")}   ${prog.stats.totalFlights}  |  ${bold("Total:")} ${totalH}h  |  ${bold("PIC:")} ${prog.stats.picHours}h  |  ${bold("XC:")} ${prog.stats.xcHours}h  |  ${bold("Night:")} ${prog.stats.nightHours}h`);
+  // ── Pilot Status Card ────────────────────────────────────────────────────────
+  console.log(`  ${bold("Phase:")}    ${bold(yellow(phase))}`);
+  console.log(`  ${bold("Progress:")} ${prog.progressPct}%  ${bar(prog.progressPct, 32)}  ${gray("toward Private Pilot")}`);
+  console.log();
 
-  // Mentor summary line in dashboard header
-  if (mentor.summary) {
+  // Flight stats row
+  const statsLine = [
+    `${bold(String(prog.stats.totalFlights))} flights`,
+    `${bold(totalH.toFixed(1))}h total`,
+    `${bold(prog.stats.picHours.toFixed(1))}h PIC`,
+    `${bold(prog.stats.xcHours.toFixed(1))}h XC`,
+    `${bold(prog.stats.nightHours.toFixed(1))}h night`,
+  ].join(gray("  |  "));
+  console.log(`  ${statsLine}`);
+
+  // Last flight / momentum
+  if (sinceLastFlight === null) {
     console.log();
-    console.log(`  ${bold("Mentor:")}    ${yellow(mentor.summary)}`);
+    console.log(`  ${cyan("\u25b6")} ${bold("Log your first flight to begin your aviation journey.")}`);
+  } else if (sinceLastFlight === 0) {
+    console.log();
+    console.log(`  ${green("\u25cf")} ${bold(green("Flew today"))}  ${gray("\u2014 great momentum")}`);
+  } else if (sinceLastFlight <= 7) {
+    console.log();
+    console.log(`  ${green("\u25cf")} ${bold("Last flight:")} ${sinceLastFlight}d ago  ${gray("\u2014 good consistency")}`);
+  } else if (sinceLastFlight <= 21) {
+    console.log();
+    console.log(`  ${yellow("\u25d1")} ${bold("Last flight:")} ${sinceLastFlight}d ago  ${yellow("\u2014 time to fly again")}`);
+  } else {
+    console.log();
+    console.log(`  ${red("\u25cb")} ${bold("Last flight:")} ${sinceLastFlight}d ago  ${red("\u2014 extended gap \u2014 schedule a flight")}`);
   }
 
-  renderTimeline();
-  renderReadiness();
-  renderMentor();
-  renderWhatsNext();
-  renderMilestones();
+  // ── Today's Priority ─────────────────────────────────────────────────────────
+  const topInsight = mentor.insights.find(i => i.priority === "critical") ||
+                     mentor.insights.find(i => i.priority === "important");
+  const topCard    = prog.guidanceCards?.[0];
 
-  console.log("  " + divider("═"));
-  console.log(gray(`  As of ${new Date(asOf).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}`));
+  console.log();
+  console.log(bold(cyan("  \u2500\u2500\u2500  Today's Priority  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")));
+
+  if (topInsight) {
+    const isAlert = topInsight.priority === "critical" || topInsight.priority === "important";
+    const icon    = topInsight.priority === "critical" ? red("!") : yellow("\u25b6");
+    console.log();
+    console.log(`  ${icon}  ${bold(topInsight.headline)}`);
+    console.log(gray(`     ${topInsight.body}`));
+    if (topInsight.action) console.log(`     ${cyan("\u2192")} ${bold(topInsight.action)}`);
+  } else if (topCard) {
+    console.log();
+    console.log(`  ${topCard.icon}  ${bold(topCard.title)}`);
+    console.log(gray(`     ${topCard.body}`));
+    console.log(`     ${cyan("\u2192")} ${bold(topCard.action)}`);
+  } else {
+    console.log();
+    console.log(`  ${green("\u25cf")}  ${bold("You are on track.")}  Keep flying and logging.`);
+  }
+
+  // ── Where You Are ────────────────────────────────────────────────────────────
+  console.log();
+  console.log(bold(cyan("  \u2500\u2500\u2500  Where You Are  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")));
+  console.log();
+
+  const phases = Object.entries(PROGRESSION_STATES).sort((a, b) => a[1].order - b[1].order);
+  const currentOrder = PROGRESSION_STATES[prog.progressionState]?.order ?? 0;
+
+  // Compact journey: show 2 behind, current, 2 ahead
+  const phaseEntries = phases.map(([key, cfg]) => ({ key, ...cfg }));
+  const currentIdx = phaseEntries.findIndex(p => p.key === prog.progressionState);
+  const showFrom = Math.max(0, currentIdx - 2);
+  const showTo   = Math.min(phaseEntries.length, currentIdx + 3);
+  const visible  = phaseEntries.slice(showFrom, showTo);
+
+  if (showFrom > 0) console.log(gray(`  ${gray("  \u22ee")}  ${gray("(earlier stages completed)")}`));
+
+  for (const p of visible) {
+    const isActive    = p.key === prog.progressionState;
+    const isCompleted = p.order < currentOrder;
+
+    if (isCompleted) {
+      console.log(`  ${green("  \u2713")}  ${green(p.label)}`);
+    } else if (isActive) {
+      console.log(`  ${yellow(" \u25b6 ")}  ${bold(yellow(p.label))}  ${yellow("\u2190 you are here")}`);
+      console.log(gray(`        ${p.description}`));
+    } else {
+      console.log(`  ${gray("  \u25cb")}  ${gray(p.label)}`);
+    }
+  }
+
+  if (showTo < phaseEntries.length) {
+    console.log(gray(`       \u22ee  ${gray(`(${phaseEntries.length - showTo} more stages ahead)`)}`));
+  }
+
+  // ── Readiness ────────────────────────────────────────────────────────────────
+  console.log();
+  console.log(bold(cyan("  \u2500\u2500\u2500  Readiness  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")));
+  console.log();
+
+  const readinessItems = Object.values(prog.readiness);
+  for (const r of readinessItems) {
+    const statusSymbol = r.status === "ready"   ? green("\u25cf") :
+                         r.status === "close"   ? yellow("\u25d1") :
+                         r.status === "building"? cyan("\u25cb") : gray("\u25cb");
+    const scoreLabel = `${r.score}%`.padStart(4);
+    console.log(`  ${statusSymbol}  ${r.label.padEnd(28)} ${scoreLabel}  ${bar(r.score, 18)}`);
+  }
+
+  // ── Milestones ───────────────────────────────────────────────────────────────
+  console.log();
+  console.log(bold(cyan("  \u2500\u2500\u2500  Milestones  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")));
+
+  const completed = prog.milestones.filter(m => m.status === "completed");
+  const upcoming  = prog.milestones.filter(m => m.status !== "completed");
+  const nextUp    = upcoming[0];
+
+  if (completed.length) {
+    console.log();
+    for (const m of completed) {
+      console.log(`  ${green("\u2713")} ${m.icon}  ${green(m.label)}`);
+    }
+  }
+
+  if (nextUp) {
+    console.log();
+    console.log(`  ${cyan("\u25b6")} ${nextUp.icon}  ${bold(cyan("Next:"))} ${bold(nextUp.label)}`);
+    if (nextUp.detail) console.log(gray(`     ${nextUp.detail}`));
+  }
+
+  const doneCount = completed.length;
+  const totalM = prog.milestones.length;
+  const pct = totalM > 0 ? Math.round((doneCount / totalM) * 100) : 0;
+  console.log();
+  console.log(`  ${doneCount}/${totalM} milestones  ${bar(pct, 26)}  ${pct}%`);
+
+  // ── Mentor Insights (secondary — not duplicating today's priority) ────────────
+  const secondaryInsights = mentor.insights.filter(
+    i => i !== (mentor.insights.find(x => x.priority === "critical") ||
+                mentor.insights.find(x => x.priority === "important"))
+  ).slice(0, 3);
+
+  if (secondaryInsights.length || mentor.reinforcements.length) {
+    console.log();
+    console.log(bold(cyan("  \u2500\u2500\u2500  Mentor Notes  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")));
+    console.log();
+
+    for (const ins of secondaryInsights) {
+      console.log(`  ${priorityLabel(ins.priority)}  ${bold(ins.headline)}`);
+      if (ins.action) console.log(gray(`     \u2192 ${ins.action}`));
+    }
+
+    if (mentor.reinforcements.length) {
+      for (const r of mentor.reinforcements.slice(0, 2)) {
+        console.log(`  ${green("\u2726")}  ${r}`);
+      }
+    }
+  }
+
+  // ── Footer ───────────────────────────────────────────────────────────────────
+  console.log();
+  console.log("  " + divider("\u2550"));
+  const dateStr = new Date(asOf).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  console.log(gray(`  ${dateStr}`));
+  console.log(gray(`  pilotlog dashboard  |  journey  |  milestones  |  whats-next  |  mentor`));
   console.log();
 }
 
