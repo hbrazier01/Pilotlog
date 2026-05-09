@@ -154,6 +154,71 @@ function saveAttestations(attestations) {
   fs.writeFileSync(ATTESTATIONS_PATH, JSON.stringify(attestations, null, 2));
 }
 
+// ─── Unified PilotState ───────────────────────────────────────────────────────
+// Single source of truth for dashboard, passport, and journey views.
+// Trust unlock chain:
+//   0 = no wallet  1 = wallet  2 = wallet+midname  3 = +verified flights  4 = +attestations
+function buildPilotState(asOf = new Date().toISOString()) {
+  const walletSession  = readWalletSession();
+  const identity       = readIdentity() || {};
+  const profile        = readProfile();
+  const entries        = readEntries();
+  const attestations   = readAttestations();
+  const prog           = computeProgression(profile, entries, attestations, asOf);
+
+  const verifiedFlights  = entries.filter(e => e.pilotId && !e.unverified).length;
+  const attestationCount = Array.isArray(attestations) ? attestations.length : 0;
+
+  const walletConnected = !!(walletSession || identity?.walletAddress);
+  const walletAddress   = walletSession?.address || identity?.walletAddress || null;
+  const midname         = identity?.midname || null;
+  const midnameVerified = identity?.midnameVerified === true;
+
+  let identityLevel = 0;
+  if (walletConnected) identityLevel = 1;
+  if (walletConnected && midname) identityLevel = 2;
+  if (walletConnected && midname && verifiedFlights > 0) identityLevel = 3;
+  if (walletConnected && midname && verifiedFlights > 0 && attestationCount > 0) identityLevel = 4;
+
+  const trustLabels = ["Unverified", "Wallet Linked", "Identity Claimed", "Progression Verified", "Trusted Aviator"];
+  const trustLevel  = trustLabels[identityLevel] || "Unknown";
+
+  const completedMilestones = prog.milestones.filter(m => m.status === "completed").length;
+  const totalMilestones     = prog.milestones.length;
+  const milestoneProgress   = totalMilestones > 0
+    ? Math.round((completedMilestones / totalMilestones) * 100)
+    : 0;
+
+  return {
+    walletConnected,
+    walletAddress,
+    coinPublicKey:    walletSession?.coinPublicKey || null,
+    midname,
+    midnameVerified,
+    identityLevel,
+    trustLevel,
+    pilotPhase:       prog.progressionState,
+    pilotPhaseLabel:  prog.label,
+    readiness:        prog.readiness,
+    milestoneProgress,
+    milestones:       prog.milestones,
+    progressionState: prog.progressionState,
+    progressPct:      prog.progressPct,
+    stats:            prog.stats,
+    guidanceCards:    prog.guidanceCards,
+    recommendations:  prog.recommendations,
+    verifiedFlights,
+    attestations:     attestationCount,
+    // Raw sources available to route handlers
+    _walletSession:   walletSession,
+    _identity:        identity,
+    _profile:         profile,
+    _entries:         entries,
+    _attestations:    attestations,
+    _prog:            prog,
+  };
+}
+
 // ─── FlightAttestationCard HTML ──────────────────────────────────────────────
 // Renders a single attestation card. Works in both dark (passport) and light
 // (pilot-report) contexts via the `theme` param: "dark" | "light".
@@ -869,13 +934,14 @@ function computePassengerCurrency(entries, type /* 'day' | 'night' */, asOf) {
 }
 
 app.get("/", (_req, res) => {
-  const entries = sortNewestFirst(readEntries());
+  const ps = buildPilotState();
+  const entries = sortNewestFirst(ps._entries);
   const totals = computeTotals(entries);
   const recent = entries.slice(0, 10);
-  const profile = readProfile();
-  const walletSession = readWalletSession();
-  const identity = readIdentity();
-  const allAttestationsForDash = readAttestations();
+  const profile = ps._profile;
+  const walletSession = ps._walletSession;
+  const identity = ps._identity;
+  const allAttestationsForDash = ps._attestations;
   // Build a map: flightId -> best attestation status for dashboard badge
   const flightAttestationMap = {};
   for (const a of allAttestationsForDash) {
@@ -6001,14 +6067,15 @@ if (fs.existsSync(keysDir)) {
 
 // ─── /passport — Pilot Passport v1 ───────────────────────────────────────────
 app.get("/passport", (_req, res) => {
-  const session = readWalletSession();
-  const identity = readIdentity() || {};
-  const profile = readProfile();
-  const entries = readEntries();
+  const ps = buildPilotState();
+  const session = ps._walletSession;
+  const identity = ps._identity;
+  const profile = ps._profile;
+  const entries = ps._entries;
   const totals = computeTotals(entries);
-  const allAttestations = readAttestations();
-  const walletConnected = !!(session && session.address);
-  const midnameVerified = !!(identity && identity.midnameVerified && identity.midname);
+  const allAttestations = ps._attestations;
+  const walletConnected = ps.walletConnected;
+  const midnameVerified = ps.midnameVerified;
   const idName = (identity.fields && identity.fields.name) || (profile && profile.pilot && profile.pilot.fullName) || "";
   const aircraftSet = new Set();
   for (const e of entries) {
@@ -6335,6 +6402,15 @@ if (fs.existsSync(zkirDir)) {
   app.use("/contract/compiled/airlog/zkir", express.static(zkirDir));
 }
 
+// ─── Unified PilotState API ───────────────────────────────────────────────────
+
+app.get("/api/pilot-state", (_req, res) => {
+  const ps = buildPilotState();
+  // Strip raw sources from the API response
+  const { _walletSession, _identity, _profile, _entries, _attestations, _prog, ...state } = ps;
+  res.json(state);
+});
+
 // ─── Pilot Progression Engine ─────────────────────────────────────────────────
 
 app.get("/api/progression", (req, res) => {
@@ -6379,11 +6455,12 @@ app.get("/api/milestones", (req, res) => {
 app.get("/journey", (req, res) => res.redirect("/progression"));
 
 app.get("/progression", (_req, res) => {
-  const profile = readProfile();
-  const entries = readEntries();
-  const attestations = readAttestations();
-  const asOf = new Date().toISOString();
-  const prog = computeProgression(profile, entries, attestations, asOf);
+  const ps = buildPilotState();
+  const profile = ps._profile;
+  const entries = ps._entries;
+  const attestations = ps._attestations;
+  const prog = ps._prog;
+  const asOf = prog.asOf || new Date().toISOString();
 
   const pilotName = profile?.pilot?.fullName || "Pilot";
 
