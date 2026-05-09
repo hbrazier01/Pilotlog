@@ -10,11 +10,10 @@ export type MidnameIdentity = {
   resolvedAt: string; // ISO timestamp
 };
 
-const baseDir = process.env.PILOTLOG_HOME
-  ? process.env.PILOTLOG_HOME
-  : path.join(process.cwd(), ".pilotlog");
+const baseDir = process.env.PILOTLOG_HOME || process.env.PILOTLOG_DIR || path.resolve(process.cwd(), "data");
 
-const midnameFile = path.join(baseDir, "midname.json");
+// Use identity.json — same file as readApi.mjs / web server
+const midnameFile = path.join(baseDir, "identity.json");
 
 function ensureDir() {
   if (!fs.existsSync(baseDir)) fs.mkdirSync(baseDir, { recursive: true });

@@ -25,9 +25,9 @@ import { fileURLToPath } from "node:url";
 import { computeProgression } from "../pilotlog-cli/src/lib/progression-engine.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = process.env.PILOTLOG_HOME || path.join(__dirname, "../data");
+const DATA_DIR = process.env.PILOTLOG_HOME || process.env.PILOTLOG_DIR || path.resolve(process.cwd(), "data");
 const WALLET_FILE    = path.join(DATA_DIR, "wallet.json");
-const MIDNAME_FILE   = path.join(DATA_DIR, "midname.json");
+const IDENTITY_FILE  = path.join(DATA_DIR, "identity.json");
 const PROFILE_FILE   = path.join(DATA_DIR, "profile.json");
 const ENTRIES_FILE   = path.join(DATA_DIR, "entries.json");
 const ATTEST_FILE    = path.join(DATA_DIR, "attestations.json");
@@ -71,7 +71,7 @@ function trustLevelLabel(level) {
  */
 export function buildPilotState(asOf = new Date().toISOString()) {
   const walletSession = readJSON(WALLET_FILE, null);
-  const midnameData   = readJSON(MIDNAME_FILE, null);
+  const identityData  = readJSON(IDENTITY_FILE, null);
   const profile       = readJSON(PROFILE_FILE, {});
   const entries       = readJSON(ENTRIES_FILE, []);
   const attestations  = readJSON(ATTEST_FILE, []);
@@ -82,13 +82,15 @@ export function buildPilotState(asOf = new Date().toISOString()) {
   const verifiedFlights = entries.filter(e => e.pilotId && !e.unverified).length;
   const attestationCount = Array.isArray(attestations) ? attestations.length : 0;
 
-  const walletConnected  = !!walletSession;
-  const walletAddress    = walletSession?.address || null;
+  // Wallet: prefer wallet.json; fall back to identity.json walletAddress
+  const walletConnected  = !!(walletSession || identityData?.walletAddress);
+  const walletAddress    = walletSession?.address || identityData?.walletAddress || null;
   const coinPublicKey    = walletSession?.coinPublicKey || null;
 
-  const midname          = midnameData?.midname || null;
-  const midnameVerified  = midnameData?.verificationStatus === "verified";
-  const shieldedIdentity = midnameData?.resolvedType === "shielded" ? midnameData.resolvedAddress : null;
+  // Identity: read from identity.json (same source as readApi.mjs)
+  const midname          = identityData?.midname || null;
+  const midnameVerified  = identityData?.midnameVerified === true;
+  const shieldedIdentity = identityData?.resolvedType === "shielded" ? identityData.resolvedAddress : null;
 
   const identityLevel    = computeIdentityLevel(walletSession, midname, verifiedFlights, attestationCount);
   const trustLevel       = trustLevelLabel(identityLevel);
@@ -135,4 +137,31 @@ export function buildPilotState(asOf = new Date().toISOString()) {
     _attestations: attestations,
     _prog:         prog,
   };
+}
+
+// CLI entry point
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
+  const debug = process.argv.includes("--debug");
+  if (debug) {
+    console.log("[pilot-state] Data sources:");
+    console.log("  entries path:    ", ENTRIES_FILE);
+    console.log("  profile path:    ", PROFILE_FILE);
+    console.log("  identity path:   ", IDENTITY_FILE);
+    console.log("  wallet path:     ", WALLET_FILE);
+    console.log("  attestation path:", ATTEST_FILE);
+    const raw = {
+      entries:      readJSON(ENTRIES_FILE, []),
+      identity:     readJSON(IDENTITY_FILE, null),
+      wallet:       readJSON(WALLET_FILE, null),
+      attestations: readJSON(ATTEST_FILE, []),
+    };
+    console.log("  entries loaded:      ", raw.entries.length);
+    console.log("  identity midname:    ", raw.identity?.midname ?? "(none)");
+    console.log("  identity verified:   ", raw.identity?.midnameVerified ?? false);
+    console.log("  wallet connected:    ", !!(raw.wallet || raw.identity?.walletAddress));
+    console.log("  attestations loaded: ", Array.isArray(raw.attestations) ? raw.attestations.length : 0);
+    console.log("");
+  }
+  const state = buildPilotState();
+  console.log(JSON.stringify(state, null, 2));
 }

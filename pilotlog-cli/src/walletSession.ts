@@ -16,9 +16,7 @@ export type WalletSession = {
   connectedAt: string;      // ISO timestamp
 };
 
-const baseDir = process.env.PILOTLOG_HOME
-  ? process.env.PILOTLOG_HOME
-  : path.join(process.cwd(), ".pilotlog");
+const baseDir = process.env.PILOTLOG_HOME || process.env.PILOTLOG_DIR || path.resolve(process.cwd(), "data");
 
 const walletFile = path.join(baseDir, "wallet.json");
 

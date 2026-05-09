@@ -363,7 +363,7 @@ else if (command === "report") {
   const thisFile = fileURLToPath(import.meta.url);
   const pkgRoot = path.resolve(path.dirname(thisFile), "../../..");
   const scriptPath = path.join(pkgRoot, "scripts", "generate-pilot-report.mjs");
-  const dataDir = process.env.PILOTLOG_HOME || path.join(process.cwd(), ".pilotlog");
+  const dataDir = process.env.PILOTLOG_HOME || process.env.PILOTLOG_DIR || path.resolve(process.cwd(), "data");
 
   const extraArgs: string[] = [];
   if (flags["out"]) extraArgs.push("--out", flags["out"]);
@@ -381,7 +381,7 @@ else if (command === "trust-report") {
   const thisFile = fileURLToPath(import.meta.url);
   const pkgRoot = path.resolve(path.dirname(thisFile), "../../..");
   const scriptPath = path.join(pkgRoot, "scripts", "generate-trust-report.mjs");
-  const dataDir = process.env.PILOTLOG_HOME || path.join(process.cwd(), ".pilotlog");
+  const dataDir = process.env.PILOTLOG_HOME || process.env.PILOTLOG_DIR || path.resolve(process.cwd(), "data");
 
   const extraArgs: string[] = [];
   if (flags["out"]) extraArgs.push("--out", flags["out"]);
@@ -399,7 +399,7 @@ else if (command === "passport" || command === "dashboard" || command === "journ
   const thisFile = fileURLToPath(import.meta.url);
   const pkgRoot = path.resolve(path.dirname(thisFile), "../../..");
   const scriptPath = path.join(pkgRoot, "scripts", "pilot-journey.mjs");
-  const dataDir = process.env.PILOTLOG_HOME || path.join(process.cwd(), ".pilotlog");
+  const dataDir = process.env.PILOTLOG_HOME || process.env.PILOTLOG_DIR || path.resolve(process.cwd(), "data");
 
   const viewMap: Record<string, string> = {
     passport:    "passport",
