@@ -644,12 +644,47 @@ function renderPassport() {
     ["Wallet",            state.walletConnected ? green("connected") : dim("not connected")],
     ["Pilot Phase",       state.pilotPhaseLabel || dim("unknown")],
     ["Verified Flights",  String(state.verifiedFlights)],
-    ["Instructor Verification", state.attestations > 0 ? `${state.attestations} received` : dim("none yet")],
+    ["CFI Verifications", state.attestations > 0 ? `${state.attestations} received` : dim("none yet")],
     ["Milestones",        `${state.milestoneProgress}%`],
   ];
 
   for (const [label, value] of rows) {
     console.log(`  ${bold(label.padEnd(18))}  ${value}`);
+  }
+
+  // ── Instructor Verification Detail ────────────────────────────────────────
+  if (Array.isArray(attestations) && attestations.length > 0) {
+    console.log();
+    console.log(bold(cyan("  \u2500\u2500\u2500  Instructor Verification  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")));
+    console.log();
+
+    const verified = attestations.filter(a => a.status === "verified");
+    const pending  = attestations.filter(a => a.status === "pending");
+
+    if (verified.length) {
+      for (const a of verified) {
+        const date = String(a.verifiedAt || a.createdAt).slice(0, 10);
+        const type = String(a.type).replace(/_/g, " ");
+        console.log(`  ${green("\u2713")}  ${bold(green("Flight Verified"))}  ${gray("\u2014")}  ${type}  ${gray(date)}`);
+        if (a.remarks) console.log(gray(`       ${a.remarks}`));
+      }
+    }
+
+    if (pending.length) {
+      for (const a of pending) {
+        const date = String(a.createdAt).slice(0, 10);
+        const type = String(a.type).replace(/_/g, " ");
+        console.log(`  ${yellow("\u25b6")}  ${bold(yellow("Pending CFI Review"))}  ${gray("\u2014")}  ${type}  ${gray(date)}`);
+      }
+    }
+
+    console.log();
+    console.log(`  ${bold(String(verified.length))} CFI Verified  ${gray("|")}  ${bold(String(pending.length))} Pending Review`);
+
+  } else {
+    console.log();
+    console.log(gray("  No instructor verifications yet."));
+    console.log(gray("  Use: pilotlog attest request --flight <id>"));
   }
 
   console.log();

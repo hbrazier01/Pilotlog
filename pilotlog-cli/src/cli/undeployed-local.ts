@@ -3,6 +3,8 @@ import { loadProfile, saveProfile } from "../profileStore.js";
 import { loadWalletSession } from "../walletSession.js";
 import { loadMidnameIdentity, saveMidnameIdentity, clearMidnameIdentity } from "../midnameStore.js";
 import { validateMidname, resolveMidnameIdentity, printMidnameCard } from "../midnameResolver.js";
+import { loadAttestations, saveAttestations } from "../attestationStore.js";
+import { loadInstructors, saveInstructors } from "../instructorStore.js";
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -69,6 +71,14 @@ function usage() {
   console.log("  midname set --midname pilot.night  Resolve & store Midnames identity");
   console.log("  midname get                        Display stored identity card");
   console.log("  midname clear                      Remove stored identity");
+  console.log("");
+  console.log("  attest request --flight <id> [--instructor <id>] [--type flight_verified]");
+  console.log("  attest list                        List all attestation requests");
+  console.log("  attest verify --id <id> [--remarks '...']  Mark attestation as CFI Verified");
+  console.log("  attest reject --id <id> [--remarks '...']  Reject attestation request");
+  console.log("");
+  console.log("  instructor add --name 'John Smith' [--cert 'CFI-12345'] [--midname pilot.cfi]");
+  console.log("  instructor list                    List registered instructors");
 }
 
 // -------------------- FLIGHTS --------------------
@@ -464,6 +474,166 @@ else if (command === "midname") {
   } else if (sub === "clear") {
     clearMidnameIdentity();
     console.log("Midnames identity cleared.");
+  } else {
+    usage();
+  }
+}
+
+// -------------------- INSTRUCTOR VERIFICATION --------------------
+else if (command === "attest") {
+  const attestations = loadAttestations();
+  const entries = loadEntries();
+  const instructors = loadInstructors();
+  const walletSession = loadWalletSession();
+  const pilotId = walletSession?.address || "unknown";
+
+  if (sub === "request") {
+    const flightId = str("flight", "");
+    if (!flightId.trim()) {
+      console.error('attest request: required --flight <entry-id>');
+      process.exit(1);
+    }
+
+    const flight = (entries as any[]).find((e: any) => e.id === flightId || e.id.startsWith(flightId));
+    if (!flight) {
+      console.error(`attest request: flight "${flightId}" not found. Use "pilotlog list" to see entry IDs.`);
+      process.exit(1);
+    }
+
+    const instructorId = str("instructor", instructors[0]?.id || "");
+    const type = (str("type", "flight_verified") as any);
+
+    const attestation = {
+      id: randomUUID(),
+      type,
+      pilotId,
+      instructorId,
+      flightId: flight.id,
+      createdAt: new Date().toISOString(),
+      status: "pending" as const,
+    };
+
+    attestations.push(attestation);
+    saveAttestations(attestations);
+
+    console.log(`CFI Review requested for flight: ${flight.from || "?"} → ${flight.to || "?"} on ${String(flight.date).slice(0, 10)}`);
+    console.log(`Attestation ID: ${attestation.id}`);
+    console.log(`Status: Pending Instructor Review`);
+
+  } else if (sub === "list" || !sub) {
+    if (!attestations.length) {
+      console.log("No attestation requests on file. Use: pilotlog attest request --flight <id>");
+    } else {
+      console.log(`${"ID".slice(0, 8).padEnd(10)}${"TYPE".padEnd(22)}${"STATUS".padEnd(20)}FLIGHT`);
+      console.log("─".repeat(72));
+      for (const a of (attestations as any[])) {
+        const shortId = String(a.id).slice(0, 8);
+        const type = String(a.type).padEnd(22);
+        const status = String(a.status).padEnd(20);
+        const flight = (entries as any[]).find((e: any) => e.id === a.flightId);
+        const flightLabel = flight
+          ? `${flight.from || "?"}→${flight.to || "?"} ${String(flight.date).slice(0, 10)}`
+          : a.flightId?.slice(0, 16) || "unknown";
+        console.log(`${shortId}  ${type}${status}${flightLabel}`);
+      }
+      const pending  = attestations.filter((a: any) => a.status === "pending").length;
+      const verified = attestations.filter((a: any) => a.status === "verified").length;
+      console.log(`\n${attestations.length} total  |  ${pending} pending  |  ${verified} CFI Verified`);
+    }
+
+  } else if (sub === "verify") {
+    const id = str("id", "");
+    if (!id.trim()) {
+      console.error('attest verify: required --id <attestation-id>');
+      process.exit(1);
+    }
+    const idx = attestations.findIndex((a: any) => a.id === id || a.id.startsWith(id));
+    if (idx === -1) {
+      console.error(`attest verify: attestation "${id}" not found.`);
+      process.exit(1);
+    }
+    const remarks = str("remarks", "");
+    (attestations as any[])[idx].status = "verified";
+    (attestations as any[])[idx].verifiedAt = new Date().toISOString();
+    if (remarks) (attestations as any[])[idx].remarks = remarks;
+
+    // Increment instructor verification count
+    const instructorId = (attestations as any[])[idx].instructorId;
+    const instrIdx = instructors.findIndex((i: any) => i.id === instructorId);
+    if (instrIdx !== -1) {
+      (instructors as any[])[instrIdx].verificationCount = ((instructors as any[])[instrIdx].verificationCount || 0) + 1;
+      saveInstructors(instructors);
+    }
+
+    saveAttestations(attestations);
+    console.log(`Flight Verified — attestation ${id.slice(0, 8)} marked as CFI Verified.`);
+    if (remarks) console.log(`Remarks: ${remarks}`);
+
+  } else if (sub === "reject") {
+    const id = str("id", "");
+    if (!id.trim()) {
+      console.error('attest reject: required --id <attestation-id>');
+      process.exit(1);
+    }
+    const idx = attestations.findIndex((a: any) => a.id === id || a.id.startsWith(id));
+    if (idx === -1) {
+      console.error(`attest reject: attestation "${id}" not found.`);
+      process.exit(1);
+    }
+    const remarks = str("remarks", "");
+    (attestations as any[])[idx].status = "rejected";
+    if (remarks) (attestations as any[])[idx].remarks = remarks;
+    saveAttestations(attestations);
+    console.log(`Attestation ${id.slice(0, 8)} rejected.`);
+
+  } else {
+    usage();
+  }
+}
+
+// -------------------- INSTRUCTOR MANAGEMENT --------------------
+else if (command === "instructor") {
+  const instructors = loadInstructors();
+
+  if (sub === "add") {
+    const name = str("name", "");
+    if (!name.trim()) {
+      console.error('instructor add: required --name "..."');
+      process.exit(1);
+    }
+    const certNumber = str("cert", "") || undefined;
+    const midname    = str("midname", "") || undefined;
+
+    const instructor = {
+      id: randomUUID(),
+      name,
+      ...(certNumber ? { certNumber } : {}),
+      ...(midname ? { midname } : {}),
+      verificationCount: 0,
+      reputationScore: 0,
+      addedAt: new Date().toISOString(),
+    };
+
+    instructors.push(instructor);
+    saveInstructors(instructors);
+    console.log(`Instructor added: ${name} (${instructor.id.slice(0, 8)})`);
+    if (certNumber) console.log(`Certificate: ${certNumber}`);
+
+  } else if (sub === "list" || !sub) {
+    if (!instructors.length) {
+      console.log('No instructors on file. Use: pilotlog instructor add --name "John Smith"');
+    } else {
+      console.log(`${"NAME".padEnd(24)}${"CERT".padEnd(16)}${"VERIFICATIONS".padEnd(16)}ID`);
+      console.log("─".repeat(72));
+      for (const i of (instructors as any[])) {
+        const name = String(i.name).padEnd(24);
+        const cert = String(i.certNumber || "—").padEnd(16);
+        const count = String(i.verificationCount || 0).padEnd(16);
+        const id = String(i.id).slice(0, 8);
+        console.log(`${name}${cert}${count}${id}`);
+      }
+    }
+
   } else {
     usage();
   }
