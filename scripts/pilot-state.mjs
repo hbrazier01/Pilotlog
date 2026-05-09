@@ -82,6 +82,15 @@ export function buildPilotState(asOf = new Date().toISOString()) {
   const verifiedFlights = entries.filter(e => e.pilotId && !e.unverified).length;
   const attestationCount = Array.isArray(attestations) ? attestations.length : 0;
 
+  // Attestation breakdown
+  const pendingAttestations  = Array.isArray(attestations) ? attestations.filter(a => a.status === "pending").length : 0;
+  const verifiedAttestations = Array.isArray(attestations) ? attestations.filter(a => a.status === "verified").length : 0;
+  const latestVerification   = Array.isArray(attestations)
+    ? attestations
+        .filter(a => a.status === "verified")
+        .sort((a, b) => String(b.verifiedAt || b.createdAt).localeCompare(String(a.verifiedAt || a.createdAt)))[0] || null
+    : null;
+
   // Wallet: prefer wallet.json; fall back to identity.json walletAddress
   const walletConnected  = !!(walletSession || identityData?.walletAddress);
   const walletAddress    = walletSession?.address || identityData?.walletAddress || null;
@@ -128,7 +137,10 @@ export function buildPilotState(asOf = new Date().toISOString()) {
 
     // Trust
     verifiedFlights,
-    attestations:     attestationCount,
+    attestations:          attestationCount,
+    pendingAttestations,
+    verifiedAttestations,
+    latestVerification,
     trustLevel,
 
     // Raw sources (for views that need them)

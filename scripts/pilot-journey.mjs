@@ -236,6 +236,58 @@ function renderTimeline() {
 
   console.log();
   console.log(`  ${bold("Overall Progress:")} ${prog.progressPct}%  ${bar(prog.progressPct, 30)}`);
+
+  // ── Trust Progression ─────────────────────────────────────────────────────────
+  console.log();
+  console.log(bold(cyan("  \u2500\u2500\u2500  Trust Progression  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")));
+  console.log();
+
+  const trustSteps = [
+    { label: "Unverified",          done: true,                          icon: gray("\u25cb") },
+    { label: "Connected",           done: state.walletConnected,         icon: state.walletConnected ? green("\u25cf") : gray("\u25cb") },
+    { label: "Identity Verified",   done: !!state.midname,               icon: state.midname ? green("\u25cf") : gray("\u25cb") },
+    { label: "Progression Verified",done: state.verifiedFlights > 0,     icon: state.verifiedFlights > 0 ? green("\u25cf") : gray("\u25cb") },
+    { label: "Trusted Aviator",     done: state.verifiedAttestations > 0, icon: state.verifiedAttestations > 0 ? green("\u25cf") : gray("\u25cb") },
+  ];
+
+  for (let i = 0; i < trustSteps.length; i++) {
+    const s = trustSteps[i];
+    const isNext = !s.done && (i === 0 || trustSteps[i - 1].done);
+    const isCurrent = state.trustLevel === s.label;
+    const label = s.done
+      ? green(`Level ${i} \u2014 ${s.label}`)
+      : isNext
+        ? bold(yellow(`Level ${i} \u2014 ${s.label}`)) + "  " + yellow("\u2190 next")
+        : gray(`Level ${i} \u2014 ${s.label}`);
+    console.log(`  ${s.icon}  ${label}`);
+    if (i < trustSteps.length - 1) console.log(gray("     \u2502"));
+  }
+
+  // Trust events from verified attestations
+  if (state.verifiedAttestations > 0 || state.pendingAttestations > 0) {
+    console.log();
+    console.log(bold(cyan("  \u2500\u2500\u2500  Instructor Trust Events  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")));
+    console.log();
+
+    if (Array.isArray(attestations)) {
+      const sorted = [...attestations].sort((a, b) =>
+        String(b.verifiedAt || b.createdAt).localeCompare(String(a.verifiedAt || a.createdAt))
+      );
+      for (const a of sorted) {
+        const date = String(a.verifiedAt || a.createdAt).slice(0, 10);
+        const type = String(a.type).replace(/_/g, " ");
+        if (a.status === "verified") {
+          console.log(`  ${green("\u2713")}  ${bold(green("Flight Verified by Instructor"))}  ${gray(date)}`);
+          console.log(gray(`     Training Verified \u00b7 ${type}`));
+        } else if (a.status === "pending") {
+          console.log(`  ${yellow("\u25b6")}  ${bold(yellow("CFI Review Pending"))}  ${gray(date)}`);
+          console.log(gray(`     Verification Submitted \u00b7 Awaiting Instructor Review`));
+        }
+        console.log();
+      }
+    }
+  }
+
   console.log();
 }
 
@@ -439,6 +491,38 @@ function renderDashboard() {
   console.log(gray(`  Trust Level: ${bold(state.trustLevel)}`));
   console.log();
 
+  // ── Instructor Trust Card ────────────────────────────────────────────────────
+  console.log(bold(cyan("  \u2500\u2500\u2500  Instructor Trust  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")));
+  console.log();
+
+  if (state.pendingAttestations > 0) {
+    console.log(`  ${yellow("\u25b6")}  ${bold(yellow("CFI Review Pending"))}  ${gray("\u2014")}  ${state.pendingAttestations} awaiting instructor review`);
+    console.log(gray(`     Verification Submitted \u00b7 Status: Awaiting Instructor Review`));
+    console.log();
+  }
+
+  if (state.verifiedAttestations > 0) {
+    const latest = state.latestVerification;
+    const latestDate = latest ? String(latest.verifiedAt || latest.createdAt).slice(0, 10) : "";
+    console.log(`  ${green("\u2713")}  ${bold(green("Instructor Verified"))}  ${gray("\u2014")}  ${state.verifiedAttestations} CFI Verified`);
+    if (latestDate) console.log(gray(`     Last verified: ${latestDate}`));
+    console.log();
+    console.log(`  ${cyan("\u25b6")}  ${bold("Trust Level Increased")}  ${gray("\u00b7")}  Reputation Growing`);
+    console.log();
+  }
+
+  if (state.attestations === 0) {
+    const nextUnlock = !state.walletConnected ? "Connect Wallet"
+                     : !state.midname          ? "Claim Verified Identity"
+                     : state.verifiedFlights === 0 ? "Log Verified Flights"
+                     : "Request CFI Review";
+    console.log(`  ${gray("\u25cb")}  ${gray("No instructor reviews yet")}  ${gray("\u00b7")}  ${yellow(`Next Trust Unlock: ${nextUnlock}`)}`);
+    if (state.verifiedFlights > 0) {
+      console.log(gray(`     Run: pilotlog attest request --flight <id>`));
+    }
+    console.log();
+  }
+
   // ── Pilot Status Card ────────────────────────────────────────────────────────
   console.log(`  ${bold("Phase:")}    ${bold(yellow(phase))}`);
   console.log(`  ${bold("Progress:")} ${prog.progressPct}%  ${bar(prog.progressPct, 32)}  ${gray("toward Private Pilot")}`);
@@ -639,12 +723,18 @@ function renderPassport() {
   console.log(bold(cyan("  \u2500\u2500\u2500  Pilot Summary  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")));
   console.log();
 
+  const cfiVerifiedLabel = state.verifiedAttestations > 0
+    ? `${state.verifiedAttestations} CFI Verified${state.pendingAttestations > 0 ? `  (${state.pendingAttestations} pending)` : ""}`
+    : state.pendingAttestations > 0
+      ? yellow(`${state.pendingAttestations} Awaiting CFI Review`)
+      : dim("none yet");
+
   const rows = [
     ["Verified Identity", state.midname ? `${state.midname}${state.midnameVerified ? "  \u2713" : ""}` : dim("not set")],
     ["Wallet",            state.walletConnected ? green("connected") : dim("not connected")],
     ["Pilot Phase",       state.pilotPhaseLabel || dim("unknown")],
     ["Verified Flights",  String(state.verifiedFlights)],
-    ["CFI Verifications", state.attestations > 0 ? `${state.attestations} received` : dim("none yet")],
+    ["CFI Verifications", cfiVerifiedLabel],
     ["Milestones",        `${state.milestoneProgress}%`],
   ];
 
@@ -653,11 +743,11 @@ function renderPassport() {
   }
 
   // ── Instructor Verification Detail ────────────────────────────────────────
-  if (Array.isArray(attestations) && attestations.length > 0) {
-    console.log();
-    console.log(bold(cyan("  \u2500\u2500\u2500  Instructor Verification  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")));
-    console.log();
+  console.log();
+  console.log(bold(cyan("  \u2500\u2500\u2500  Instructor Verification  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")));
+  console.log();
 
+  if (Array.isArray(attestations) && attestations.length > 0) {
     const verified = attestations.filter(a => a.status === "verified");
     const pending  = attestations.filter(a => a.status === "pending");
 
@@ -665,16 +755,23 @@ function renderPassport() {
       for (const a of verified) {
         const date = String(a.verifiedAt || a.createdAt).slice(0, 10);
         const type = String(a.type).replace(/_/g, " ");
-        console.log(`  ${green("\u2713")}  ${bold(green("Flight Verified"))}  ${gray("\u2014")}  ${type}  ${gray(date)}`);
-        if (a.remarks) console.log(gray(`       ${a.remarks}`));
+        console.log(`  ${green("\u2713")}  ${bold(green("Flight Verified by Instructor"))}  ${gray("\u2014")}  ${type}  ${gray(date)}`);
+        if (a.remarks) console.log(green(`       CFI Approved \u00b7 ${a.remarks}`));
+      }
+      if (verified.length > 0) {
+        console.log();
+        console.log(`  ${green("\u2726")}  ${bold(green("Trust Level Increased"))}  ${gray("\u00b7")}  ${bold(state.trustLevel)}`);
+        console.log(`     ${bold("Reputation Growing")}  ${gray("\u00b7")}  ${state.verifiedAttestations} instructor review${state.verifiedAttestations !== 1 ? "s" : ""} on record`);
       }
     }
 
     if (pending.length) {
+      console.log();
       for (const a of pending) {
         const date = String(a.createdAt).slice(0, 10);
         const type = String(a.type).replace(/_/g, " ");
-        console.log(`  ${yellow("\u25b6")}  ${bold(yellow("Pending CFI Review"))}  ${gray("\u2014")}  ${type}  ${gray(date)}`);
+        console.log(`  ${yellow("\u25b6")}  ${bold(yellow("Awaiting Instructor Review"))}  ${gray("\u2014")}  ${type}  ${gray(date)}`);
+        console.log(gray(`     Verification Submitted \u00b7 CFI Review Pending`));
       }
     }
 
@@ -682,9 +779,15 @@ function renderPassport() {
     console.log(`  ${bold(String(verified.length))} CFI Verified  ${gray("|")}  ${bold(String(pending.length))} Pending Review`);
 
   } else {
-    console.log();
-    console.log(gray("  No instructor verifications yet."));
-    console.log(gray("  Use: pilotlog attest request --flight <id>"));
+    console.log(gray("  No instructor reviews yet."));
+    if (state.verifiedFlights > 0) {
+      console.log();
+      console.log(`  ${yellow("\u25b6")}  ${bold("Request your first CFI review")}`);
+      console.log(gray(`     Run: pilotlog attest request --flight <id>`));
+      console.log(gray(`     Your training will be Instructor Reviewed \u2014 Trust Level Increases`));
+    } else {
+      console.log(gray("  Log flights first, then request instructor verification."));
+    }
   }
 
   console.log();
