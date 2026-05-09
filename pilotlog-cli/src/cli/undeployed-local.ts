@@ -41,6 +41,7 @@ function usage() {
   console.log("  report [--out <path>]          Pilot report (currency, certs, hours)");
   console.log("  trust-report [--out <path>]    Buyer-facing trust dossier (provenance, compliance, risk)");
   console.log("");
+  console.log("  passport                       Pilot identity + trust level + unlock chain");
   console.log("  dashboard                      Pilot journey overview (progression + readiness + guidance)");
   console.log("  journey                        Visual pilot progression timeline");
   console.log("  milestones                     Milestone achievement tracker");
@@ -394,13 +395,14 @@ else if (command === "trust-report") {
 }
 
 // -------------------- JOURNEY / DASHBOARD --------------------
-else if (command === "dashboard" || command === "journey" || command === "milestones" || command === "whats-next" || command === "readiness" || command === "mentor") {
+else if (command === "passport" || command === "dashboard" || command === "journey" || command === "milestones" || command === "whats-next" || command === "readiness" || command === "mentor") {
   const thisFile = fileURLToPath(import.meta.url);
   const pkgRoot = path.resolve(path.dirname(thisFile), "../../..");
   const scriptPath = path.join(pkgRoot, "scripts", "pilot-journey.mjs");
   const dataDir = process.env.PILOTLOG_HOME || path.join(process.cwd(), ".pilotlog");
 
   const viewMap: Record<string, string> = {
+    passport:    "passport",
     dashboard:   "dashboard",
     journey:     "timeline",
     milestones:  "milestones",

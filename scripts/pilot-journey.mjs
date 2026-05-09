@@ -7,25 +7,22 @@
  *   node scripts/pilot-journey.mjs [--view timeline|milestones|whats-next|dashboard]
  */
 
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { computeProgression, PROGRESSION_STATES } from "../pilotlog-cli/src/lib/progression-engine.mjs";
+import { PROGRESSION_STATES } from "../pilotlog-cli/src/lib/progression-engine.mjs";
 import { computeMentorInsights } from "../pilotlog-cli/src/lib/mentor-engine.mjs";
+import { buildPilotState } from "./pilot-state.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = process.env.PILOTLOG_HOME || path.join(__dirname, "../data");
 
-function readJSON(filePath, fallback) {
-  try { return JSON.parse(fs.readFileSync(filePath, "utf-8")); } catch { return fallback; }
-}
+const asOf    = new Date().toISOString();
+const state   = buildPilotState(asOf);
 
-const profile      = readJSON(path.join(DATA_DIR, "profile.json"), {});
-const entries      = readJSON(path.join(DATA_DIR, "entries.json"), []);
-const attestations = readJSON(path.join(DATA_DIR, "attestations.json"), []);
-
-const asOf   = new Date().toISOString();
-const prog   = computeProgression(profile, entries, attestations, asOf);
+// Aliases for backward-compat with existing render functions
+const profile      = state._profile;
+const entries      = state._entries;
+const attestations = state._attestations;
+const prog         = state._prog;
 const mentor = computeMentorInsights(profile, entries, attestations, prog, asOf);
 
 // ─── ANSI Colors ──────────────────────────────────────────────────────────────
@@ -505,6 +502,127 @@ function renderDashboard() {
   console.log();
 }
 
+// ─── VIEW: PASSPORT ───────────────────────────────────────────────────────────
+
+function renderPassport() {
+  const name = profile?.pilot?.fullName || "Pilot";
+
+  console.log();
+  console.log(bold(cyan("  \u250f" + "\u2501".repeat(58) + "\u2513")));
+  console.log(bold(cyan("  \u2503") + `  \u{1F6E1}  Pilot Passport  \u2014  ${name}`.padEnd(58) + cyan("\u2503")));
+  console.log(bold(cyan("  \u2517" + "\u2501".repeat(58) + "\u251b")));
+  console.log();
+
+  // ── Identity Unlock Chain ─────────────────────────────────────────────────
+  console.log(bold(cyan("  \u2500\u2500\u2500  Identity Unlock Chain  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")));
+  console.log();
+
+  const level = state.identityLevel;
+
+  const unlockSteps = [
+    {
+      label:    "Wallet Connected",
+      sublabel: state.walletConnected
+        ? `${state.walletAddress?.slice(0, 14)}...`
+        : "Run: pilotlog wallet connect",
+      done:     state.walletConnected,
+      unlocks:  "Identity Layer",
+    },
+    {
+      label:    "Midnames Identity",
+      sublabel: state.midname
+        ? `${state.midname}${state.midnameVerified ? "  \u2713 verified" : "  (unverified)"}`
+        : "Run: pilotlog midname set --midname <handle>",
+      done:     !!state.midname,
+      unlocks:  "Reputation Layer",
+    },
+    {
+      label:    "Verified Flights",
+      sublabel: state.verifiedFlights > 0
+        ? `${state.verifiedFlights} flight${state.verifiedFlights !== 1 ? "s" : ""} anchored to wallet`
+        : "Log flights while wallet is connected",
+      done:     state.verifiedFlights > 0,
+      unlocks:  "Progression Verified",
+    },
+    {
+      label:    "Attestations",
+      sublabel: state.attestations > 0
+        ? `${state.attestations} attestation${state.attestations !== 1 ? "s" : ""} on record`
+        : "Request instructor attestation: pilotlog attest",
+      done:     state.attestations > 0,
+      unlocks:  "Trusted Aviator",
+    },
+  ];
+
+  for (let i = 0; i < unlockSteps.length; i++) {
+    const step = unlockSteps[i];
+    const isNext = !step.done && (i === 0 || unlockSteps[i - 1].done);
+
+    let marker, labelStr, sublabelStr;
+
+    if (step.done) {
+      marker    = green("  \u2713");
+      labelStr  = green(bold(step.label));
+      sublabelStr = gray(`    ${step.sublabel}`);
+    } else if (isNext) {
+      marker    = yellow(" \u25b6 ");
+      labelStr  = bold(yellow(step.label)) + "  " + yellow("\u2190 next step");
+      sublabelStr = `    ${step.sublabel}`;
+    } else {
+      marker    = gray("  \u25cb");
+      labelStr  = gray(step.label);
+      sublabelStr = gray(`    ${step.sublabel}`);
+    }
+
+    console.log(`  ${marker}  ${labelStr}`);
+    console.log(`       ${sublabelStr}`);
+
+    if (i < unlockSteps.length - 1) {
+      const connectorColor = step.done ? green : gray;
+      console.log(`       ${connectorColor("  \u2502")}  ${gray("\u2192 unlocks " + step.unlocks)}`);
+    }
+  }
+
+  console.log();
+
+  // ── Trust Level ───────────────────────────────────────────────────────────
+  console.log(bold(cyan("  \u2500\u2500\u2500  Trust Level  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")));
+  console.log();
+
+  const trustColors = [gray, cyan, blue, yellow, green];
+  const trustColor  = trustColors[level] || gray;
+  const trustBar    = bar(level * 25, 32);
+
+  console.log(`  ${trustColor(bold(state.trustLevel))}`);
+  console.log(`  Level ${level}/4  ${trustBar}`);
+  console.log();
+
+  // ── Identity Summary ──────────────────────────────────────────────────────
+  console.log(bold(cyan("  \u2500\u2500\u2500  Identity Summary  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")));
+  console.log();
+
+  const rows = [
+    ["Wallet",         state.walletConnected ? (state.walletAddress || "—") : dim("not connected")],
+    ["Midname",        state.midname         ? state.midname                : dim("not set")],
+    ["Shielded ID",    state.shieldedIdentity ? state.shieldedIdentity.slice(0, 20) + "..." : dim("none")],
+    ["Pilot Phase",    state.pilotPhaseLabel || dim("unknown")],
+    ["Verified Flights", String(state.verifiedFlights)],
+    ["Attestations",   String(state.attestations)],
+    ["Milestones",     `${state.milestoneProgress}%`],
+  ];
+
+  for (const [label, value] of rows) {
+    console.log(`  ${bold(label.padEnd(18))}  ${value}`);
+  }
+
+  console.log();
+  console.log("  " + divider("\u2550"));
+  const dateStr = new Date(asOf).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  console.log(gray(`  ${dateStr}`));
+  console.log(gray(`  pilotlog passport  |  dashboard  |  journey  |  milestones  |  mentor`));
+  console.log();
+}
+
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 
 const viewArg = process.argv.find(a => a === "--view");
@@ -517,5 +635,6 @@ switch (view) {
   case "whats-next": renderWhatsNext();  break;
   case "readiness":  renderReadiness();  break;
   case "mentor":     renderMentor();     break;
+  case "passport":   renderPassport();   break;
   default:           renderDashboard();  break;
 }
