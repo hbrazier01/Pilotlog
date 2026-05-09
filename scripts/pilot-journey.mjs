@@ -100,6 +100,87 @@ function flightStreakDays(entries, asOf) {
   return streak;
 }
 
+// ─── SHARED: UNLOCK FLOW ──────────────────────────────────────────────────────
+// Reusable unlock chain display — shows identity/trust progression steps.
+
+function renderUnlockChain({ compact = false } = {}) {
+  const unlockSteps = [
+    {
+      label:    "Wallet Connected",
+      sublabel: state.walletConnected
+        ? "Shielded identity active"
+        : "Run: pilotlog wallet connect",
+      done:     state.walletConnected,
+      unlocks:  "Verified Identity",
+    },
+    {
+      label:    "Verified Identity",
+      sublabel: state.midname
+        ? `${state.midname}${state.midnameVerified ? "  \u2713 verified" : "  (unverified)"}`
+        : "Run: pilotlog midname set --midname <handle>",
+      done:     !!state.midname,
+      unlocks:  "Verified Flights",
+    },
+    {
+      label:    "Verified Flights",
+      sublabel: state.verifiedFlights > 0
+        ? `${state.verifiedFlights} flight${state.verifiedFlights !== 1 ? "s" : ""} on record`
+        : "Log flights to build your verified record",
+      done:     state.verifiedFlights > 0,
+      unlocks:  "Instructor Verification",
+    },
+    {
+      label:    "Instructor Verification",
+      sublabel: state.attestations > 0
+        ? `${state.attestations} attestation${state.attestations !== 1 ? "s" : ""} received`
+        : "Request instructor attestation: pilotlog attest",
+      done:     state.attestations > 0,
+      unlocks:  "Pilot Reputation",
+    },
+  ];
+
+  if (compact) {
+    // One-line horizontal chain for banners
+    const parts = unlockSteps.map((step, i) => {
+      const isNext = !step.done && (i === 0 || unlockSteps[i - 1].done);
+      if (step.done)   return green(`\u2713 ${step.label}`);
+      if (isNext)      return yellow(`\u25b6 ${step.label}`);
+      return gray(`\u25cb ${step.label}`);
+    });
+    console.log("  " + parts.join(gray("  \u2192  ")));
+    return;
+  }
+
+  for (let i = 0; i < unlockSteps.length; i++) {
+    const step = unlockSteps[i];
+    const isNext = !step.done && (i === 0 || unlockSteps[i - 1].done);
+
+    let marker, labelStr, sublabelStr;
+
+    if (step.done) {
+      marker      = green("  \u2713");
+      labelStr    = green(bold(step.label));
+      sublabelStr = gray(`    ${step.sublabel}`);
+    } else if (isNext) {
+      marker      = yellow(" \u25b6 ");
+      labelStr    = bold(yellow(step.label)) + "  " + yellow("\u2190 next step");
+      sublabelStr = `    ${step.sublabel}`;
+    } else {
+      marker      = gray("  \u25cb");
+      labelStr    = gray(step.label);
+      sublabelStr = gray(`    ${step.sublabel}`);
+    }
+
+    console.log(`  ${marker}  ${labelStr}`);
+    console.log(`       ${sublabelStr}`);
+
+    if (i < unlockSteps.length - 1) {
+      const connectorColor = step.done ? green : gray;
+      console.log(`       ${connectorColor("  \u2502")}  ${gray("\u2192 unlocks " + step.unlocks)}`);
+    }
+  }
+}
+
 // ─── VIEW: TIMELINE ───────────────────────────────────────────────────────────
 
 function renderTimeline() {
@@ -109,6 +190,21 @@ function renderTimeline() {
   console.log();
   console.log(bold("  \u2708  Pilot Journey Timeline"));
   console.log("  " + divider("\u2550"));
+  console.log();
+
+  // ── Identity / Trust Banner ──────────────────────────────────────────────────
+  const identityParts = [];
+  if (state.midname)     identityParts.push(green(`\u2713 ${state.midname}`));
+  else if (state.walletConnected) identityParts.push(yellow("\u25b6 Wallet connected"));
+  identityParts.push(cyan(state.trustLevel));
+  const nextUnlock = !state.walletConnected ? "Wallet connection"
+                   : !state.midname          ? "Verified Identity"
+                   : state.verifiedFlights === 0 ? "Verified Flights"
+                   : state.attestations === 0    ? "Instructor Verification"
+                   : null;
+  if (nextUnlock) identityParts.push(yellow(`Next Unlock: ${nextUnlock}`));
+  identityParts.push(gray(`${state.milestoneProgress}% milestones`));
+  console.log("  " + identityParts.join(gray("  \u00b7  ")));
   console.log();
 
   for (const [key, config] of phases) {
@@ -336,6 +432,13 @@ function renderDashboard() {
   console.log(bold(cyan("  \u2517" + "\u2501".repeat(58) + "\u251b")));
   console.log();
 
+  // ── Identity Unlock Flow ─────────────────────────────────────────────────────
+  console.log(bold(cyan("  \u2500\u2500\u2500  Identity & Trust  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")));
+  console.log();
+  renderUnlockChain({ compact: true });
+  console.log(gray(`  Trust Level: ${bold(state.trustLevel)}`));
+  console.log();
+
   // ── Pilot Status Card ────────────────────────────────────────────────────────
   console.log(`  ${bold("Phase:")}    ${bold(yellow(phase))}`);
   console.log(`  ${bold("Progress:")} ${prog.progressPct}%  ${bar(prog.progressPct, 32)}  ${gray("toward Private Pilot")}`);
@@ -516,79 +619,14 @@ function renderPassport() {
   // ── Identity Unlock Chain ─────────────────────────────────────────────────
   console.log(bold(cyan("  \u2500\u2500\u2500  Identity Unlock Chain  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")));
   console.log();
-
-  const level = state.identityLevel;
-
-  const unlockSteps = [
-    {
-      label:    "Wallet Connected",
-      sublabel: state.walletConnected
-        ? `${state.walletAddress?.slice(0, 14)}...`
-        : "Run: pilotlog wallet connect",
-      done:     state.walletConnected,
-      unlocks:  "Identity Layer",
-    },
-    {
-      label:    "Midnames Identity",
-      sublabel: state.midname
-        ? `${state.midname}${state.midnameVerified ? "  \u2713 verified" : "  (unverified)"}`
-        : "Run: pilotlog midname set --midname <handle>",
-      done:     !!state.midname,
-      unlocks:  "Reputation Layer",
-    },
-    {
-      label:    "Verified Flights",
-      sublabel: state.verifiedFlights > 0
-        ? `${state.verifiedFlights} flight${state.verifiedFlights !== 1 ? "s" : ""} anchored to wallet`
-        : "Log flights while wallet is connected",
-      done:     state.verifiedFlights > 0,
-      unlocks:  "Progression Verified",
-    },
-    {
-      label:    "Attestations",
-      sublabel: state.attestations > 0
-        ? `${state.attestations} attestation${state.attestations !== 1 ? "s" : ""} on record`
-        : "Request instructor attestation: pilotlog attest",
-      done:     state.attestations > 0,
-      unlocks:  "Trusted Aviator",
-    },
-  ];
-
-  for (let i = 0; i < unlockSteps.length; i++) {
-    const step = unlockSteps[i];
-    const isNext = !step.done && (i === 0 || unlockSteps[i - 1].done);
-
-    let marker, labelStr, sublabelStr;
-
-    if (step.done) {
-      marker    = green("  \u2713");
-      labelStr  = green(bold(step.label));
-      sublabelStr = gray(`    ${step.sublabel}`);
-    } else if (isNext) {
-      marker    = yellow(" \u25b6 ");
-      labelStr  = bold(yellow(step.label)) + "  " + yellow("\u2190 next step");
-      sublabelStr = `    ${step.sublabel}`;
-    } else {
-      marker    = gray("  \u25cb");
-      labelStr  = gray(step.label);
-      sublabelStr = gray(`    ${step.sublabel}`);
-    }
-
-    console.log(`  ${marker}  ${labelStr}`);
-    console.log(`       ${sublabelStr}`);
-
-    if (i < unlockSteps.length - 1) {
-      const connectorColor = step.done ? green : gray;
-      console.log(`       ${connectorColor("  \u2502")}  ${gray("\u2192 unlocks " + step.unlocks)}`);
-    }
-  }
-
+  renderUnlockChain();
   console.log();
 
   // ── Trust Level ───────────────────────────────────────────────────────────
   console.log(bold(cyan("  \u2500\u2500\u2500  Trust Level  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")));
   console.log();
 
+  const level = state.identityLevel;
   const trustColors = [gray, cyan, blue, yellow, green];
   const trustColor  = trustColors[level] || gray;
   const trustBar    = bar(level * 25, 32);
@@ -597,18 +635,17 @@ function renderPassport() {
   console.log(`  Level ${level}/4  ${trustBar}`);
   console.log();
 
-  // ── Identity Summary ──────────────────────────────────────────────────────
-  console.log(bold(cyan("  \u2500\u2500\u2500  Identity Summary  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")));
+  // ── Pilot Summary ─────────────────────────────────────────────────────────
+  console.log(bold(cyan("  \u2500\u2500\u2500  Pilot Summary  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")));
   console.log();
 
   const rows = [
-    ["Wallet",         state.walletConnected ? (state.walletAddress || "—") : dim("not connected")],
-    ["Midname",        state.midname         ? state.midname                : dim("not set")],
-    ["Shielded ID",    state.shieldedIdentity ? state.shieldedIdentity.slice(0, 20) + "..." : dim("none")],
-    ["Pilot Phase",    state.pilotPhaseLabel || dim("unknown")],
-    ["Verified Flights", String(state.verifiedFlights)],
-    ["Attestations",   String(state.attestations)],
-    ["Milestones",     `${state.milestoneProgress}%`],
+    ["Verified Identity", state.midname ? `${state.midname}${state.midnameVerified ? "  \u2713" : ""}` : dim("not set")],
+    ["Wallet",            state.walletConnected ? green("connected") : dim("not connected")],
+    ["Pilot Phase",       state.pilotPhaseLabel || dim("unknown")],
+    ["Verified Flights",  String(state.verifiedFlights)],
+    ["Instructor Verification", state.attestations > 0 ? `${state.attestations} received` : dim("none yet")],
+    ["Milestones",        `${state.milestoneProgress}%`],
   ];
 
   for (const [label, value] of rows) {
