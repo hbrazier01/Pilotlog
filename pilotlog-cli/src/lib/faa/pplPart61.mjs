@@ -353,3 +353,181 @@ export function computePplRequirements(entries, { asOf, thresholds } = {}) {
     endorsements,
   };
 }
+
+// ─── View-compatible adapter ───────────────────────────────────────────────────
+//
+// computePplPart61Progress() wraps computePplRequirements() and returns the
+// shape expected by buildPilotState(), /progression, and all view routes.
+// This is the single authoritative source for all progression UI.
+
+const PHASE_CONFIG = {
+  foundation:       { progressionState: 'student_pilot',   label: 'Foundation Training',   description: 'Building fundamental flight skills with an instructor.' },
+  pre_solo:         { progressionState: 'student_pilot',   label: 'Pre-Solo Training',     description: 'Working toward solo endorsement — dual training underway.' },
+  solo_ready:       { progressionState: 'solo_ready',      label: 'Solo Ready',            description: 'Approaching solo endorsement. Coordinate with your instructor.' },
+  xc_phase:         { progressionState: 'xc_ready',        label: 'Cross-Country Phase',   description: 'Solo complete. Building toward XC and checkride minimums.' },
+  checkride_ready:  { progressionState: 'checkride_ready', label: 'Checkride Ready',       description: 'All Part 61 ASEL minimums met. Schedule your practical test.' },
+};
+
+function buildViewStats(faaStats, entries) {
+  const picHours = entries.reduce((s, e) => s + Number(e.pic || 0), 0);
+  const dayLandings = entries.reduce((s, e) => s + Number(e.dayLandings || 0), 0);
+  return {
+    totalHours:        faaStats.totalTime,
+    picHours:          parseFloat(picHours.toFixed(1)),
+    xcHours:           parseFloat((faaStats.dualXC + faaStats.soloXC).toFixed(1)),
+    nightHours:        faaStats.nightHours,
+    dualReceived:      faaStats.dualReceived,
+    soloHours:         faaStats.soloTime,
+    instrumentHours:   parseFloat((faaStats.simulatedInstrument + faaStats.actualInstrument).toFixed(1)),
+    totalDayLandings:  Math.round(dayLandings),
+    totalNightLandings: faaStats.nightLandings,
+    totalFlights:      entries.length,
+  };
+}
+
+function buildViewReadiness(requirements) {
+  const readiness = {};
+  for (const [key, r] of Object.entries(requirements)) {
+    const status = r.met ? 'completed' : r.pct >= 75 ? 'close' : r.pct >= 25 ? 'in_progress' : 'not_started';
+    readiness[key] = {
+      key,
+      label:  r.label,
+      score:  r.pct,
+      status,
+      detail: r.met
+        ? `${r.actual}${r.unit === 'landings' ? ' landings' : 'h'} — requirement met ✓`
+        : `${r.actual}${r.unit === 'landings' ? ' landings' : 'h'} of ${r.required}${r.unit === 'landings' ? ' landings' : 'h'} required (need ${r.deficit} more)`,
+    };
+  }
+  return readiness;
+}
+
+function buildViewMilestones(stats, phase) {
+  const milestones = [
+    {
+      key:    'first_flight',
+      icon:   '✈️',
+      label:  'First Flight Logged',
+      status: stats.totalTime > 0 ? 'completed' : 'not_started',
+      detail: stats.totalTime > 0 ? `${stats.totalTime}h total time logged` : 'Log your first flight to begin',
+    },
+    {
+      key:    'dual_progress',
+      icon:   '🎓',
+      label:  'Dual Training Underway',
+      status: stats.dualReceived >= 5 ? 'completed' : stats.dualReceived > 0 ? 'in_progress' : 'not_started',
+      detail: `${stats.dualReceived}h dual received (20h required for PPL)`,
+    },
+    {
+      key:    'pre_solo_eligible',
+      icon:   '🛫',
+      label:  'Pre-Solo Eligible',
+      status: (phase === 'solo_ready' || phase === 'xc_phase' || phase === 'checkride_ready') ? 'completed'
+            : stats.dualReceived >= 5 ? 'in_progress' : 'not_started',
+      detail: 'Requires ~10h dual and instructor sign-off',
+    },
+    {
+      key:    'first_solo',
+      icon:   '⭐',
+      label:  'First Solo',
+      status: stats.soloTime > 0 ? 'completed' : 'not_started',
+      detail: stats.soloTime > 0 ? `${stats.soloTime}h solo time logged` : 'Complete pre-solo requirements with your instructor',
+    },
+    {
+      key:    'dual_xc',
+      icon:   '🗺️',
+      label:  'Dual Cross-Country',
+      status: stats.dualXC >= 3 ? 'completed' : stats.dualXC > 0 ? 'in_progress' : 'not_started',
+      detail: `${stats.dualXC}h of 3h required dual XC (§61.109(a)(1)(i))`,
+    },
+    {
+      key:    'solo_xc',
+      icon:   '🌐',
+      label:  'Solo Cross-Country',
+      status: stats.soloXC >= 5 ? 'completed' : stats.soloXC > 0 ? 'in_progress' : 'not_started',
+      detail: `${stats.soloXC}h of 5h required solo XC (§61.109(a)(2)(ii))`,
+    },
+    {
+      key:    'night_training',
+      icon:   '🌙',
+      label:  'Night Training',
+      status: stats.nightHours >= 3 ? 'completed' : stats.nightHours > 0 ? 'in_progress' : 'not_started',
+      detail: `${stats.nightHours}h of 3h required night time (§61.109(a)(1)(ii))`,
+    },
+    {
+      key:    'instrument_training',
+      icon:   '🎛️',
+      label:  'Instrument Training',
+      status: stats.simulatedInstrument >= 3 ? 'completed' : stats.simulatedInstrument > 0 ? 'in_progress' : 'not_started',
+      detail: `${stats.simulatedInstrument}h of 3h required simulated instrument (§61.109(a)(1)(iii))`,
+    },
+    {
+      key:    'checkride_eligible',
+      icon:   '🏆',
+      label:  'Checkride Eligible',
+      status: phase === 'checkride_ready' ? 'completed' : 'not_started',
+      detail: 'All Part 61 ASEL minimums met — practical test authorized',
+    },
+  ];
+  return milestones;
+}
+
+function buildViewGuidanceCards(deficiencies, phase) {
+  if (deficiencies.length === 0) {
+    return [{
+      icon: '✅',
+      title: 'All Minimums Met',
+      body: 'You have satisfied all FAA Part 61 ASEL requirements. Schedule your practical test.',
+      action: 'Contact your CFII to obtain checkride endorsement',
+      priority: 'high',
+    }];
+  }
+  return deficiencies.slice(0, 4).map(d => ({
+    icon: '📋',
+    title: 'FAA Requirement',
+    body: d,
+    action: 'Log flights to satisfy this requirement',
+    priority: 'medium',
+  }));
+}
+
+/**
+ * computePplPart61Progress(entries, options)
+ *
+ * Single authoritative source for all progression UI.
+ * Returns shape compatible with buildPilotState() and all view routes.
+ */
+export function computePplPart61Progress(entries, { asOf, thresholds } = {}) {
+  const faa = computePplRequirements(entries, { asOf, thresholds });
+  const cfg = PHASE_CONFIG[faa.phase] || PHASE_CONFIG.foundation;
+
+  const viewStats    = buildViewStats(faa.stats, entries);
+  const readiness    = buildViewReadiness(faa.requirements);
+  const milestones   = buildViewMilestones(faa.stats, faa.phase);
+  const guidanceCards = buildViewGuidanceCards(faa.deficiencies, faa.phase);
+  const recommendations = faa.deficiencies.slice(0, 3);
+
+  const completedMilestones = milestones.filter(m => m.status === 'completed').length;
+  const progressPct = Math.round((completedMilestones / milestones.length) * 100);
+
+  return {
+    asOf:             faa.asOf,
+    // FAA engine fields (raw)
+    phase:            faa.phase,
+    progressPercent:  faa.progressPercent,
+    requirements:     faa.requirements,
+    deficiencies:     faa.deficiencies,
+    completed:        faa.completed,
+    endorsements:     faa.endorsements,
+    // View-compatible fields
+    progressionState: cfg.progressionState,
+    label:            cfg.label,
+    description:      cfg.description,
+    progressPct,
+    stats:            viewStats,
+    readiness,
+    milestones,
+    guidanceCards,
+    recommendations,
+  };
+}

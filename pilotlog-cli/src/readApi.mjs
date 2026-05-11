@@ -13,7 +13,7 @@ import { buildPilotReport } from "../../src/services/build-pilot-report.mjs";
 import { anchorRecord, verifyRecord, grantAccess, revokeAccess } from "../../src/services/airlog-anchor-service.mjs";
 import { computeReadiness, PILOT_PHASES } from "./lib/readiness.mjs";
 import { computeProgression } from "./lib/progression-engine.mjs";
-import { computePplRequirements } from "./lib/faa/pplPart61.mjs";
+import { computePplRequirements, computePplPart61Progress } from "./lib/faa/pplPart61.mjs";
 
 const PORT = Number(process.env.PORT || 8788);
 const DATA_DIR = process.env.PILOTLOG_HOME || process.env.PILOTLOG_DIR || path.resolve(process.cwd(), "data");
@@ -165,7 +165,8 @@ function buildPilotState(asOf = new Date().toISOString()) {
   const profile        = readProfile();
   const entries        = readEntries();
   const attestations   = readAttestations();
-  const prog           = computeProgression(profile, entries, attestations, asOf);
+  // FAA engine is the single source of truth for all progression state
+  const prog           = computePplPart61Progress(entries, { asOf });
 
   const verifiedFlights  = entries.filter(e => e.pilotId && !e.unverified).length;
   const attestationCount = Array.isArray(attestations) ? attestations.length : 0;
@@ -6416,18 +6417,14 @@ app.get("/api/pilot-state", (_req, res) => {
 
 app.get("/api/progression", (req, res) => {
   const asOf = String(req.query.asOf || new Date().toISOString());
-  const profile = readProfile();
   const entries = readEntries();
-  const attestations = readAttestations();
-  res.json(computeProgression(profile, entries, attestations, asOf));
+  res.json(computePplPart61Progress(entries, { asOf }));
 });
 
 app.get("/api/whats-next", (req, res) => {
   const asOf = String(req.query.asOf || new Date().toISOString());
-  const profile = readProfile();
   const entries = readEntries();
-  const attestations = readAttestations();
-  const prog = computeProgression(profile, entries, attestations, asOf);
+  const prog = computePplPart61Progress(entries, { asOf });
   res.json({
     asOf,
     progressionState: prog.progressionState,
@@ -6439,10 +6436,8 @@ app.get("/api/whats-next", (req, res) => {
 
 app.get("/api/milestones", (req, res) => {
   const asOf = String(req.query.asOf || new Date().toISOString());
-  const profile = readProfile();
   const entries = readEntries();
-  const attestations = readAttestations();
-  const prog = computeProgression(profile, entries, attestations, asOf);
+  const prog = computePplPart61Progress(entries, { asOf });
   res.json({
     asOf,
     progressionState: prog.progressionState,
@@ -6650,14 +6645,14 @@ app.get("/progression", (_req, res) => {
         <div style="color:#64748b;font-size:12px;margin-top:2px;">${prog.description}</div>
       </div>
       <div style="margin-left:auto;text-align:right;">
-        <div style="color:#e2e8f0;font-size:28px;font-weight:800;">${prog.progressPct}%</div>
-        <div style="color:#64748b;font-size:11px;">milestones complete</div>
-        <div style="color:#64748b;font-size:11px;">${completedCount} done · ${inProgCount} in progress</div>
+        <div style="color:#e2e8f0;font-size:28px;font-weight:800;">${prog.progressPercent}%</div>
+        <div style="color:#64748b;font-size:11px;">FAA requirements met</div>
+        <div style="color:#64748b;font-size:11px;">${completedCount} milestones done · ${inProgCount} in progress</div>
       </div>
     </div>
     <!-- Progress bar -->
     <div style="background:#1e293b;border-radius:6px;height:8px;margin-top:16px;overflow:hidden;">
-      <div style="background:linear-gradient(90deg,#6366f1,#818cf8);width:${prog.progressPct}%;height:8px;border-radius:6px;"></div>
+      <div style="background:linear-gradient(90deg,#6366f1,#818cf8);width:${prog.progressPercent}%;height:8px;border-radius:6px;"></div>
     </div>
   </div>
 
@@ -6701,7 +6696,7 @@ app.get("/progression", (_req, res) => {
   </div>
 
   <div style="margin-top:16px;color:#334155;font-size:11px;text-align:center;">
-    Generated ${new Date(asOf).toLocaleString()} · PilotLog Progression Engine v1
+    Generated ${new Date(asOf).toLocaleString()} · FAA Part 61 ASEL Requirements Engine · ${prog.certificate || 'PPL-ASEL'}
   </div>
 </div>
 </body>
