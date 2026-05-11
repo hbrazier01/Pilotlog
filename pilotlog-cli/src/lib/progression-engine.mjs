@@ -14,7 +14,7 @@
  *   - faaRequirements    (FAA Part 61 ASEL requirements engine output)
  */
 
-import { computePplRequirements } from './faa/pplPart61.mjs';
+import { computePplRequirements, computePplPart61Progress } from './faa/pplPart61.mjs';
 
 // ─── Progression States ────────────────────────────────────────────────────────
 
@@ -684,20 +684,33 @@ export function computeProgression(profile, entries, attestations, asOf) {
   // FAA Part 61 ASEL requirements engine — authoritative progression data.
   // Only applies to pilots who have not yet earned a PPL (or are student pilots).
   const hasPpl = hasCert(profile, 'private');
-  const faaRequirements = (!hasPpl)
-    ? computePplRequirements(entries, { asOf })
-    : null;
 
-  // progressPct: use FAA-derived percent for pre-PPL pilots; milestone-based otherwise.
-  let progressPct;
-  if (faaRequirements) {
-    progressPct = faaRequirements.progressPercent;
-  } else {
-    const completedMilestones = milestones.filter(m => m.status === 'completed').length;
-    progressPct = milestones.length > 0
-      ? Math.round((completedMilestones / milestones.length) * 100)
-      : 0;
+  if (!hasPpl) {
+    // Pre-PPL: delegate milestones, readiness, guidance, and phase to the FAA engine.
+    // computePplPart61Progress is the single authoritative source for pre-PPL progression UI.
+    const faa = computePplPart61Progress(entries, { asOf });
+
+    return {
+      asOf,
+      progressionState: faa.progressionState,
+      label:            faa.label,
+      description:      faa.description,
+      progressPct:      faa.progressPct,
+      stats,
+      milestones:       faa.milestones,
+      readiness:        faa.readiness,
+      guidanceCards:    faa.guidanceCards,
+      recommendations:  faa.recommendations,
+      // Raw FAA data available for views that need detailed requirement breakdown
+      faaRequirements:  { ...faa, requirements: faa.requirements },
+    };
   }
+
+  // Post-PPL: use the legacy milestone/readiness/guidance system.
+  const completedMilestones = milestones.filter(m => m.status === 'completed').length;
+  const progressPct = milestones.length > 0
+    ? Math.round((completedMilestones / milestones.length) * 100)
+    : 0;
 
   return {
     asOf,
@@ -710,6 +723,6 @@ export function computeProgression(profile, entries, attestations, asOf) {
     readiness,
     guidanceCards,
     recommendations,
-    faaRequirements,
+    faaRequirements: null,
   };
 }
