@@ -11,7 +11,10 @@
  *   - readiness          (Solo, XC, Checkride, Instrument, Currency)
  *   - guidanceCards      (contextual action cards)
  *   - recommendations    (natural language motivational prompts)
+ *   - faaRequirements    (FAA Part 61 ASEL requirements engine output)
  */
+
+import { computePplRequirements } from './faa/pplPart61.mjs';
 
 // ─── Progression States ────────────────────────────────────────────────────────
 
@@ -678,8 +681,23 @@ export function computeProgression(profile, entries, attestations, asOf) {
     totalFlights: entries.length,
   };
 
-  const completedMilestones = milestones.filter(m => m.status === 'completed').length;
-  const progressPct = Math.round((completedMilestones / milestones.length) * 100);
+  // FAA Part 61 ASEL requirements engine — authoritative progression data.
+  // Only applies to pilots who have not yet earned a PPL (or are student pilots).
+  const hasPpl = hasCert(profile, 'private');
+  const faaRequirements = (!hasPpl)
+    ? computePplRequirements(entries, { asOf })
+    : null;
+
+  // progressPct: use FAA-derived percent for pre-PPL pilots; milestone-based otherwise.
+  let progressPct;
+  if (faaRequirements) {
+    progressPct = faaRequirements.progressPercent;
+  } else {
+    const completedMilestones = milestones.filter(m => m.status === 'completed').length;
+    progressPct = milestones.length > 0
+      ? Math.round((completedMilestones / milestones.length) * 100)
+      : 0;
+  }
 
   return {
     asOf,
@@ -692,5 +710,6 @@ export function computeProgression(profile, entries, attestations, asOf) {
     readiness,
     guidanceCards,
     recommendations,
+    faaRequirements,
   };
 }

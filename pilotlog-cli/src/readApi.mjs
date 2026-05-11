@@ -13,6 +13,7 @@ import { buildPilotReport } from "../../src/services/build-pilot-report.mjs";
 import { anchorRecord, verifyRecord, grantAccess, revokeAccess } from "../../src/services/airlog-anchor-service.mjs";
 import { computeReadiness, PILOT_PHASES } from "./lib/readiness.mjs";
 import { computeProgression } from "./lib/progression-engine.mjs";
+import { computePplRequirements } from "./lib/faa/pplPart61.mjs";
 
 const PORT = Number(process.env.PORT || 8788);
 const DATA_DIR = process.env.PILOTLOG_HOME || process.env.PILOTLOG_DIR || path.resolve(process.cwd(), "data");
@@ -6449,6 +6450,14 @@ app.get("/api/milestones", (req, res) => {
     progressPct: prog.progressPct,
     milestones: prog.milestones,
   });
+});
+
+// FAA Part 61 ASEL requirements — raw engine output
+app.get("/api/faa-requirements", (req, res) => {
+  const asOf = String(req.query.asOf || new Date().toISOString());
+  const entries = readEntries();
+  const result = computePplRequirements(entries, { asOf });
+  res.json(result);
 });
 
 // /journey is an alias for /progression
