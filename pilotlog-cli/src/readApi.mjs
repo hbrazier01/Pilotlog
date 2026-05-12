@@ -221,6 +221,72 @@ function buildPilotState(asOf = new Date().toISOString()) {
   };
 }
 
+// ─── Dashboard State Derivation ──────────────────────────────────────────────
+// Derives structured dashboard state from pilotState.
+// Pattern: pilotState -> buildDashboardState() -> sections/cards/journey -> UI
+//
+// Consumers should use /api/dashboard-state to get this structure.
+function buildDashboardState(ps) {
+  const progState = ps.progressionState || 'discovery';
+
+  // Phase-aware journey steps: three milestones that frame the pilot's current arc
+  const JOURNEY_STEPS = {
+    discovery:           ['First Flight', 'Student Certificate', 'Pre-Solo'],
+    student_pilot:       ['Foundation', 'Pre-Solo', 'Solo Ready'],
+    solo_ready:          ['Foundation', 'Pre-Solo', 'Solo Ready'],
+    solo_complete:       ['Solo Complete', 'Cross-Country', 'Checkride'],
+    xc_ready:            ['Solo Complete', 'Cross-Country', 'Checkride'],
+    checkride_ready:     ['Hours Met', 'XC Complete', 'Schedule Checkride'],
+    private_pilot:       ['Legal Currency', 'Proficiency', 'Next Rating'],
+    instrument_training: ['VFR Current', 'IFR Approaches', 'IFR Rating'],
+    instrument_ready:    ['VFR Current', 'IFR Approaches', 'IFR Ready'],
+    instrument_rated:    ['VFR Baseline', 'IFR Currency', 'IFR Proficiency'],
+    commercial_track:    ['Currency', 'Hours', 'CPL Certificate'],
+    cfi_track:           ['Current', 'Proficient', 'Teaching Ready'],
+  };
+
+  const guidanceCards = ps.guidanceCards || [];
+  const recommendations = ps.recommendations || [];
+
+  // Derive chip status from highest-priority guidance card
+  let chipStatus = 'current';
+  let chipLabel = 'On Track';
+  const criticalCard = guidanceCards.find(c => c.priority === 'critical');
+  const highCard = guidanceCards.find(c => c.priority === 'high');
+  if (criticalCard) {
+    chipStatus = 'not_current';
+    chipLabel = criticalCard.title;
+  } else if (highCard) {
+    chipStatus = 'needs_attention';
+    chipLabel = highCard.title;
+  } else if (guidanceCards.length === 0) {
+    chipStatus = 'current';
+    chipLabel = ps.milestones?.length > 0 ? 'All systems go' : 'Log your first flight';
+  }
+
+  // Journey active step index: 0 = not_current, 1 = needs_attention, 2 = current
+  const journeyActiveIdx = chipStatus === 'not_current' ? 0 : chipStatus === 'needs_attention' ? 1 : 2;
+
+  return {
+    progressionState: progState,
+    phaseLabel:       ps.pilotPhaseLabel || 'Pilot',
+    chipStatus,
+    chipLabel,
+    // Primary action card — top-priority guidance card from the progression engine
+    todayCard:        guidanceCards[0] || null,
+    secondaryCards:   guidanceCards.slice(1, 3),
+    // All guidance cards for readiness lane rendering (max 4)
+    guidanceCards,
+    recommendations,
+    journeySteps:     JOURNEY_STEPS[progState] || JOURNEY_STEPS.student_pilot,
+    journeyActiveIdx,
+    stats:            ps.stats,
+    readiness:        ps.readiness,
+    progressPct:      ps.progressPct,
+    milestones:       ps.milestones,
+  };
+}
+
 // ─── FlightAttestationCard HTML ──────────────────────────────────────────────
 // Renders a single attestation card. Works in both dark (passport) and light
 // (pilot-report) contexts via the `theme` param: "dark" | "light".
@@ -1193,229 +1259,94 @@ app.get("/", (_req, res) => {
     const lastUsedAircraft = ${JSON.stringify(lastUsedAircraft)};
     window.pilotlogAttestationMap = ${JSON.stringify(flightAttestationMap)};
 
-    // Phase-aware readiness assistant
-    (async function loadReadiness() {
-      const DOMAIN_LABELS = {
-        passengerCurrency:       'Passenger Currency',
-        nightCurrency:           'Night Currency',
-        ifrCurrency:             'IFR Currency',
-        ifrProgress:             'IFR Training Progress',
-        ifrProficiency:          'IFR Proficiency',
-        pilotReadiness:          'Pilot Readiness',
-        aircraftReadiness:       'Aircraft Readiness',
-        trainingProgress:        'Training Progress',
-        requiredHours:           'Required Hours',
-        soloReadiness:           'Solo Readiness',
-        instructorRequiredItems: 'Required Documents',
-      };
+    // State-driven dashboard — consumes /api/dashboard-state (pilotState -> dashboardState -> UI)
+    (async function loadDashboard() {
       const COLOR = { current: '#22c55e', needs_attention: '#f59e0b', not_current: '#ef4444' };
-      const BG = { current: '#052e16', needs_attention: '#1c1203', not_current: '#1c0505' };
-      const CHIP_LABEL = { current: 'Good to Fly', needs_attention: 'Needs Attention', not_current: 'Not Current' };
-      const STATUS_LABEL = { current: 'Current', needs_attention: 'Attention', not_current: 'Not Current' };
-      const PRIORITY_COLOR = { critical: '#ef4444', important: '#f59e0b', optional: '#6366f1' };
-      const rank = { not_current: 0, needs_attention: 1, current: 2 };
-
-      // Phase config — keys match backend PILOT_PHASES exactly
-      const PHASE_CONFIG = {
-        student_ppl: {
-          label: 'Student Pilot',
-          coreDomains: ['instructorRequiredItems', 'soloReadiness'],
-          ctaDomain: 'instructorRequiredItems',
-          visibleDomains: (domains) => ['trainingProgress', 'requiredHours', 'soloReadiness', 'instructorRequiredItems'].filter(k => domains[k]),
-          journeySteps: ['Foundation', 'Solo Ready', 'Checkride'],
-        },
-        ppl_complete: {
-          label: 'Private Pilot',
-          coreDomains: ['passengerCurrency', 'nightCurrency'],
-          ctaDomain: 'passengerCurrency',
-          visibleDomains: (domains) => ['passengerCurrency', 'nightCurrency', 'pilotReadiness', 'aircraftReadiness'].filter(k => domains[k]),
-          journeySteps: ['Legal Currency', 'Proficiency', 'Confidence'],
-        },
-        instrument_training: {
-          label: 'Instrument Training',
-          coreDomains: ['ifrProgress', 'pilotReadiness'],
-          ctaDomain: 'ifrProgress',
-          visibleDomains: (domains) => ['pilotReadiness', 'ifrProgress', 'aircraftReadiness'].filter(k => domains[k]),
-          journeySteps: ['VFR Current', 'IFR Approaches', 'IFR Rating'],
-        },
-        instrument_rated: {
-          label: 'Instrument Rated',
-          coreDomains: ['ifrCurrency', 'ifrProficiency'],
-          ctaDomain: 'ifrCurrency',
-          visibleDomains: (domains) => ['ifrCurrency', 'ifrProficiency', 'passengerCurrency', 'pilotReadiness', 'aircraftReadiness'].filter(k => domains[k]),
-          journeySteps: ['VFR Baseline', 'IFR Currency', 'IFR Proficiency'],
-        },
-        commercial: {
-          label: 'Commercial Pilot',
-          coreDomains: ['passengerCurrency', 'ifrCurrency'],
-          ctaDomain: 'passengerCurrency',
-          visibleDomains: (domains) => ['passengerCurrency', 'ifrCurrency', 'nightCurrency', 'pilotReadiness', 'aircraftReadiness'].filter(k => domains[k]),
-          journeySteps: ['Currency', 'Proficiency', 'Operations'],
-        },
-        cfi: {
-          label: 'CFI',
-          coreDomains: ['passengerCurrency', 'pilotReadiness'],
-          ctaDomain: 'passengerCurrency',
-          visibleDomains: (domains) => ['passengerCurrency', 'ifrCurrency', 'nightCurrency', 'pilotReadiness', 'aircraftReadiness'].filter(k => domains[k]),
-          journeySteps: ['Current', 'Proficient', 'Ready to Teach'],
-        },
-      };
-      // Fallback for legacy or unknown phase keys
-      PHASE_CONFIG['student'] = PHASE_CONFIG['student_ppl'];
-      PHASE_CONFIG['private_pilot'] = PHASE_CONFIG['ppl_complete'];
-      const MAINTENANCE_FALLBACKS = ['Review upcoming proficiency dates', 'Log your next planned practice flight'];
-
-      function scoreCandidate(key, domain, phase) {
-        const statusW = { not_current: 3, needs_attention: 2, current: 0 };
-        const priorityW = { critical: 3, important: 2, optional: 1 };
-        const coreDomains = PHASE_CONFIG[phase]?.coreDomains || [];
-        const phaseMultiplier = coreDomains.includes(key) ? 1.2 : 1.0;
-        const s = (statusW[domain.status] || 0) + (priorityW[domain.priority] || 0);
-        return s * phaseMultiplier;
-      }
+      const BG    = { current: '#052e16', needs_attention: '#1c1203', not_current: '#1c0505' };
+      const PRIORITY_COLOR = { critical: '#ef4444', high: '#f97316', medium: '#f59e0b', low: '#60a5fa' };
 
       try {
-        const res = await fetch('/assistant/readiness');
+        const res = await fetch('/api/dashboard-state');
         if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-        const domains = data.domains || {};
-        const phase = data.phase || 'ppl_complete';
-        const phaseConf = PHASE_CONFIG[phase] || PHASE_CONFIG.ppl_complete;
+        const d = await res.json();
 
-        // Determine visible domains for this phase (max 4)
-        const phaseVisibleKeys = phaseConf.visibleDomains(domains).filter(k => domains[k]).slice(0, 4);
-
-        // Find worst status among all phase-visible domains (for chip)
-        let worst = 'current';
-        for (const key of phaseVisibleKeys) {
-          const s = domains[key]?.status;
-          if (s && rank[s] < rank[worst]) worst = s;
-        }
-
-        // Update chip
+        // ── Chip ──────────────────────────────────────────────────────────────
         const chip = document.getElementById('readiness-chip');
-        chip.style.background = BG[worst];
-        chip.style.color = COLOR[worst];
-        document.getElementById('readiness-dot').style.background = COLOR[worst];
-        document.getElementById('readiness-label').textContent = data.summary || CHIP_LABEL[worst];
+        chip.style.background = BG[d.chipStatus] || BG.current;
+        chip.style.color = COLOR[d.chipStatus] || COLOR.current;
+        document.getElementById('readiness-dot').style.background = COLOR[d.chipStatus] || COLOR.current;
+        document.getElementById('readiness-label').textContent = d.chipLabel;
 
-        // Filter out "current" domains — only show actionable items
-        // Exception: if ALL are current, visibleKeys stays empty and allZero triggers the all-current state
-        const visibleKeys = phaseVisibleKeys.filter(k => domains[k]?.status !== 'current');
-
-        // Score and rank candidates
-        const scored = visibleKeys
-          .map(key => ({ key, domain: domains[key], score: scoreCandidate(key, domains[key], phase) }))
-          .sort((a, b) => b.score - a.score || a.key.localeCompare(b.key));
-
-        const allZero = visibleKeys.length === 0 || scored.every(c => c.score === 0);
-
-        // Post-action feedback
+        // Post-action feedback banner
         const justLogged = sessionStorage.getItem('airlog_just_logged');
         sessionStorage.removeItem('airlog_just_logged');
         const changedBanner = justLogged ? \`<div class="today-changed">✓ Flight logged. Readiness updated.</div>\` : '';
 
-        // CTA helpers
-        function buildCta(pd) {
-          const ctaType = pd.ctaType || 'record';
-          const ctaLabel = pd.ctaLabel || 'View Pilot Report →';
-          if (ctaType === 'log' || ctaType === 'plan') {
-            return '';
-          }
-          return \`<a class="today-cta" href="/pilot-report">\${ctaLabel}</a>\`;
-        }
-
-        // Today Card
+        // ── Today Card ────────────────────────────────────────────────────────
         const todayEl = document.getElementById('today-card');
         todayEl.style.display = 'block';
-        if (allZero) {
-          todayEl.innerHTML = \`
-            \${changedBanner}
+        if (!d.todayCard) {
+          const fallback = d.recommendations?.[0] || 'Keep flying — every flight counts.';
+          todayEl.innerHTML = \`\${changedBanner}
             <div class="today-card-header">
-              <span class="phase-badge">\${phaseConf.label}</span>
-              <span class="urgency-badge none">All Current</span>
+              <span class="phase-badge">\${d.phaseLabel}</span>
+              <span class="urgency-badge none">On Track</span>
             </div>
-            <div class="today-headline" style="color:#22c55e;">You are current. Keep momentum this week.</div>
-            <div class="today-footer">
-              \${MAINTENANCE_FALLBACKS.map(a => \`<span class="secondary-chip">\${a}</span>\`).join('')}
-            </div>\`;
+            <div class="today-headline" style="color:#22c55e;">You are on track. Keep the momentum.</div>
+            <div class="today-reason">\${fallback.slice(0,160)}</div>\`;
         } else {
-          const primary = scored[0];
-          const pd = primary.domain;
-          const secondaryCandidates = scored.slice(1, 3);
-          while (secondaryCandidates.length < 2) {
-            secondaryCandidates.push({ key: null, domain: { title: MAINTENANCE_FALLBACKS[secondaryCandidates.length] } });
-          }
-          const urgencyClass = pd.priority || 'none';
-          const outcomeRow = pd.outcome
-            ? \`<div class="today-outcome">\${pd.outcome}</div>\`
-            : '';
-          todayEl.innerHTML = \`
-            \${changedBanner}
+          const c = d.todayCard;
+          const urgencyClass = c.priority || 'none';
+          todayEl.innerHTML = \`\${changedBanner}
             <div class="today-card-header">
-              <span class="phase-badge">\${phaseConf.label}</span>
-              \${pd.priority ? \`<span class="urgency-badge \${urgencyClass}">\${pd.priority}</span>\` : ''}
+              <span class="phase-badge">\${d.phaseLabel}</span>
+              \${c.priority ? \`<span class="urgency-badge \${urgencyClass}">\${c.priority}</span>\` : ''}
             </div>
-            <div class="today-headline">\${(pd.title || pd.nextAction || '').slice(0,80)}</div>
-            <div class="today-reason">\${(pd.why || pd.problem || '').slice(0,160)}</div>
-            \${outcomeRow}
-            \${buildCta(pd)}
+            <div class="today-headline">\${(c.title || '').slice(0,80)}</div>
+            <div class="today-reason">\${(c.body || '').slice(0,160)}</div>
+            <a class="today-cta" href="/pilot-report">View Pilot Report →</a>
             <div class="today-footer" style="margin-top:10px;">
-              \${secondaryCandidates.map(c => \`<span class="secondary-chip">\${(c.domain.title || c.domain.nextAction || '').slice(0,52)}</span>\`).join('')}
+              \${d.secondaryCards.map(sc => \`<span class="secondary-chip">\${(sc.title || '').slice(0,52)}</span>\`).join('')}
             </div>\`;
         }
 
-        // Journey Strip
+        // ── Journey Strip ─────────────────────────────────────────────────────
         const journeyEl = document.getElementById('journey-strip');
         journeyEl.style.display = 'flex';
-        const steps = phaseConf.journeySteps;
-        // Active step: not_current → 0, needs_attention → 1, current → 2
-        const activeIdx = worst === 'not_current' ? 0 : worst === 'needs_attention' ? 1 : 2;
-        journeyEl.innerHTML = steps.map((label, i) => {
-          const state = i < activeIdx ? 'complete' : i === activeIdx ? 'active' : 'upcoming';
-          const connector = i < steps.length - 1
-            ? \`<div class="journey-connector\${i < activeIdx ? ' complete' : ''}"></div>\`
+        journeyEl.innerHTML = d.journeySteps.map((label, i) => {
+          const state = i < d.journeyActiveIdx ? 'complete' : i === d.journeyActiveIdx ? 'active' : 'upcoming';
+          const connector = i < d.journeySteps.length - 1
+            ? \`<div class="journey-connector\${i < d.journeyActiveIdx ? ' complete' : ''}"></div>\`
             : '';
-          return \`<div class="journey-step \${state}">
-            <div class="journey-step-dot"></div>
-            <div class="journey-step-label">\${label.slice(0,22)}</div>
-          </div>\${connector}\`;
+          return \`<div class="journey-step \${state}"><div class="journey-step-dot"></div><div class="journey-step-label">\${label.slice(0,22)}</div></div>\${connector}\`;
         }).join('');
 
-        // Journey blocker line
+        // ── Journey Blocker Line ──────────────────────────────────────────────
         const blockerEl = document.getElementById('journey-blocker');
-        if (!allZero) {
-          const blockers = scored.filter(c => c.score > 0).map(c => DOMAIN_LABELS[c.key] || c.key);
-          blockerEl.textContent = blockers.length ? 'Blocked by: ' + blockers.join(' · ') : '';
-          blockerEl.style.display = blockers.length ? 'block' : 'none';
+        if (d.guidanceCards.length > 0) {
+          blockerEl.textContent = 'Focus: ' + d.guidanceCards.slice(0,2).map(c => c.title).join(' · ');
+          blockerEl.style.display = 'block';
         } else {
           blockerEl.style.display = 'none';
         }
 
-        // Readiness Lanes (max 4, priority sorted)
+        // ── Readiness Cards (guidance cards rendered as advisory lanes) ───────
         const container = document.getElementById('readiness-cards');
-        const laneHtml = visibleKeys.map(key => {
-          const d = domains[key];
-          if (!d) return '';
-          const color = COLOR[d.status] || '#b6b9c6';
-          const isCurrent = d.status === 'current';
-          const showPriority = !isCurrent && d.priority;
-          const priorityBadge = showPriority
-            ? \`<span style="font-size:10px;font-weight:700;text-transform:uppercase;color:\${PRIORITY_COLOR[d.priority] || '#b6b9c6'};margin-left:auto;">\${d.priority}</span>\`
-            : '';
+        const laneHtml = d.guidanceCards.slice(0,4).map(c => {
+          const col = PRIORITY_COLOR[c.priority] || '#b6b9c6';
+          const catLabel = (c.category || '').replace(/_/g,' ').toUpperCase();
           return \`<div class="currency-card">
             <div class="currency-card-header">
-              <span class="currency-dot" style="background:\${color};"></span>
-              <span class="currency-type">\${DOMAIN_LABELS[key] || key}</span>
-              <span class="currency-status-label" style="color:\${color};">\${STATUS_LABEL[d.status] || d.status}</span>
-              \${priorityBadge}
+              <span class="currency-dot" style="background:\${col};"></span>
+              <span class="currency-type">\${catLabel}</span>
+              <span class="currency-status-label" style="color:\${col};">\${(c.priority || '').toUpperCase()}</span>
             </div>
-            \${isCurrent ? '' : \`<div class="currency-message">\${(d.problem || '').slice(0,120)}</div>
-            <div class="currency-action">→ \${(d.nextAction || '').slice(0,72)}</div>
-            \${d.flightPlan ? \`<div style="font-size:11px;color:#b6b9c6;margin-top:4px;">Plan: \${d.flightPlan}\${d.effort ? \` · \${d.effort}\` : ''}</div>\` : ''}\`}
+            <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:4px;">\${c.title}</div>
+            <div class="currency-message">\${(c.body || '').slice(0,120)}</div>
+            <div class="currency-action">→ \${(c.action || '').slice(0,72)}</div>
           </div>\`;
         }).join('');
-        container.innerHTML = laneHtml || '<div class="currency-card" style="color:#22c55e;font-size:13px;">All domains current.</div>';
+        container.innerHTML = laneHtml || '<div class="currency-card" style="color:#22c55e;font-size:13px;">All systems go — no active advisories.</div>';
 
       } catch (err) {
         document.getElementById('readiness-label').textContent = 'Unavailable';
@@ -6413,6 +6344,15 @@ app.get("/api/pilot-state", (_req, res) => {
   res.json(state);
 });
 
+// ─── Dashboard State ──────────────────────────────────────────────────────────
+// Fully derived dashboard structure: pilotState -> dashboardState -> UI
+// UI should consume this instead of assembling state from multiple endpoints.
+app.get("/api/dashboard-state", (req, res) => {
+  const asOf = String(req.query.asOf || new Date().toISOString());
+  const ps = buildPilotState(asOf);
+  res.json(buildDashboardState(ps));
+});
+
 // ─── Pilot Progression Engine ─────────────────────────────────────────────────
 
 app.get("/api/progression", (req, res) => {
@@ -6561,7 +6501,7 @@ app.get("/progression", (_req, res) => {
   const PROGRESSION_PHASES = [
     { key: 'discovery',           label: 'Discovery',          short: 'Discovery',      order: 0 },
     { key: 'student_pilot',       label: 'Student Pilot',      short: 'Student',        order: 1 },
-    { key: 'solo_ready',          label: 'Solo Ready',         short: 'Solo Ready',     order: 2 },
+    { key: 'solo_ready',          label: 'Pre-Solo',           short: 'Pre-Solo',       order: 2 },
     { key: 'solo_complete',       label: 'Solo Complete',      short: 'Solo',           order: 3 },
     { key: 'xc_ready',            label: 'Cross-Country',      short: 'XC',             order: 4 },
     { key: 'checkride_ready',     label: 'Checkride Ready',    short: 'Checkride',      order: 5 },
