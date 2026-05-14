@@ -119,16 +119,20 @@ export async function verifyMidnameOwnership(midname, walletAddress) {
 /**
  * Reverse lookup: address → midname.
  *
- * NOT AVAILABLE: @midnames/sdk v2.0.0 does not expose reverse lookup.
- * This method is a placeholder for future integration when Midnames
- * exposes a reverse-lookup API or indexer path.
+ * AIR-274: Automatic resolution is handled server-side via POST /identity/auto-resolve-midname.
+ * The server fetches the Midnames contract ledger and uses the built-in `addr_to_domains`
+ * reverse index (Ledger.addr_to_domains: address bytes → DomainReference[]) to find
+ * which domain(s) resolve to the connected wallet address, then persists the result.
+ *
+ * Browser flow: connectWalletHeader() → POST /wallet/connect → POST /identity/auto-resolve-midname
+ *
+ * This client-side function is not used in the primary flow.
  *
  * @param {string} _walletAddress
- * @returns {Promise<null>} - always null until SDK exposes reverse lookup
+ * @returns {Promise<null>}
  */
 export async function getMidnameForWallet(_walletAddress) {
-  // Intentionally unavailable — Midnames SDK does not support reverse lookup.
-  // Re-implement when https://midnames.io or the SDK exposes /reverse or an indexer.
+  // Reverse lookup is performed server-side via /identity/auto-resolve-midname (AIR-274).
   return null;
 }
 

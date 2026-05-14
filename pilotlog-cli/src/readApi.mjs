@@ -718,13 +718,16 @@ async function connectWalletHeader() {
     });
     if (!resp.ok) throw new Error('Server rejected wallet session');
 
-    // Refresh identity display after connect (midname may be verified for this address)
-    fetch('/identity').then(r => r.json()).then(identity => {
-      const displayLabel = (identity && identity.midnameVerified && identity.midname) ? identity.midname : null;
-      if (el) { _walletSetConnected(el, addr, displayLabel); }
-    }).catch(() => {
-      if (el) { _walletSetConnected(el, addr); }
-    });
+    // Auto-resolve Midname for this wallet (reverse lookup via Midnames contract ledger)
+    fetch('/identity/auto-resolve-midname', { method: 'POST' })
+      .then(r => r.json())
+      .then(result => {
+        const displayLabel = (result && result.ok && result.midname) ? result.midname : null;
+        if (el) { _walletSetConnected(el, addr, displayLabel); }
+      })
+      .catch(() => {
+        if (el) { _walletSetConnected(el, addr); }
+      });
   } catch (err) {
     if (el) { _walletSetDisconnected(el); }
     alert('Wallet connection failed: ' + err.message);
@@ -5821,6 +5824,120 @@ app.post("/identity/verify-midname", async (req, res) => {
   saveIdentity(identity);
   console.log("[identity] midname verified and persisted:", cleanMidname, "->", resolvedAddress, "(type:", resolvedType + ")");
   res.json({ ok: true, identity });
+});
+
+// ─── Auto-resolve Midname via addr_to_domains reverse lookup ──────────────────
+// Fetches the Midnames contract ledger and looks up which domain(s) resolve to
+// the connected wallet address. Returns the first match or null. Never throws.
+async function autoResolveMidnameFromWallet(walletAddress, coinPublicKey) {
+  try {
+    const { getDefaultProvider, getContractLedger, keyToDomain } = await import("@midnames/sdk");
+    const { MidnightBech32m } = await import("@midnight-ntwrk/wallet-sdk-address-format");
+
+    const provider = getDefaultProvider("preprod");
+    const ledgerResult = await getContractLedger(provider);
+    if (!ledgerResult || !ledgerResult.success) {
+      console.log("[auto-resolve-midname] getContractLedger failed");
+      return null;
+    }
+
+    const contractLedger = ledgerResult.data;
+
+    // Build id → DomainReference map for reconstructing full domain paths
+    const idToRef = new Map();
+    for (const [ref, id] of contractLedger.name_to_id) {
+      idToRef.set(id, ref);
+    }
+
+    function buildFullDomain(ref) {
+      const segment = keyToDomain(ref.domain);
+      if (ref.parent_id === contractLedger.ROOT_ZONE_ID) {
+        return `${segment}.${contractLedger.TLD}`;
+      }
+      const parentRef = idToRef.get(ref.parent_id);
+      if (!parentRef) return `${segment}.${contractLedger.TLD}`;
+      return `${segment}.${buildFullDomain(parentRef)}`;
+    }
+
+    // Try unshielded address: parse bech32 → raw bytes → addr_to_domains lookup
+    if (walletAddress) {
+      try {
+        const parsed = MidnightBech32m.parse(walletAddress);
+        const addrBytes = new Uint8Array(parsed.data);
+        if (contractLedger.addr_to_domains.member(addrBytes)) {
+          const domains = contractLedger.addr_to_domains.lookup(addrBytes);
+          for (const ref of domains) {
+            const fullDomain = buildFullDomain(ref);
+            console.log(`[auto-resolve-midname] found (unshielded): ${fullDomain}`);
+            return { midname: fullDomain, resolvedType: "unshielded", resolvedAddress: walletAddress };
+          }
+        }
+      } catch (e) {
+        console.log("[auto-resolve-midname] unshielded lookup failed:", e?.message);
+      }
+    }
+
+    // Try shielded (coinPublicKey): same pattern
+    if (coinPublicKey) {
+      try {
+        const parsed = MidnightBech32m.parse(coinPublicKey);
+        const cpkBytes = new Uint8Array(parsed.data);
+        if (contractLedger.addr_to_domains.member(cpkBytes)) {
+          const domains = contractLedger.addr_to_domains.lookup(cpkBytes);
+          for (const ref of domains) {
+            const fullDomain = buildFullDomain(ref);
+            console.log(`[auto-resolve-midname] found (shielded): ${fullDomain}`);
+            return { midname: fullDomain, resolvedType: "shielded", resolvedAddress: coinPublicKey };
+          }
+        }
+      } catch (e) {
+        console.log("[auto-resolve-midname] shielded lookup failed:", e?.message);
+      }
+    }
+
+    console.log("[auto-resolve-midname] no Midname found for wallet");
+    return null;
+  } catch (err) {
+    console.warn("[auto-resolve-midname] error:", err?.message || String(err));
+    return null;
+  }
+}
+
+// POST /identity/auto-resolve-midname — automatic reverse-lookup Midnames resolution on wallet connect
+app.post("/identity/auto-resolve-midname", async (req, res) => {
+  const session = readWalletSession();
+  if (!session || !session.address) {
+    return res.json({ ok: false, midname: null, reason: "no wallet session" });
+  }
+
+  // Don't overwrite an already-verified midname unless this is a new wallet
+  const existing = readIdentity();
+  if (existing && existing.midnameVerified && existing.midname &&
+      existing.walletAddress === session.address) {
+    console.log("[auto-resolve-midname] existing verified midname retained:", existing.midname);
+    return res.json({ ok: true, midname: existing.midname, identity: existing });
+  }
+
+  const resolved = await autoResolveMidnameFromWallet(session.address, session.coinPublicKey || null);
+  if (!resolved) {
+    return res.json({ ok: false, midname: null, reason: "not found" });
+  }
+
+  const identity = {
+    walletAddress: session.address,
+    midname: resolved.midname,
+    did: null,
+    midnameVerified: true,
+    verifiedAt: new Date().toISOString(),
+    identitySource: "midname-auto",
+    networkId: "preprod",
+    resolvedType: resolved.resolvedType,
+    resolvedAddress: resolved.resolvedAddress,
+    fields: {}
+  };
+  saveIdentity(identity);
+  console.log("[auto-resolve-midname] resolved and saved:", resolved.midname);
+  res.json({ ok: true, midname: resolved.midname, identity });
 });
 
 // POST /identity/clear-midname — clear verified midname, revert to wallet identity
