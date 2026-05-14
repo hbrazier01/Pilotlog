@@ -1294,8 +1294,6 @@ app.get("/", (_req, res) => {
     </div>
   </div>
 
-  ${pilotPassportCardHtml(walletSession, identity, profile, totals, { mode: "compact", aircraftCount: sortedAircraft.length })}
-
   <div class="assistant-section">
     <div class="section-title">Flight Readiness</div>
     <div id="readiness-chip" class="readiness-chip" style="background:#1a1f30;color:#b6b9c6;">

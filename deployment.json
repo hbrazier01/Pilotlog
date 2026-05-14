@@ -1,3 +1,5 @@
 {
-  "networkId": "preprod"
+  "networkId": "preprod",
+  "contractAddress": "1f62bc3cbe9ea7b5acfedf4474ac6972d620d7f6c0e709234d58ff4c9c063413",
+  "deployedAt": "2026-05-14T22:27:03.986Z"
 }
