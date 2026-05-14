@@ -5918,11 +5918,17 @@ app.post("/identity/auto-resolve-midname", async (req, res) => {
     return res.json({ ok: false, midname: null, reason: "no wallet session" });
   }
 
-  // Don't overwrite an already-verified midname unless this is a new wallet
+  // Don't overwrite an already-verified midname unless this is a new wallet.
+  // identity.json is the canonical identity source. Match on any known address field
+  // because walletAddress may be shielded CPK (mn_shield-cpk_...) while session.address
+  // is unshielded (mn_addr_...) — a format mismatch that must not break retention.
   const existing = readIdentity();
-  if (existing && existing.midnameVerified && existing.midname &&
-      existing.walletAddress === session.address) {
-    console.log("[auto-resolve-midname] existing verified midname retained:", existing.midname);
+  const sessionAddrs = [session.address, session.coinPublicKey, session.shieldedAddress].filter(Boolean);
+  const identityAddrs = [existing?.walletAddress, existing?.resolvedAddress].filter(Boolean);
+  const walletMatches = existing && existing.midnameVerified && existing.midname &&
+    sessionAddrs.some(sa => identityAddrs.some(ia => ia === sa));
+  if (walletMatches) {
+    console.log("[auto-resolve-midname] existing verified midname retained (identity.json canonical):", existing.midname);
     return res.json({ ok: true, midname: existing.midname, identity: existing });
   }
 
