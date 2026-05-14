@@ -353,7 +353,7 @@ function walletNavHtml(session, identity) {
     const displayLabel = (identity && identity.midnameVerified && identity.midname)
       ? identity.midname
       : truncateWalletAddress(session.address);
-    return `<button id="wallet-nav-link" data-connected="true" title="${session.address}" style="background:none;border:none;color:#22c55e;font-size:14px;padding:5px 12px;cursor:default;font-weight:600;">&#9679; ${displayLabel}</button>`;
+    return `<button id="wallet-nav-link" data-connected="true" title="Click to disconnect · ${session.address}" onclick="walletHeaderClick()" style="background:none;border:1px solid #14532d;color:#22c55e;font-size:14px;padding:5px 12px;border-radius:6px;cursor:pointer;font-weight:600;">&#9679; ${displayLabel}</button>`;
   }
   return `<button id="wallet-nav-link" onclick="connectWalletHeader()" style="background:none;border:1px solid #374151;color:#9aa3ff;font-size:14px;padding:5px 12px;border-radius:6px;cursor:pointer;font-weight:600;">Connect Wallet</button>`;
 }
@@ -495,16 +495,66 @@ function setWalletButtonDisconnected(el) {
 // Inline script injected into every main page — refreshes wallet nav from server session.
 const walletStatusScript = `
 <script>
+// ── Wallet disconnect dropdown ────────────────────────────────────────────────
+// AIR-272: inject a hidden dropdown into the document once DOM is ready
+function _ensureWalletDropdown() {
+  if (document.getElementById('wallet-dropdown')) return;
+  const d = document.createElement('div');
+  d.id = 'wallet-dropdown';
+  d.style.cssText = 'display:none;position:fixed;z-index:9999;background:#1a1f36;border:1px solid #2a3060;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.5);min-width:200px;padding:8px 0;';
+  d.innerHTML = \`
+    <div id="wallet-dropdown-addr" style="font-size:11px;color:#6b7280;padding:8px 16px 6px;border-bottom:1px solid #222843;word-break:break-all;"></div>
+    <button onclick="disconnectWallet()" style="display:block;width:100%;text-align:left;background:none;border:none;color:#f87171;font-size:14px;padding:10px 16px;cursor:pointer;font-weight:600;">&#9679; Disconnect Wallet</button>
+    <button onclick="reconnectWallet()" style="display:block;width:100%;text-align:left;background:none;border:none;color:#9aa3ff;font-size:14px;padding:8px 16px;cursor:pointer;">&#8635; Reconnect</button>
+  \`;
+  document.body.appendChild(d);
+  // Close dropdown on outside click
+  document.addEventListener('click', function(e) {
+    const dd = document.getElementById('wallet-dropdown');
+    const btn = document.getElementById('wallet-nav-link');
+    if (dd && !dd.contains(e.target) && e.target !== btn) {
+      dd.style.display = 'none';
+    }
+  }, true);
+}
+
+// ── Expired-session / reconnect banner ───────────────────────────────────────
+function _ensureReconnectBanner() {
+  if (document.getElementById('wallet-reconnect-banner')) return;
+  const b = document.createElement('div');
+  b.id = 'wallet-reconnect-banner';
+  b.style.cssText = 'display:none;position:fixed;top:0;left:0;right:0;z-index:10000;background:#7c2d12;color:#fff;font-size:14px;padding:10px 20px;display:flex;align-items:center;gap:12px;justify-content:center;';
+  b.innerHTML = \`
+    <span>&#9888; Wallet session expired.</span>
+    <button onclick="reconnectWallet()" style="background:#fff;color:#7c2d12;border:none;border-radius:6px;padding:4px 14px;font-size:13px;font-weight:700;cursor:pointer;">Reconnect Wallet</button>
+    <button onclick="dismissReconnectBanner()" style="background:none;border:none;color:#fca5a5;font-size:18px;cursor:pointer;line-height:1;margin-left:4px;">&times;</button>
+  \`;
+  b.style.display = 'none';
+  document.body.prepend(b);
+}
+
+function showReconnectBanner() {
+  _ensureReconnectBanner();
+  const b = document.getElementById('wallet-reconnect-banner');
+  if (b) b.style.display = 'flex';
+}
+
+function dismissReconnectBanner() {
+  const b = document.getElementById('wallet-reconnect-banner');
+  if (b) b.style.display = 'none';
+}
+
 function _walletSetConnected(el, addr, displayLabel) {
   const short = displayLabel || (addr.length > 16 ? addr.slice(0, 8) + '\\u2026' + addr.slice(-6) : addr);
   el.textContent = '\\u25CF ' + short;
-  el.setAttribute('title', addr);
+  el.setAttribute('title', 'Click to disconnect \\u00b7 ' + addr);
   el.setAttribute('data-connected', 'true');
   el.style.color = '#22c55e';
-  el.style.border = 'none';
-  el.style.cursor = 'default';
-  el.onclick = null;
+  el.style.border = '1px solid #14532d';
+  el.style.cursor = 'pointer';
+  el.onclick = walletHeaderClick;
   el.disabled = false;
+  dismissReconnectBanner();
 }
 
 function _walletSetDisconnected(el) {
@@ -516,6 +566,54 @@ function _walletSetDisconnected(el) {
   el.style.cursor = 'pointer';
   el.onclick = connectWalletHeader;
   el.disabled = false;
+  const dd = document.getElementById('wallet-dropdown');
+  if (dd) dd.style.display = 'none';
+}
+
+// ── Wallet header click — toggle disconnect dropdown ─────────────────────────
+function walletHeaderClick() {
+  const el = document.getElementById('wallet-nav-link');
+  if (!el || el.getAttribute('data-connected') !== 'true') {
+    connectWalletHeader();
+    return;
+  }
+  _ensureWalletDropdown();
+  const dd = document.getElementById('wallet-dropdown');
+  if (!dd) return;
+  if (dd.style.display === 'none' || !dd.style.display) {
+    // Position below the button
+    const rect = el.getBoundingClientRect();
+    dd.style.top = (rect.bottom + 6) + 'px';
+    dd.style.right = (window.innerWidth - rect.right) + 'px';
+    // Show current address
+    const addrEl = document.getElementById('wallet-dropdown-addr');
+    if (addrEl) addrEl.textContent = el.getAttribute('title')?.replace('Click to disconnect \\u00b7 ', '') || '';
+    dd.style.display = 'block';
+  } else {
+    dd.style.display = 'none';
+  }
+}
+
+// ── Disconnect ────────────────────────────────────────────────────────────────
+async function disconnectWallet() {
+  const dd = document.getElementById('wallet-dropdown');
+  if (dd) dd.style.display = 'none';
+  const el = document.getElementById('wallet-nav-link');
+  if (el) { el.textContent = 'Disconnecting\\u2026'; el.disabled = true; el.onclick = null; }
+  try {
+    await fetch('/wallet/disconnect', { method: 'POST' });
+  } catch (_) {}
+  if (el) { _walletSetDisconnected(el); }
+}
+
+// ── Reconnect — re-runs the full connect flow ─────────────────────────────────
+async function reconnectWallet() {
+  dismissReconnectBanner();
+  const dd = document.getElementById('wallet-dropdown');
+  if (dd) dd.style.display = 'none';
+  // Clear any stale server session first, then reconnect fresh
+  try { await fetch('/wallet/disconnect', { method: 'POST' }); } catch (_) {}
+  await connectWalletHeader();
 }
 
 (function() {
@@ -530,6 +628,11 @@ function _walletSetDisconnected(el) {
         ? identityData.midname
         : null;
       _walletSetConnected(el, walletData.session.address, displayLabel);
+      // AIR-272: check if the extension is actually available; if not, session is stale
+      const extPresent = !!(window.midnight && window.midnight['1am'] && typeof window.midnight['1am'].connect === 'function');
+      if (!extPresent) {
+        showReconnectBanner();
+      }
     } else {
       _walletSetDisconnected(el);
     }
