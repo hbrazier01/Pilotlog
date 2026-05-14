@@ -53,6 +53,8 @@ import * as Rx from "rxjs";
 
 import { Airlog, createAirlogPrivateState } from "@repo/airlog-contract";
 import { saveWalletSession, loadWalletSession, clearWalletSession } from "../walletSession.js";
+import { loadMidnameIdentity, saveMidnameIdentity, clearMidnameIdentity } from "../midnameStore.js";
+import { resolveMidnameIdentity, validateMidname } from "../midnameResolver.js";
 
 // @ts-expect-error global WebSocket polyfill
 globalThis.WebSocket = WebSocket;
@@ -260,7 +262,9 @@ async function main() {
 
   if (disconnect) {
     clearWalletSession();
+    clearMidnameIdentity();
     console.log("\n  Wallet session cleared.");
+    console.log("  Midname identity cleared.");
     process.exit(0);
   }
 
@@ -337,6 +341,54 @@ async function main() {
   });
   console.log("  ✓ Session saved → .pilotlog/wallet.json");
   console.log(`  Address: ${address}`);
+
+  // ── Step 4b: Midnames sync ───────────────────────────────────────────────
+  console.log("\n[4b] Syncing Midnames identity");
+  console.log("─".repeat(50));
+
+  try {
+    const envMidname = process.env.AIRLOG_MIDNAME?.trim();
+
+    if (envMidname) {
+      // Env var provided — resolve and store it
+      const validationError = validateMidname(envMidname);
+      if (validationError) {
+        console.log(`  ✗ AIRLOG_MIDNAME invalid: ${validationError}`);
+      } else {
+        console.log(`  Resolving AIRLOG_MIDNAME: ${envMidname}`);
+        const result = await resolveMidnameIdentity(envMidname, address, coinPublicKey);
+        if ("error" in result) {
+          console.log(`  ✗ Midname resolution failed: ${result.error}`);
+        } else {
+          saveMidnameIdentity(result);
+          console.log(`  ✓ Midname synced: ${result.midname} [${result.verificationStatus}]`);
+        }
+      }
+    } else {
+      // No env var — re-verify any stored midname against this wallet
+      const stored = loadMidnameIdentity();
+      if (!stored) {
+        console.log("  No midname stored. Set AIRLOG_MIDNAME to link one.");
+      } else {
+        console.log(`  Re-verifying stored midname: ${stored.midname}`);
+        const result = await resolveMidnameIdentity(stored.midname, address, coinPublicKey);
+        if ("error" in result) {
+          console.log(`  ✗ Re-verification failed: ${result.error}. Clearing stored midname.`);
+          clearMidnameIdentity();
+        } else if (result.verificationStatus !== "verified" && stored.verificationStatus === "verified") {
+          // Was verified before but no longer matches this wallet — clear it
+          console.log(`  ✗ Midname no longer verifies against this wallet. Clearing.`);
+          clearMidnameIdentity();
+        } else {
+          saveMidnameIdentity(result);
+          console.log(`  ✓ Midname re-synced: ${result.midname} [${result.verificationStatus}]`);
+        }
+      }
+    }
+  } catch (midnameErr: any) {
+    // Midnames sync never blocks wallet connect
+    console.log(`  ⚠ Midnames sync skipped: ${midnameErr?.message ?? midnameErr}`);
+  }
 
   if (!runTestTx) {
     console.log("\n╔══════════════════════════════════════════════════╗");
