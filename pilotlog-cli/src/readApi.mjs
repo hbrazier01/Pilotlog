@@ -2213,6 +2213,21 @@ app.get("/", (_req, res) => {
         btn.disabled = false;
         console.error('[tx] block failed', err.message, err.stack);
         const isEmptyStateError = err.message && err.message.includes('No public state found');
+        // AIR-277: error 115 = chain rejected proof due to stale verifier key (contract was
+        // recompiled after deployment). Auto-clear the stored contract address so the next
+        // save triggers a fresh deploy with the current ZK keys.
+        const isVerifierMismatch = err.message && (
+          err.message.includes('Custom error: 115') ||
+          err.message.includes('custom error: 115') ||
+          err.message.includes('error 115')
+        );
+        if (isVerifierMismatch) {
+          console.warn('[tx] error 115 detected — clearing stale contract address for redeploy');
+          localStorage.removeItem('airlog.contractAddress');
+          fetch('/deployment', { method: 'DELETE' }).catch(() => {});
+          showToast('Contract state mismatch — save again to anchor on fresh contract', true);
+          return;
+        }
         showToast(isEmptyStateError
           ? 'Contract not yet synced — please wait 30 seconds and retry'
           : 'Chain submit failed · Retry or reconnect wallet', true);
@@ -6188,6 +6203,23 @@ app.get("/deployment.json", (_req, res) => {
   } catch (err) {
     console.error("[deployment] failed:", err);
     res.status(500).json({ error: "deployment.json load failed" });
+  }
+});
+
+// DELETE /deployment — clear contractAddress (forces redeploy on next save).
+// Used by browser when error 115 (verifier key mismatch after contract recompile) is detected.
+app.delete("/deployment", (req, res) => {
+  try {
+    const existing = fs.existsSync(deploymentJsonPath)
+      ? JSON.parse(fs.readFileSync(deploymentJsonPath, "utf8"))
+      : {};
+    const cleared = { networkId: existing.networkId || "preprod" };
+    fs.writeFileSync(deploymentJsonPath, JSON.stringify(cleared, null, 2));
+    console.log("[deploy] contractAddress cleared — fresh deploy required");
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[deployment] clear failed:", err);
+    res.status(500).json({ error: "deployment.json clear failed" });
   }
 });
 
