@@ -2112,22 +2112,31 @@ app.get("/", (_req, res) => {
             if (contractStateCell?.data) {
               console.log('[air-277] contractState.data type:', typeof contractStateCell.data);
               try {
-                // contractMod.Airlog is the compiled contract module (re-exported ContractModule).
-                // The Compact-generated module exports ledger(data) which deserializes raw state.
-                const ledgerState = contractMod.Airlog.ledger(contractStateCell.data);
-                const COUNTER_KEY = BigInt(0);
-                const hasMember = ledgerState.nextEntryId.member(COUNTER_KEY);
-                const nextId = hasMember ? ledgerState.nextEntryId.lookup(COUNTER_KEY) : null;
-                console.log('[air-277] nextEntryId.member(0):', hasMember, '— hydrated from chain?', hasMember, '— nextId:', nextId !== null ? String(nextId) : 'unset (empty state)');
-                if (nextId !== null) {
-                  const entryExists = ledgerState.entryStore.member(nextId);
-                  console.log('[air-277] entryStore.member(nextId=' + String(nextId) + '):', entryExists, entryExists ? '⚠ KEY COLLISION — this would cause MAP_KEY_PRESENT (error 115)' : '✓ key is free');
+                // contractMod was const-scoped inside BLOCK 4's try — re-import here.
+                // ES module cache guarantees the same module instance at zero reload cost.
+                const diagMod = await import('/contract/compiled/airlog/index.js');
+                console.log('[air-277] diagMod keys:', Object.keys(diagMod).join(','));
+                // The compiled contract exports ContractModule as Airlog.
+                // Airlog.ledger(data) deserializes raw ContractState.data into typed ledger.
+                const AirlogMod = diagMod.Airlog;
+                if (!AirlogMod || typeof AirlogMod.ledger !== 'function') {
+                  console.error('[air-277] Airlog.ledger is not a function — module shape:', AirlogMod ? Object.keys(AirlogMod).join(',') : 'undefined');
                 } else {
-                  const id0Exists = ledgerState.entryStore.member(COUNTER_KEY);
-                  console.log('[air-277] nextId is unset (empty state) — entryStore.member(0):', id0Exists, id0Exists ? '⚠ KEY COLLISION — empty state proves against id=0 but entryStore[0] already exists on-chain' : '✓ no collision at id=0');
+                  const ledgerState = AirlogMod.ledger(contractStateCell.data);
+                  const COUNTER_KEY = BigInt(0);
+                  const hasMember = ledgerState.nextEntryId.member(COUNTER_KEY);
+                  const nextId = hasMember ? ledgerState.nextEntryId.lookup(COUNTER_KEY) : null;
+                  console.log('[air-277] nextEntryId.member(0):', hasMember, '— hydrated from chain?', hasMember, '— nextId:', nextId !== null ? String(nextId) : 'unset (empty state)');
+                  if (nextId !== null) {
+                    const entryExists = ledgerState.entryStore.member(nextId);
+                    console.log('[air-277] entryStore.member(nextId=' + String(nextId) + '):', entryExists, entryExists ? '⚠ KEY COLLISION — this would cause MAP_KEY_PRESENT (error 115)' : '✓ key is free');
+                  } else {
+                    const id0Exists = ledgerState.entryStore.member(COUNTER_KEY);
+                    console.log('[air-277] nextId is unset (empty state) — entryStore.member(0):', id0Exists, id0Exists ? '⚠ KEY COLLISION — empty state proves against id=0 but entryStore[0] already exists on-chain' : '✓ no collision at id=0');
+                  }
                 }
               } catch (ledgerErr) {
-                console.error('[air-277] contractMod.Airlog.ledger() deserialization FAILED — state hydration likely broken:', ledgerErr?.message);
+                console.error('[air-277] ledger() deserialization FAILED:', ledgerErr?.message);
                 console.error('[air-277] This means the Compact runtime will prove against empty/default state → MAP_KEY_PRESENT');
               }
             } else {
@@ -2158,12 +2167,15 @@ app.get("/", (_req, res) => {
                 return null;
               });
               const stateCell = lastResult ? lastResult[1] : null;
+              const dataProp = stateCell && typeof stateCell === 'object' ? stateCell.data : undefined;
               console.log('[tx-debug][AIR-214] queryZSwapAndContractState attempt', attempt,
                 'addr:', addr,
                 'result null?', lastResult === null,
                 'result[1] null?', stateCell === null,
                 'result[1] type:', stateCell === null ? 'null' : stateCell === undefined ? 'undefined' : typeof stateCell,
-                'result[1] keys:', stateCell && typeof stateCell === 'object' ? Object.keys(stateCell).join(',') : 'n/a'
+                'result[1] keys:', stateCell && typeof stateCell === 'object' ? Object.keys(stateCell).join(',') : 'n/a',
+                'result[1].data type:', dataProp === undefined ? 'absent' : typeof dataProp,
+                'result[1].data byteLength:', dataProp instanceof Uint8Array ? dataProp.byteLength : (dataProp && typeof dataProp === 'object' && dataProp.byteLength !== undefined ? dataProp.byteLength : 'n/a')
               );
               if (lastResult !== null && stateCell !== null && stateCell !== undefined) {
                 return lastResult;
