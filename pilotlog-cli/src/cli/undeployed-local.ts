@@ -1,6 +1,6 @@
 import { loadEntries, saveEntries } from "../store.js";
 import { loadProfile, saveProfile } from "../profileStore.js";
-import { loadWalletSession } from "../walletSession.js";
+import { loadWalletSession, clearWalletSession } from "../walletSession.js";
 import { loadMidnameIdentity, saveMidnameIdentity, clearMidnameIdentity } from "../midnameStore.js";
 import { validateMidname, resolveMidnameIdentity, printMidnameCard } from "../midnameResolver.js";
 import { loadAttestations, saveAttestations } from "../attestationStore.js";
@@ -79,6 +79,10 @@ function usage() {
   console.log("");
   console.log("  instructor add --name 'John Smith' [--cert 'CFI-12345'] [--midname pilot.cfi]");
   console.log("  instructor list                    List registered instructors");
+  console.log("");
+  console.log("  wallet status                      Show connected wallet session");
+  console.log("  wallet disconnect                  Clear wallet session (safe logout)");
+  console.log("  wallet reset                       Force-clear session + all linked data");
 }
 
 // -------------------- FLIGHTS --------------------
@@ -636,6 +640,50 @@ else if (command === "instructor") {
 
   } else {
     usage();
+  }
+}
+
+// -------------------- WALLET --------------------
+else if (command === "wallet") {
+  if (!sub || sub === "status") {
+    const session = loadWalletSession();
+    if (!session) {
+      console.log("No wallet connected.");
+      console.log("Connect via: npm run wallet:connect");
+    } else {
+      console.log("Wallet session active:");
+      console.log(`  Address:       ${session.address}`);
+      console.log(`  CoinPublicKey: ${session.coinPublicKey.slice(0, 20)}…`);
+      console.log(`  Connected at:  ${session.connectedAt}`);
+      console.log("");
+      console.log("  To disconnect: pilotlog wallet disconnect");
+      console.log("  To reset:      pilotlog wallet reset");
+    }
+  } else if (sub === "disconnect") {
+    const session = loadWalletSession();
+    if (!session) {
+      console.log("No wallet session to disconnect.");
+    } else {
+      clearWalletSession();
+      console.log("Wallet disconnected.");
+      console.log(`  Cleared session for: ${session.address}`);
+      console.log("  Flight entries are preserved. Reconnect with: npm run wallet:connect");
+    }
+  } else if (sub === "reset") {
+    const session = loadWalletSession();
+    clearWalletSession();
+    if (session) {
+      console.log("Wallet session cleared (force reset).");
+      console.log(`  Address was: ${session.address}`);
+    } else {
+      console.log("No session was active. State reset complete.");
+    }
+    console.log("  WARNING: New wallet connections will create a fresh pilot identity.");
+    console.log("  Existing flight entries remain but will be unlinked from prior wallet.");
+  } else {
+    console.error(`wallet: unknown subcommand "${sub}"`);
+    console.error("  Usage: pilotlog wallet [status|disconnect|reset]");
+    process.exit(1);
   }
 }
 
