@@ -1,0 +1,18 @@
+{
+  "walletAddress": "mn_shield-cpk_preprod1ymqryyhvfj56kr2pqc2qg545r4rdz7g5rg7xu83hh8776j44yxdsjasp4x",
+  "midname": "hbrazier.night",
+  "did": null,
+  "midnameVerified": true,
+  "verifiedAt": "2026-05-07T22:28:15.629Z",
+  "identitySource": "midname",
+  "networkId": "preprod",
+  "resolvedType": "shielded",
+  "resolvedAddress": "mn_shield-cpk_preprod1ymqryyhvfj56kr2pqc2qg545r4rdz7g5rg7xu83hh8776j44yxdsjasp4x",
+  "fields": {
+    "name": "Holland",
+    "avatar": "ddd",
+    "bio": "dddd",
+    "github": "ddd",
+    "twitter": "@hollandbrazier"
+  }
+}
