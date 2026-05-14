@@ -363,7 +363,7 @@ export function computePplRequirements(entries, { asOf, thresholds } = {}) {
 const PHASE_CONFIG = {
   foundation:       { progressionState: 'student_pilot',   label: 'Foundation Training',   description: 'Building fundamental flight skills with an instructor.' },
   pre_solo:         { progressionState: 'student_pilot',   label: 'Pre-Solo Training',     description: 'Working toward solo endorsement — dual training underway.' },
-  solo_ready:       { progressionState: 'solo_ready',      label: 'Solo Ready',            description: 'Approaching solo endorsement. Coordinate with your instructor.' },
+  solo_ready:       { progressionState: 'solo_ready',      label: 'Pre-Solo',              description: 'Approaching solo endorsement. Coordinate with your instructor.' },
   xc_phase:         { progressionState: 'xc_ready',        label: 'Cross-Country Phase',   description: 'Solo complete. Building toward XC and checkride minimums.' },
   checkride_ready:  { progressionState: 'checkride_ready', label: 'Checkride Ready',       description: 'All Part 61 ASEL minimums met. Schedule your practical test.' },
 };
@@ -385,9 +385,13 @@ function buildViewStats(faaStats, entries) {
   };
 }
 
+// Keys excluded from the visible readiness scores panel (requirement engine still tracks them)
+const VIEW_READINESS_HIDDEN = new Set(['dualXC']);
+
 function buildViewReadiness(requirements) {
   const readiness = {};
   for (const [key, r] of Object.entries(requirements)) {
+    if (VIEW_READINESS_HIDDEN.has(key)) continue;
     const status = r.met ? 'completed' : r.pct >= 75 ? 'close' : r.pct >= 25 ? 'in_progress' : 'not_started';
     readiness[key] = {
       key,
@@ -432,13 +436,6 @@ function buildViewMilestones(stats, phase) {
       label:  'First Solo',
       status: stats.soloTime > 0 ? 'completed' : 'not_started',
       detail: stats.soloTime > 0 ? `${stats.soloTime}h solo time logged` : 'Complete pre-solo requirements with your instructor',
-    },
-    {
-      key:    'dual_xc',
-      icon:   '🗺️',
-      label:  'Dual Cross-Country',
-      status: stats.dualXC >= 3 ? 'completed' : stats.dualXC > 0 ? 'in_progress' : 'not_started',
-      detail: `${stats.dualXC}h of 3h required dual XC (§61.109(a)(1)(i))`,
     },
     {
       key:    'solo_xc',

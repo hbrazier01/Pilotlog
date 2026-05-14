@@ -20,7 +20,8 @@
     "@midnames/sdk": "^2.0.0",
     "buffer": "^6.0.3",
     "express": "^5.2.1",
-    "puppeteer": "^24.40.0"
+    "puppeteer": "^24.40.0",
+    "ws": "^8.20.1"
   },
   "devDependencies": {
     "@types/node": "^25.3.3",

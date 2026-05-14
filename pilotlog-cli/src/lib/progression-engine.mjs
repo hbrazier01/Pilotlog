@@ -21,7 +21,7 @@ import { computePplRequirements, computePplPart61Progress } from './faa/pplPart6
 export const PROGRESSION_STATES = {
   discovery:           { label: "Discovery",             order: 0,  description: "Exploring aviation for the first time." },
   student_pilot:       { label: "Student Pilot",         order: 1,  description: "Actively training toward first solo." },
-  solo_ready:          { label: "Solo Ready",            order: 2,  description: "Pre-solo requirements nearly met." },
+  solo_ready:          { label: "Pre-Solo",               order: 2,  description: "Approaching solo endorsement — coordinate with your instructor." },
   solo_complete:       { label: "Solo Complete",         order: 3,  description: "First solo completed — continuing toward PPL." },
   xc_ready:            { label: "Cross-Country Ready",   order: 4,  description: "Eligible for supervised cross-country flights." },
   checkride_ready:     { label: "Checkride Ready",       order: 5,  description: "PPL minimums met — approaching checkride." },
@@ -213,7 +213,7 @@ export function computeMilestones(profile, entries, attestations, asOf) {
     ),
     ms(
       'solo_ready_milestone',
-      'Solo Ready',
+      'Pre-Solo',
       '🛫',
       hasSoloEndorsement ? 'completed' :
         (total >= 12 && dayLandings >= 8) ? 'in_progress' : 'upcoming',

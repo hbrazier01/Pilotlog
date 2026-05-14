@@ -1131,23 +1131,19 @@ app.get("/", (_req, res) => {
   .today-outcome { font-size:12px; color:#22c55e; font-weight:600; margin-bottom:4px; margin-top:-4px; }
   .today-cta { display:inline-block; margin-top:12px; padding:9px 20px; background:#1a3a8f; color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:700; cursor:pointer; text-decoration:none; }
   .today-cta:hover { background:#1e46b0; }
-  .journey-blocker { font-size:11px; color:#6b7280; text-align:center; margin-top:-8px; margin-bottom:10px; }
   .today-changed { font-size:12px; color:#22c55e; font-weight:600; margin-bottom:6px; }
-  /* De-emphasize readiness lanes */
-  .currency-cards { opacity:0.75; }
-  /* Journey Strip */
-  #journey-strip { display:flex; align-items:center; gap:0; margin-bottom:14px; }
-  .journey-step { display:flex; flex-direction:column; align-items:center; flex:1; position:relative; }
-  .journey-step-dot { width:10px; height:10px; border-radius:50%; border:2px solid #222843; background:#0b0f18; flex-shrink:0; z-index:1; }
-  .journey-step.complete .journey-step-dot { background:#22c55e; border-color:#22c55e; }
-  .journey-step.active .journey-step-dot { background:#9aa3ff; border-color:#9aa3ff; box-shadow:0 0 0 3px rgba(154,163,255,.2); }
-  .journey-step.upcoming .journey-step-dot { background:#0b0f18; border-color:#374151; }
-  .journey-step-label { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; margin-top:5px; text-align:center; }
-  .journey-step.complete .journey-step-label { color:#22c55e; }
-  .journey-step.active .journey-step-label { color:#9aa3ff; }
-  .journey-step.upcoming .journey-step-label { color:#374151; }
-  .journey-connector { flex:1; height:1px; background:#222843; align-self:center; margin-bottom:16px; }
-  .journey-connector.complete { background:#22c55e; }
+  /* Progression bar */
+  #progression-bar { margin-bottom:14px; }
+  .progression-phase { font-size:11px; font-weight:700; color:#9aa3ff; text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; }
+  .progression-track { height:6px; border-radius:3px; background:#1a1f30; overflow:hidden; }
+  .progression-fill { height:100%; border-radius:3px; background:linear-gradient(90deg,#1a3a8f,#9aa3ff); transition:width .4s ease; }
+  /* Readiness scores */
+  #readiness-scores { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:8px; margin-bottom:14px; }
+  .readiness-score-item { background:#0e1220; border:1px solid #1a1f30; border-radius:10px; padding:10px 12px; }
+  .readiness-score-label { font-size:10px; color:#6b7280; text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; }
+  .readiness-score-val { font-size:16px; font-weight:800; margin-bottom:4px; }
+  .readiness-score-track { height:3px; border-radius:2px; background:#1a1f30; overflow:hidden; }
+  .readiness-score-fill { height:100%; border-radius:2px; }
   </style>
 </head>
 <body>
@@ -1195,8 +1191,8 @@ app.get("/", (_req, res) => {
       <span id="readiness-label">Loading…</span>
     </div>
     <div id="today-card" style="display:none;"></div>
-    <div id="journey-strip" style="display:none;"></div>
-    <div id="journey-blocker" class="journey-blocker" style="display:none;"></div>
+    <div id="progression-bar" style="display:none;"></div>
+    <div id="readiness-scores" style="display:none;"></div>
     <div class="currency-cards" id="readiness-cards">
       <div class="currency-card" style="color:#b6b9c6;font-size:13px;">Checking readiness…</div>
     </div>
@@ -1310,24 +1306,34 @@ app.get("/", (_req, res) => {
             </div>\`;
         }
 
-        // ── Journey Strip ─────────────────────────────────────────────────────
-        const journeyEl = document.getElementById('journey-strip');
-        journeyEl.style.display = 'flex';
-        journeyEl.innerHTML = d.journeySteps.map((label, i) => {
-          const state = i < d.journeyActiveIdx ? 'complete' : i === d.journeyActiveIdx ? 'active' : 'upcoming';
-          const connector = i < d.journeySteps.length - 1
-            ? \`<div class="journey-connector\${i < d.journeyActiveIdx ? ' complete' : ''}"></div>\`
-            : '';
-          return \`<div class="journey-step \${state}"><div class="journey-step-dot"></div><div class="journey-step-label">\${label.slice(0,22)}</div></div>\${connector}\`;
-        }).join('');
+        // ── Progression Bar ───────────────────────────────────────────────────
+        const progBarEl = document.getElementById('progression-bar');
+        if (d.progressPct !== undefined) {
+          const pct = Math.max(0, Math.min(100, d.progressPct));
+          progBarEl.innerHTML = \`
+            <div class="progression-phase">
+              <span>\${d.phaseLabel || 'Pilot'}</span>
+              <span style="color:#b6b9c6;font-weight:600;">\${pct}%</span>
+            </div>
+            <div class="progression-track">
+              <div class="progression-fill" style="width:\${pct}%;"></div>
+            </div>\`;
+          progBarEl.style.display = 'block';
+        }
 
-        // ── Journey Blocker Line ──────────────────────────────────────────────
-        const blockerEl = document.getElementById('journey-blocker');
-        if (d.guidanceCards.length > 0) {
-          blockerEl.textContent = 'Focus: ' + d.guidanceCards.slice(0,2).map(c => c.title).join(' · ');
-          blockerEl.style.display = 'block';
-        } else {
-          blockerEl.style.display = 'none';
+        // ── Readiness Scores ─────────────────────────────────────────────────
+        const readinessScoresEl = document.getElementById('readiness-scores');
+        if (d.readiness && Object.keys(d.readiness).length > 0) {
+          const SCORE_COLOR = { ready: '#22c55e', close: '#f59e0b', building: '#9aa3ff', not_started: '#374151' };
+          readinessScoresEl.innerHTML = Object.values(d.readiness).map(r => {
+            const col = SCORE_COLOR[r.status] || '#6b7280';
+            return \`<div class="readiness-score-item">
+              <div class="readiness-score-label">\${(r.label || '').replace(' Readiness','')}</div>
+              <div class="readiness-score-val" style="color:\${col};">\${r.score}%</div>
+              <div class="readiness-score-track"><div class="readiness-score-fill" style="width:\${r.score}%;background:\${col};"></div></div>
+            </div>\`;
+          }).join('');
+          readinessScoresEl.style.display = 'grid';
         }
 
         // ── Readiness Cards (guidance cards rendered as advisory lanes) ───────
