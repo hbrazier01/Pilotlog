@@ -2093,6 +2093,52 @@ app.get("/", (_req, res) => {
         await callPrivateStateProvider.set('airlogPrivateState', {});
         console.log('[tx-debug] AIR-213: in-memory privateStateProvider seeded with empty private state');
 
+        // AIR-277: Pre-proving state diagnostic — log the actual on-chain nextEntryId BEFORE
+        // submitCallTx starts proving, so we can confirm whether the contract state is hydrated
+        // from the indexer or silently falls back to empty/default state (MAP_KEY_PRESENT root cause).
+        try {
+          console.log('[air-277] === PRE-PROVING STATE DIAGNOSTIC ===');
+          const rawStateResult = await publicDataProvider.queryZSwapAndContractState(contractAddress).catch(e => {
+            console.error('[air-277] queryZSwapAndContractState threw:', e?.message);
+            return null;
+          });
+          if (rawStateResult === null) {
+            console.warn('[air-277] queryZSwapAndContractState returned null — state hydration FAILED; proving will use empty/default state');
+          } else {
+            const contractStateCell = rawStateResult[1];
+            console.log('[air-277] contractState cell present?', contractStateCell !== null && contractStateCell !== undefined);
+            console.log('[air-277] contractState type:', typeof contractStateCell);
+            console.log('[air-277] contractState keys:', contractStateCell && typeof contractStateCell === 'object' ? Object.keys(contractStateCell).join(',') : 'n/a');
+            if (contractStateCell?.data) {
+              console.log('[air-277] contractState.data type:', typeof contractStateCell.data);
+              try {
+                // contractMod.Airlog is the compiled contract module (re-exported ContractModule).
+                // The Compact-generated module exports ledger(data) which deserializes raw state.
+                const ledgerState = contractMod.Airlog.ledger(contractStateCell.data);
+                const COUNTER_KEY = BigInt(0);
+                const hasMember = ledgerState.nextEntryId.member(COUNTER_KEY);
+                const nextId = hasMember ? ledgerState.nextEntryId.lookup(COUNTER_KEY) : null;
+                console.log('[air-277] nextEntryId.member(0):', hasMember, '— hydrated from chain?', hasMember, '— nextId:', nextId !== null ? String(nextId) : 'unset (empty state)');
+                if (nextId !== null) {
+                  const entryExists = ledgerState.entryStore.member(nextId);
+                  console.log('[air-277] entryStore.member(nextId=' + String(nextId) + '):', entryExists, entryExists ? '⚠ KEY COLLISION — this would cause MAP_KEY_PRESENT (error 115)' : '✓ key is free');
+                } else {
+                  const id0Exists = ledgerState.entryStore.member(COUNTER_KEY);
+                  console.log('[air-277] nextId is unset (empty state) — entryStore.member(0):', id0Exists, id0Exists ? '⚠ KEY COLLISION — empty state proves against id=0 but entryStore[0] already exists on-chain' : '✓ no collision at id=0');
+                }
+              } catch (ledgerErr) {
+                console.error('[air-277] contractMod.Airlog.ledger() deserialization FAILED — state hydration likely broken:', ledgerErr?.message);
+                console.error('[air-277] This means the Compact runtime will prove against empty/default state → MAP_KEY_PRESENT');
+              }
+            } else {
+              console.warn('[air-277] contractState.data is absent/null — no ledger state to deserialize; proving will use empty state');
+            }
+          }
+          console.log('[air-277] === END PRE-PROVING STATE DIAGNOSTIC ===');
+        } catch (diagErr) {
+          console.error('[air-277] pre-proving diagnostic failed (non-fatal):', diagErr?.message);
+        }
+
         // AIR-214: Wrap publicDataProvider for submitCallTx with a logging+retry proxy.
         // queryZSwapAndContractState returns [zswapState, contractState, ledgerParams] but the
         // SDK calls deserializeContractState(state) with NO null guard on state — if the indexer
