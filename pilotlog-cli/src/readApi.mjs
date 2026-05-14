@@ -718,15 +718,21 @@ async function connectWalletHeader() {
     });
     if (!resp.ok) throw new Error('Server rejected wallet session');
 
+    // Show connected immediately — auto-resolve will update the label when it completes
+    if (el) { _walletSetConnected(el, addr); }
+
     // Auto-resolve Midname for this wallet (reverse lookup via Midnames contract ledger)
+    console.log('[identity] auto-resolve start');
     fetch('/identity/auto-resolve-midname', { method: 'POST' })
       .then(r => r.json())
       .then(result => {
         const displayLabel = (result && result.ok && result.midname) ? result.midname : null;
+        console.log('[identity] auto-resolve result:', displayLabel || 'none');
         if (el) { _walletSetConnected(el, addr, displayLabel); }
       })
-      .catch(() => {
-        if (el) { _walletSetConnected(el, addr); }
+      .catch(err => {
+        console.log('[identity] auto-resolve failed:', err?.message || String(err));
+        // UI already set connected above — no further action needed
       });
   } catch (err) {
     if (el) { _walletSetDisconnected(el); }
@@ -5906,7 +5912,9 @@ async function autoResolveMidnameFromWallet(walletAddress, coinPublicKey) {
 // POST /identity/auto-resolve-midname — automatic reverse-lookup Midnames resolution on wallet connect
 app.post("/identity/auto-resolve-midname", async (req, res) => {
   const session = readWalletSession();
+  console.log("[identity] auto-resolve start", session ? session.address : "(no session)");
   if (!session || !session.address) {
+    console.log("[identity] auto-resolve failed: no wallet session");
     return res.json({ ok: false, midname: null, reason: "no wallet session" });
   }
 
@@ -5920,8 +5928,10 @@ app.post("/identity/auto-resolve-midname", async (req, res) => {
 
   const resolved = await autoResolveMidnameFromWallet(session.address, session.coinPublicKey || null);
   if (!resolved) {
+    console.log("[identity] auto-resolve result: none");
     return res.json({ ok: false, midname: null, reason: "not found" });
   }
+  console.log("[identity] auto-resolve result:", resolved.midname);
 
   const identity = {
     walletAddress: session.address,
