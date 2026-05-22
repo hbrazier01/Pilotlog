@@ -2554,32 +2554,12 @@ app.get("/", (_req, res) => {
 </div>
 <script>
 (function() {
-  // Seed real on-chain entry into localStorage (hybrid model)
-  var REAL_ENTRY = ${JSON.stringify({
-    id: "e005",
-    date: "2026-04-12",
-    aircraftId: "N12345",
-    from: "KAPA",
-    to: "KAPA",
-    totalTime: 1.2,
-    pic: 1.2,
-    remarks: "Annual — N12345 airframe inspection and verification",
-    anchor: {
-      status: "anchored",
-      hash: "91ee77fd525d2e1d7d8eee3ed84c1584d2ca59f912cff8f691e9fad708bca23e",
-      tx: "ba8469647e24aff2b10dfbc1c5858dabe0bba06b8a6b489346acfbb1ac382240",
-      network: "preprod",
-      time: "2026-04-03T02:46:24.000Z",
-      contractAddress: "2308d3e94b0bdd11631a814beb9e1d46b0d192254dcbb95aa4dcf40cb6a4b6ab",
-      blockHeight: 181586
-    }
-  })};
+  // Remove any legacy seeded demo entry (e005) that may be in localStorage from older app versions
   try {
     var stored = JSON.parse(localStorage.getItem('airlog_anchored_entries') || '[]');
-    var exists = stored.some(function(e) { return e.id === REAL_ENTRY.id; });
-    if (!exists) {
-      stored.push(REAL_ENTRY);
-      localStorage.setItem('airlog_anchored_entries', JSON.stringify(stored));
+    var cleaned = stored.filter(function(e) { return e.id !== 'e005'; });
+    if (cleaned.length !== stored.length) {
+      localStorage.setItem('airlog_anchored_entries', JSON.stringify(cleaned));
     }
   } catch(e) {}
 })();
@@ -3092,7 +3072,7 @@ app.post("/verify/anchor", async (_req, res) => {
   }
 
   const integrity = buildIntegrityResult({ aircraft, entries });
-  const totalHours = entries.reduce((s, e) => s + Number(e.total || 0), 0);
+  const totalHours = entries.reduce((s, e) => s + Number(e.totalTime || e.total || 0), 0);
 
   const anchorResult = await anchorOnMidnight({
     anchorHash: integrity.anchorHash,
@@ -5013,7 +4993,7 @@ app.get("/report", (_req, res) => {
     liveVerification = pendingVerification;
 
     // Fire real anchor in background — result persists to disk when done
-    const totalHours = entries.reduce((s, e) => s + Number(e.total || 0), 0);
+    const totalHours = entries.reduce((s, e) => s + Number(e.totalTime || e.total || 0), 0);
     const bgAirframeId = pendingVerification.airframeId;
     const bgHash = hash;
     anchorOnMidnight({ anchorHash: bgHash, airframeId: bgAirframeId, hours: totalHours })
