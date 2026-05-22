@@ -14,7 +14,7 @@
  *   - faaRequirements    (FAA Part 61 ASEL requirements engine output)
  */
 
-import { computePplRequirements, computePplPart61Progress } from './faa/pplPart61.mjs';
+import { computePplRequirements, computePplPart61Progress } from './faa/pplEngine.mjs';
 
 // ─── Progression States ────────────────────────────────────────────────────────
 
