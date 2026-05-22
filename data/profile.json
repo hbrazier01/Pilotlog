@@ -1,12 +1,12 @@
 {
   "pilot": {
-    "fullName": "Harrison Blake",
-    "email": "harrison.blake@example.com",
-    "phone": "720-555-0182"
+    "fullName": "",
+    "email": "",
+    "phone": ""
   },
   "pilotPhase": "Student Pilot",
   "certificates": {
-    "studentPilot": true,
+    "studentPilot": false,
     "privatePilot": false,
     "instrumentRating": false,
     "commercialPilot": false,
@@ -14,10 +14,10 @@
   },
   "ratings": [],
   "medical": {
-    "kind": "Medical",
-    "class": "3",
-    "issued": "2026-01-01",
-    "expires": "2028-01-31",
+    "kind": "None",
+    "class": null,
+    "issued": null,
+    "expires": null,
     "basicMed": {
       "cmecDate": null,
       "onlineCourseDate": null
@@ -27,11 +27,5 @@
     "flightReviewDate": null,
     "ipcDate": null
   },
-  "endorsements": [
-    {
-      "date": "2026-03-08",
-      "text": "Student pilot certificate issued — authorized to receive flight instruction in Cessna 172S (N123AB).",
-      "signedBy": "David R. Torres, CFI #4872301"
-    }
-  ]
+  "endorsements": []
 }
