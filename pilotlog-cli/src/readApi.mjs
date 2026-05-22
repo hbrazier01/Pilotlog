@@ -406,7 +406,7 @@ function pilotPassportCardHtml(session, identity, profile, totals, { mode = "ful
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
         ${verificationBadge}
-        <a href="/passport" style="font-size:12px;color:#9aa3ff;text-decoration:none;">Profile →</a>
+        <a href="/passport" style="font-size:12px;color:#9aa3ff;text-decoration:none;">Passport →</a>
       </div>
     </div>`;
   }
@@ -1172,7 +1172,7 @@ app.get("/", (_req, res) => {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PilotLog — Private Pilot Training</title>
+  <title>PilotLog</title>
   <style>
   body { font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif; background:#0b0f18; color:#fff; margin:0; }
   .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 20px; }
@@ -1264,10 +1264,9 @@ app.get("/", (_req, res) => {
     <div class="brand">PilotLog</div>
     <div class="nav">
       ${walletNavHtml(walletSession, identity)}
-      <a href="/logbook">Logbook</a>
-      <a href="/passport">Profile</a>
-      <a href="/progression">Progress</a>
-      <a href="/pilot-report">Report →</a>
+      <a href="/passport">Passport</a>
+      <a href="/progression">Journey</a>
+      <a href="/pilot-report">Pilot Report →</a>
     </div>
   </div>
 
@@ -1284,12 +1283,12 @@ app.get("/", (_req, res) => {
       <div style="background:#111f11;border:1px solid #1a3a1a;border-radius:10px;padding:14px 16px;">
         <div style="font-size:11px;color:#4ade80;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Step 2</div>
         <div style="font-size:14px;color:#e2e8f0;font-weight:600;">Complete your profile</div>
-        <div style="font-size:12px;color:#6b7280;margin-top:4px;">Add your name, certificate status, and medical info in <a href="/passport" style="color:#9aa3ff;text-decoration:none;">Profile</a>.</div>
+        <div style="font-size:12px;color:#6b7280;margin-top:4px;">Add your name, certificate status, and medical info in <a href="/passport" style="color:#9aa3ff;text-decoration:none;">Passport</a>.</div>
       </div>
       <div style="background:#111f11;border:1px solid #1a3a1a;border-radius:10px;padding:14px 16px;">
         <div style="font-size:11px;color:#4ade80;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Step 3</div>
         <div style="font-size:14px;color:#e2e8f0;font-weight:600;">Track your progress</div>
-        <div style="font-size:12px;color:#6b7280;margin-top:4px;">See FAA PPL requirements and training milestones in <a href="/progression" style="color:#9aa3ff;text-decoration:none;">Progress</a>.</div>
+        <div style="font-size:12px;color:#6b7280;margin-top:4px;">See FAA PPL requirements and training milestones in <a href="/progression" style="color:#9aa3ff;text-decoration:none;">Journey</a>.</div>
       </div>
     </div>
   </div>` : `
@@ -4439,7 +4438,7 @@ function renderVerifyHtml(body) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Flight Verification — PilotLog</title>
+<title>AirLog — Blockchain Verification</title>
 <style>
   body { margin: 0; background: #0f172a; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 40px 20px; }
   .container { max-width: 560px; margin: 0 auto; }
@@ -4461,8 +4460,8 @@ function renderVerifyHtml(body) {
 <body>
 <div class="container">
   <div class="header">
-    <h1>PilotLog · Flight Verification</h1>
-    <p>Independent confirmation of the on-chain anchor for this flight record.</p>
+    <h1>AirLog · Blockchain Verification</h1>
+    <p>Independent confirmation of the Midnight network anchor for this aircraft record report.</p>
   </div>
   <div class="card">
     <div class="status-badge">${statusIcon} ${statusLabel}</div>
@@ -6196,9 +6195,8 @@ app.get("/identity/card", (_req, res) => {
     <div class="nav">
       ${walletNavHtml(session, identity)}
       <a href="/">Dashboard</a>
-        <a href="/logbook">Logbook</a>
-      <a href="/passport">Profile</a>
-      <a href="/pilot-report">Report →</a>
+      <a href="/passport">Passport</a>
+      <a href="/pilot-report">Pilot Report →</a>
     </div>
   </div>
 
@@ -6412,7 +6410,7 @@ if (fs.existsSync(keysDir)) {
 // ─── /profile → /passport redirect ──────────────────────────────────────────
 app.get("/profile", (_req, res) => { res.redirect("/passport"); });
 
-// ─── /passport — Pilot Profile ───────────────────────────────────────────────
+// ─── /passport — Pilot Passport v1 ───────────────────────────────────────────
 app.get("/passport", (_req, res) => {
   const ps = buildPilotState();
   const session = ps._walletSession;
@@ -6456,7 +6454,7 @@ app.get("/passport", (_req, res) => {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Pilot Profile — PilotLog</title>
+  <title>Pilot Passport — PilotLog</title>
   <style>
   body { font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif; background:#0b0f18; color:#fff; margin:0; }
   .wrap { max-width:720px; margin:0 auto; padding:32px 20px 60px; }
@@ -6485,14 +6483,12 @@ app.get("/passport", (_req, res) => {
     <div class="nav">
       ${walletNavHtml(session, identity)}
       <a href="/">Dashboard</a>
-        <a href="/logbook">Logbook</a>
-      <a href="/progression">Progress</a>
-      <a href="/pilot-report">Report →</a>
+      <a href="/pilot-report">Pilot Report →</a>
     </div>
   </div>
 
   <div style="margin-bottom:8px;">
-    <h1 style="font-size:28px;font-weight:800;margin:0 0 4px;letter-spacing:-0.5px;">Pilot Profile</h1>
+    <h1 style="font-size:28px;font-weight:800;margin:0 0 4px;letter-spacing:-0.5px;">Pilot Passport</h1>
     <p style="color:#b6b9c6;font-size:14px;margin:0;">Your verified aviation identity on Midnight.</p>
   </div>
 
@@ -6665,9 +6661,7 @@ app.get("/review", (_req, res) => {
     <div class="nav">
       ${walletNavHtml(session, identity)}
       <a href="/">Dashboard</a>
-        <a href="/logbook">Logbook</a>
-      <a href="/passport">Profile</a>
-      <a href="/pilot-report">Report →</a>
+      <a href="/passport">Passport</a>
     </div>
   </div>
 
@@ -6681,7 +6675,7 @@ app.get("/review", (_req, res) => {
   </div>
 
   <div style="margin-top:32px;">
-    <a href="/passport" style="color:#9aa3ff;font-size:14px;text-decoration:none;">← Back to Profile</a>
+    <a href="/passport" style="color:#9aa3ff;font-size:14px;text-decoration:none;">← Back to Passport</a>
   </div>
 </div>
 
@@ -6967,7 +6961,7 @@ app.get("/progression", (_req, res) => {
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Training Progress — ${pilotName}</title>
+<title>Pilot Progression — ${pilotName}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #020817; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
@@ -6989,10 +6983,9 @@ app.get("/progression", (_req, res) => {
 <div class="page">
   <nav>
     <a href="/">Dashboard</a>
-    <a href="/logbook">Logbook</a>
-    <a href="/passport">Profile</a>
-    <a href="/progression" class="active">Progress</a>
-    <a href="/pilot-report">Report</a>
+    <a href="/passport">Passport</a>
+    <a href="/progression" class="active">Journey</a>
+    <a href="/pilot-report">Pilot Report</a>
   </nav>
 
   <!-- Header -->
@@ -7017,7 +7010,7 @@ app.get("/progression", (_req, res) => {
 
   <!-- Journey Timeline -->
   <div class="card" style="margin-bottom:20px;">
-    <div class="section-title">Training Progress Timeline</div>
+    <div class="section-title">Pilot Journey Timeline</div>
     <div style="display:flex;align-items:flex-start;gap:0;overflow-x:auto;padding:8px 0 16px;">
       ${timelineHtml}
     </div>
