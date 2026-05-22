@@ -469,23 +469,241 @@ function buildViewMilestones(stats, phase) {
   return milestones;
 }
 
-function buildViewGuidanceCards(deficiencies, phase) {
-  if (deficiencies.length === 0) {
-    return [{
-      icon: '✅',
-      title: 'All Minimums Met',
-      body: 'You have satisfied all FAA Part 61 ASEL requirements. Schedule your practical test.',
-      action: 'Contact your CFII to obtain checkride endorsement',
+// ─── Situation Engine ─────────────────────────────────────────────────────────
+// Generates the phase summary card — the main card that explains where the pilot
+// is, why it matters, and what to do next.
+
+function buildPhaseSummaryCard(stats, phase) {
+  const configs = {
+    foundation: {
+      id: 'phase_summary',
+      type: 'phase_summary',
+      icon: '✈️',
+      title: stats.totalTime > 0
+        ? 'Foundation Training Started'
+        : 'Ready to Begin Training',
+      body: stats.totalTime > 0
+        ? `You have logged ${stats.totalTime}h. Your next goal is to build consistent dual instruction time toward the 40-hour PPL minimum.`
+        : 'Log your first flight to begin your journey toward the Private Pilot certificate.',
+      whyItMatters: 'The FAA requires 40 total hours including 20 hours of dual instruction. Every lesson builds the muscle memory and aeronautical decision-making your examiner will test.',
+      action: stats.totalTime > 0 ? 'Schedule your next lesson to keep momentum' : 'Log your first flight',
+      actionHref: '/',
       priority: 'high',
-    }];
-  }
-  return deficiencies.slice(0, 4).map(d => ({
-    icon: '📋',
-    title: 'FAA Requirement',
-    body: d,
-    action: 'Log flights to satisfy this requirement',
+    },
+    pre_solo: {
+      id: 'phase_summary',
+      type: 'phase_summary',
+      icon: '🛫',
+      title: 'Dual Training Underway',
+      body: `You have ${stats.totalTime}h total with ${stats.dualReceived}h dual instruction. You are building the foundational skills needed for solo endorsement.`,
+      whyItMatters: 'Your instructor is evaluating your traffic pattern consistency, emergency procedures, and aeronautical judgment before authorizing solo flight. Focus on making every landing repeatable.',
+      action: 'Continue dual lessons — ask your instructor what specific skills to focus on next',
+      actionHref: '/',
+      priority: 'high',
+    },
+    solo_ready: {
+      id: 'phase_summary',
+      type: 'phase_summary',
+      icon: '⭐',
+      title: 'Pre-Solo Preparation',
+      body: `You have ${stats.totalTime}h total with ${stats.dualReceived}h dual. Your instructor will authorize your first solo when they are satisfied with your readiness.`,
+      whyItMatters: 'First solo is the defining moment of student pilot training. The FAA requires a pre-solo knowledge test and instructor endorsement before you can fly alone.',
+      action: 'Ask your instructor specifically when they expect to sign your solo endorsement',
+      actionHref: '/',
+      priority: 'high',
+    },
+    xc_phase: {
+      id: 'phase_summary',
+      type: 'phase_summary',
+      icon: '🗺️',
+      title: 'Cross-Country Phase',
+      body: `You have ${stats.totalTime}h total with ${stats.soloTime}h solo. You are now building cross-country experience toward the PPL minimums.`,
+      whyItMatters: 'The PPL requires 5h solo XC (one leg ≥150 NM) and 3h dual XC. Cross-country training develops the navigation, weather evaluation, and fuel planning your examiner will test.',
+      action: 'Plan your next cross-country flight — coordinate with your instructor on solo XC endorsement',
+      actionHref: '/',
+      priority: 'high',
+    },
+    checkride_ready: {
+      id: 'phase_summary',
+      type: 'phase_summary',
+      icon: '🏆',
+      title: 'Checkride Eligible',
+      body: `All FAA Part 61 ASEL hour minimums are met. You are authorized to schedule your practical test with a Designated Pilot Examiner.`,
+      whyItMatters: 'You have satisfied all 14 CFR §61.109(a) requirements. Your final steps are obtaining your instructor\'s endorsement, passing the written test (if not done), and scheduling your DPE.',
+      action: 'Contact your instructor for checkride endorsement and find a local DPE',
+      actionHref: '/pilot-report',
+      priority: 'high',
+    },
+  };
+  return configs[phase] || configs.foundation;
+}
+
+// Per-requirement card definitions: specific titles, reasons, actions.
+const REQUIREMENT_CARD_CONFIG = {
+  totalTime: {
+    id: 'build_total_time',
+    type: 'faa_requirement',
+    icon: '⏱️',
+    title: 'Build Total Time',
+    whyItMatters: 'The FAA requires 40 total flight hours for a PPL (14 CFR §61.109(a)). Total time reflects your overall aviation exposure and judgment development.',
+    action: 'Schedule regular lessons — consistency matters more than session length',
+    actionHref: '/',
     priority: 'medium',
-  }));
+  },
+  dualReceived: {
+    id: 'dual_instruction',
+    type: 'faa_requirement',
+    icon: '🎓',
+    title: 'Dual Instruction',
+    whyItMatters: '20 hours of dual instruction is required (§61.109(a)(1)). Your instructor teaches the techniques and aeronautical decision-making that the examiner will directly evaluate.',
+    action: 'Book your next dual lesson',
+    actionHref: '/',
+    priority: 'medium',
+  },
+  soloTime: {
+    id: 'solo_time',
+    type: 'faa_requirement',
+    icon: '🛩️',
+    title: 'Solo Time Not Started',
+    whyItMatters: '10 hours of solo flight time is required (§61.109(a)(2)). Solo time builds independent judgment and the confidence that separates pilots from passengers.',
+    action: 'Work with your instructor toward your solo endorsement',
+    actionHref: '/',
+    priority: 'medium',
+  },
+  dualXC: {
+    id: 'dual_xc',
+    type: 'faa_requirement',
+    icon: '📍',
+    title: 'Dual Cross-Country',
+    whyItMatters: '3 hours of dual cross-country is required (§61.109(a)(1)(i)). This develops the flight planning, navigation, and weather evaluation skills tested on the checkride.',
+    action: 'Schedule a cross-country flight with your instructor',
+    actionHref: '/',
+    priority: 'medium',
+  },
+  soloXC: {
+    id: 'solo_xc',
+    type: 'faa_requirement',
+    icon: '🗺️',
+    title: 'Cross-Country Not Started',
+    whyItMatters: '5 hours solo XC is required including one ≥150 NM trip with full-stop landings at 3 points (§61.109(a)(2)(ii)). This is your proof of independent navigation capability.',
+    action: 'Obtain your solo XC endorsement from your instructor and plan your first XC route',
+    actionHref: '/',
+    priority: 'medium',
+  },
+  nightHours: {
+    id: 'night_training',
+    type: 'faa_requirement',
+    icon: '🌙',
+    title: 'Night Training Not Started',
+    whyItMatters: '3 hours of night flight including 10 takeoffs and landings is required (§61.109(a)(1)(ii)). Night flying develops spatial awareness and expands your certificate privileges to night operations.',
+    action: 'Schedule a night training session with your instructor',
+    actionHref: '/',
+    priority: 'medium',
+  },
+  nightLandings: {
+    id: 'night_landings',
+    type: 'faa_requirement',
+    icon: '🌙',
+    title: 'Night Landings',
+    whyItMatters: '10 full-stop night landings are required (§61.109(a)(1)(ii)(A)). These build the depth perception and approach technique needed for safe night passenger operations.',
+    action: 'Practice night landings with your instructor during your next night flight',
+    actionHref: '/',
+    priority: 'medium',
+  },
+  simulatedInstrument: {
+    id: 'instrument_training',
+    type: 'faa_requirement',
+    icon: '🎛️',
+    title: 'Instrument Training Not Started',
+    whyItMatters: '3 hours of simulated instrument training is required (§61.109(a)(1)(iii)). Hood time teaches you to trust instruments and survive inadvertent entry into IMC.',
+    action: 'Request hood time in your next dual lesson — any instructor can provide this',
+    actionHref: '/',
+    priority: 'medium',
+  },
+};
+
+// Returns the requirement keys to surface for this phase.
+// Phase-aware — early students should not see all 8 requirements at once.
+function getPriorityRequirements(phase) {
+  switch (phase) {
+    case 'foundation':  return ['totalTime', 'dualReceived'];
+    case 'pre_solo':    return ['totalTime', 'dualReceived', 'soloTime'];
+    case 'solo_ready':  return ['soloTime', 'totalTime', 'dualReceived'];
+    case 'xc_phase':    return ['soloXC', 'dualXC', 'nightHours', 'nightLandings', 'simulatedInstrument', 'totalTime'];
+    case 'checkride_ready': return [];
+    default:            return ['totalTime', 'dualReceived'];
+  }
+}
+
+function buildViewGuidanceCards(stats, requirements, phase, profile) {
+  const cards = [];
+
+  // 1. Phase summary card — always first (becomes todayCard on dashboard)
+  cards.push(buildPhaseSummaryCard(stats, phase));
+
+  // 2. Missing profile card — surface when profile has no name set
+  const profileName = profile && (
+    (profile.pilot && profile.pilot.fullName) ||
+    (profile.name)
+  );
+  if (!profileName) {
+    cards.push({
+      id: 'profile_missing',
+      type: 'missing_profile',
+      icon: '👤',
+      title: 'Profile Missing',
+      body: 'Your pilot profile has no name or certificate information on file.',
+      whyItMatters: 'Your profile stores certificates, medical, and endorsements — required for the Aircraft Record Report and for verified progression history.',
+      action: 'Add your pilot profile',
+      actionHref: '/profile',
+      priority: 'medium',
+    });
+  }
+
+  // 3. Landings logged card — surface only if some flights exist but no landings recorded
+  if (stats.totalTime > 0 && stats.totalLandings === 0) {
+    cards.push({
+      id: 'landings_not_logged',
+      type: 'next_step',
+      icon: '🛬',
+      title: 'Landings Not Logged',
+      body: 'You have flight time logged but no landings recorded. The FAA requires specific landing counts for solo and currency.',
+      whyItMatters: 'Landing counts drive both PPL requirements (10 night full-stop) and currency (3 landings in 90 days). Missing this data makes your logbook incomplete.',
+      action: 'Edit your existing flights to add day and night landing counts',
+      actionHref: '/',
+      priority: 'medium',
+    });
+  }
+
+  // 4. Phase-appropriate requirement cards
+  const priorityKeys = getPriorityRequirements(phase);
+  for (const key of priorityKeys) {
+    const r = requirements[key];
+    if (!r || r.met) continue;
+    const cfg = REQUIREMENT_CARD_CONFIG[key];
+    if (!cfg) continue;
+    const remaining = r.deficit;
+    const unitStr = r.unit === 'landings'
+      ? `${remaining} landing${remaining !== 1 ? 's' : ''}`
+      : `${remaining}h`;
+    // Override generic title for soloTime if solo has started
+    let title = cfg.title;
+    if (key === 'soloTime' && r.actual > 0) title = 'Solo Time';
+    if (key === 'soloXC' && r.actual > 0) title = 'Cross-Country Not Complete';
+    if (key === 'nightHours' && r.actual > 0) title = 'Night Training';
+    if (key === 'simulatedInstrument' && r.actual > 0) title = 'Instrument Training';
+
+    cards.push({
+      ...cfg,
+      title,
+      body: `${r.actual}${r.unit === 'landings' ? ' landings' : 'h'} of ${r.required}${r.unit === 'landings' ? ' landings' : 'h'} required — ${unitStr} remaining (${r.regulation}).`,
+      current: r.actual,
+      required: r.required,
+      unit: r.unit,
+    });
+  }
+
+  return cards;
 }
 
 /**
@@ -493,15 +711,21 @@ function buildViewGuidanceCards(deficiencies, phase) {
  *
  * Single authoritative source for all progression UI.
  * Returns shape compatible with buildPilotState() and all view routes.
+ *
+ * @param {Array}  entries
+ * @param {Object} options
+ *   @param {string} [options.asOf]
+ *   @param {Object} [options.thresholds]
+ *   @param {Object} [options.profile]   — pilot profile for situation-aware cards
  */
-export function computePplPart61Progress(entries, { asOf, thresholds } = {}) {
+export function computePplPart61Progress(entries, { asOf, thresholds, profile } = {}) {
   const faa = computePplRequirements(entries, { asOf, thresholds });
   const cfg = PHASE_CONFIG[faa.phase] || PHASE_CONFIG.foundation;
 
   const viewStats    = buildViewStats(faa.stats, entries);
   const readiness    = buildViewReadiness(faa.requirements);
   const milestones   = buildViewMilestones(faa.stats, faa.phase);
-  const guidanceCards = buildViewGuidanceCards(faa.deficiencies, faa.phase);
+  const guidanceCards = buildViewGuidanceCards(faa.stats, faa.requirements, faa.phase, profile || null);
   const recommendations = faa.deficiencies.slice(0, 3);
 
   const completedMilestones = milestones.filter(m => m.status === 'completed').length;

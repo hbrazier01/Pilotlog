@@ -166,7 +166,7 @@ function buildPilotState(asOf = new Date().toISOString()) {
   const entries        = readEntries();
   const attestations   = readAttestations();
   // FAA engine is the single source of truth for all progression state
-  const prog           = computePplPart61Progress(entries, { asOf });
+  const prog           = computePplPart61Progress(entries, { asOf, profile });
 
   const verifiedFlights  = entries.filter(e => e.pilotId && !e.unverified).length;
   const attestationCount = Array.isArray(attestations) ? attestations.length : 0;
@@ -1399,18 +1399,19 @@ app.get("/", (_req, res) => {
               <span class="urgency-badge none">On Track</span>
             </div>
             <div class="today-headline" style="color:#22c55e;">You are on track. Keep the momentum.</div>
-            <div class="today-reason">\${fallback.slice(0,160)}</div>\`;
+            <div class="today-reason">\${fallback.slice(0,200)}</div>\`;
         } else {
           const c = d.todayCard;
-          const urgencyClass = c.priority || 'none';
+          const ctaHref = c.actionHref || '/pilot-report';
+          const ctaLabel = c.type === 'phase_summary' ? 'View Pilot Report →' : (c.action ? c.action.slice(0,52) + ' →' : 'View Pilot Report →');
           todayEl.innerHTML = \`\${changedBanner}
             <div class="today-card-header">
               <span class="phase-badge">\${d.phaseLabel}</span>
-              \${c.priority ? \`<span class="urgency-badge \${urgencyClass}">\${c.priority}</span>\` : ''}
             </div>
             <div class="today-headline">\${(c.title || '').slice(0,80)}</div>
-            <div class="today-reason">\${(c.body || '').slice(0,160)}</div>
-            <a class="today-cta" href="/pilot-report">View Pilot Report →</a>
+            <div class="today-reason">\${(c.body || '').slice(0,200)}</div>
+            \${c.whyItMatters ? \`<div class="today-why" style="font-size:12px;color:#6b7280;line-height:1.5;margin-bottom:12px;padding:10px 12px;background:#0b0f18;border-left:3px solid #1a3a8f;border-radius:0 6px 6px 0;">\${c.whyItMatters.slice(0,240)}</div>\` : ''}
+            <a class="today-cta" href="\${ctaHref}">View Pilot Report →</a>
             <div class="today-footer" style="margin-top:10px;">
               \${d.secondaryCards.map(sc => \`<span class="secondary-chip">\${(sc.title || '').slice(0,52)}</span>\`).join('')}
             </div>\`;
@@ -1447,22 +1448,38 @@ app.get("/", (_req, res) => {
         }
 
         // ── Readiness Cards (guidance cards rendered as advisory lanes) ───────
+        // Skip the phase_summary card (index 0) — it is already shown in today-card.
         const container = document.getElementById('readiness-cards');
-        const laneHtml = d.guidanceCards.slice(0,4).map(c => {
+        const reqCards = d.guidanceCards.filter(c => c.type !== 'phase_summary').slice(0,4);
+        const laneHtml = reqCards.map(c => {
           const col = PRIORITY_COLOR[c.priority] || '#b6b9c6';
-          const catLabel = (c.category || '').replace(/_/g,' ').toUpperCase();
+          const typeLabel = {
+            faa_requirement: 'FAA REQUIREMENT',
+            missing_profile: 'PROFILE',
+            next_step: 'ACTION NEEDED',
+            verification: 'VERIFICATION',
+            currency: 'CURRENCY',
+          }[c.type] || (c.category || '').replace(/_/g,' ').toUpperCase() || 'ADVISORY';
+          const progressHtml = (c.current !== undefined && c.required !== undefined)
+            ? \`<div style="margin:6px 0 4px;display:flex;align-items:center;gap:8px;">
+                <div style="flex:1;height:4px;border-radius:2px;background:#1a1f30;overflow:hidden;">
+                  <div style="width:\${Math.min(100, Math.round((c.current/c.required)*100))}%;height:100%;background:\${col};border-radius:2px;"></div>
+                </div>
+                <span style="font-size:11px;color:#6b7280;white-space:nowrap;">\${c.current}\${c.unit==='landings'?' ldn':'h'} / \${c.required}\${c.unit==='landings'?' ldn':'h'}</span>
+              </div>\`
+            : '';
           return \`<div class="currency-card">
             <div class="currency-card-header">
               <span class="currency-dot" style="background:\${col};"></span>
-              <span class="currency-type">\${catLabel}</span>
-              <span class="currency-status-label" style="color:\${col};">\${(c.priority || '').toUpperCase()}</span>
+              <span class="currency-type">\${typeLabel}</span>
             </div>
-            <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:4px;">\${c.title}</div>
-            <div class="currency-message">\${(c.body || '').slice(0,120)}</div>
-            <div class="currency-action">→ \${(c.action || '').slice(0,72)}</div>
+            <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:4px;">\${(c.icon ? c.icon + ' ' : '')}\${c.title}</div>
+            <div class="currency-message">\${(c.body || '').slice(0,130)}</div>
+            \${progressHtml}
+            <div class="currency-action">→ \${(c.action || '').slice(0,80)}</div>
           </div>\`;
         }).join('');
-        container.innerHTML = laneHtml || '<div class="currency-card" style="color:#22c55e;font-size:13px;">All systems go — no active advisories.</div>';
+        container.innerHTML = laneHtml || '<div class="currency-card" style="color:#22c55e;font-size:13px;">All minimums met — you are eligible for the PPL practical test.</div>';
 
       } catch (err) {
         document.getElementById('readiness-label').textContent = 'Unavailable';
