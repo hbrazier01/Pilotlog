@@ -1264,17 +1264,39 @@ app.get("/", (_req, res) => {
     <div class="brand">PilotLog</div>
     <div class="nav">
       ${walletNavHtml(walletSession, identity)}
-        <a href="/logbook">Logbook</a>
+      <a href="/logbook">Logbook</a>
       <a href="/passport">Profile</a>
       <a href="/progression">Progress</a>
       <a href="/pilot-report">Report →</a>
     </div>
   </div>
 
+  ${totalFlights === 0 ? `
+  <div style="background:#0d1a0d;border:1px solid #164016;border-radius:16px;padding:28px 24px;margin-bottom:24px;">
+    <div style="font-size:22px;font-weight:800;color:#fff;margin-bottom:8px;">Welcome to PilotLog</div>
+    <div style="font-size:15px;color:#86efac;margin-bottom:16px;line-height:1.6;">Your private pilot training companion. Log your flights, track FAA requirements, and see your path to solo and checkride.</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px;">
+      <div style="background:#111f11;border:1px solid #1a3a1a;border-radius:10px;padding:14px 16px;">
+        <div style="font-size:11px;color:#4ade80;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Step 1</div>
+        <div style="font-size:14px;color:#e2e8f0;font-weight:600;">Log your first flight</div>
+        <div style="font-size:12px;color:#6b7280;margin-top:4px;">Use "+ Log Flight" below to record any flight — training, solo, or recreation.</div>
+      </div>
+      <div style="background:#111f11;border:1px solid #1a3a1a;border-radius:10px;padding:14px 16px;">
+        <div style="font-size:11px;color:#4ade80;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Step 2</div>
+        <div style="font-size:14px;color:#e2e8f0;font-weight:600;">Complete your profile</div>
+        <div style="font-size:12px;color:#6b7280;margin-top:4px;">Add your name, certificate status, and medical info in <a href="/passport" style="color:#9aa3ff;text-decoration:none;">Profile</a>.</div>
+      </div>
+      <div style="background:#111f11;border:1px solid #1a3a1a;border-radius:10px;padding:14px 16px;">
+        <div style="font-size:11px;color:#4ade80;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Step 3</div>
+        <div style="font-size:14px;color:#e2e8f0;font-weight:600;">Track your progress</div>
+        <div style="font-size:12px;color:#6b7280;margin-top:4px;">See FAA PPL requirements and training milestones in <a href="/progression" style="color:#9aa3ff;text-decoration:none;">Progress</a>.</div>
+      </div>
+    </div>
+  </div>` : `
   <div class="hero">
     <div class="big" id="stat-total-hrs">${fmt(totals.total)} hrs</div>
     <div class="sub" id="stat-sub">${pilotName} · PIC ${fmt(totals.pic)} · XC ${fmt(totals.xc)} · Night ${fmt(totals.night)}</div>
-  </div>
+  </div>`}
 
   <div class="grid">
     <div class="card">
@@ -1497,24 +1519,7 @@ app.get("/", (_req, res) => {
       const btn = e.target.querySelector('button[type="submit"]');
       const origBtnText = btn.textContent;
 
-      // 1. Require wallet session before doing anything
-      let walletStatus = null;
-      try {
-        walletStatus = await fetch('/wallet/status').then(r => r.json());
-      } catch (_) {}
-      if (!walletStatus?.connected) {
-        showToast('Connect wallet to save flight on-chain · Use the header button to connect', true);
-        return;
-      }
-
-      // 2. Require 1AM extension
-      const walletExt = window.midnight?.['1am'];
-      if (!walletExt || typeof walletExt.connect !== 'function') {
-        showToast('Wallet extension unavailable · Reconnect wallet to continue', true);
-        return;
-      }
-
-      // 3. Build flight payload
+      // Build flight payload
       const fd = new FormData(e.target);
       const body = {
         aircraftId: fd.get('aircraftId').toUpperCase().trim(),
@@ -1525,11 +1530,63 @@ app.get("/", (_req, res) => {
         from: (fd.get('from') || '').toUpperCase().trim(),
         to: (fd.get('to') || '').toUpperCase().trim(),
         remarks: (fd.get('remarks') || '').trim(),
+        ...(fd.get('dual')   ? { dual:   parseFloat(fd.get('dual'))   || 0 } : {}),
+        ...(fd.get('solo')   ? { solo:   parseFloat(fd.get('solo'))   || 0 } : {}),
+        ...(fd.get('pic')    ? { pic:    parseFloat(fd.get('pic'))    || 0 } : {}),
+        ...(fd.get('night')  ? { night:  parseFloat(fd.get('night'))  || 0 } : {}),
       };
 
-      // 4. Show "Saving to chain..."
-      btn.textContent = 'Saving to chain...';
+      btn.textContent = 'Saving…';
       btn.disabled = true;
+
+      try {
+        const saveRes = await fetch('/entries', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!saveRes.ok) {
+          const errBody = await saveRes.json().catch(() => ({}));
+          throw new Error(errBody.error || ('HTTP ' + saveRes.status));
+        }
+        e.target.reset();
+        e.target.querySelector('input[name="date"]').value = new Date().toISOString().slice(0,10);
+        toggleForm();
+        btn.textContent = origBtnText;
+        btn.disabled = false;
+        showToast('Flight saved');
+        sessionStorage.setItem('airlog_just_logged', '1');
+        refreshEntries();
+        return;
+      } catch (err) {
+        btn.textContent = origBtnText;
+        btn.disabled = false;
+        showToast('Failed to save flight · ' + err.message, true);
+        return;
+      }
+    }
+    // submitFlightOnChain — called when wallet is connected and pilot wants to anchor a flight on Midnight.
+    // Kept for future use; flight logging no longer requires this path.
+    async function _submitFlightOnChain_unused(body) {
+      // Require wallet session
+      let walletStatus = null;
+      try { walletStatus = await fetch('/wallet/status').then(r => r.json()); } catch (_) {}
+      if (!walletStatus?.connected) return null;
+      const walletExt = window.midnight?.['1am'];
+      if (!walletExt || typeof walletExt.connect !== 'function') return null;
+
+      let txHash = null;
+      let backfillTxId = null;
+      let walletAddress = walletStatus?.session?.address || null;
+
+      // placeholder: full on-chain flow preserved below but not called from main submit path
+      void walletAddress; void backfillTxId; void txHash; // suppress unused warnings
+      return null;
+    }
+    function _legacyOnChainFlight_noop(e) {
+      // The wallet-gated on-chain flow was removed in AIR-279.
+      // Midnight anchoring is now invisible infrastructure — flights save locally first.
+      // On-chain anchoring can be triggered separately via /entries/:id/anchor.
 
       let txHash = null;
       let backfillTxId = null;
@@ -2548,7 +2605,7 @@ app.get("/", (_req, res) => {
             <td><button onclick="requestVerification('${e.id}')" style="font-size:10px;padding:3px 8px;border:1px solid #374151;background:none;color:#9aa3ff;border-radius:5px;cursor:pointer;white-space:nowrap;">Request Verify</button></td>
           </tr>`;
         }).join("")}
-        ${recent.length === 0 ? '<tr><td colspan="8" class="muted">No flights logged yet.</td></tr>' : ""}
+        ${recent.length === 0 ? '<tr><td colspan="8" style="color:#6b7280;padding:20px 14px;font-size:13px;">No flights logged yet — use "+ Log Flight" above to record your first flight.</td></tr>' : ""}
       </tbody>
     </table>
   </div>
@@ -2602,31 +2659,25 @@ app.get("/entries", (_req, res) => {
 });
 
 app.post("/entries", (req, res) => {
-  const { date, aircraftId, totalTime, dayLandings, nightLandings, from, to, remarks, txHash, walletAddress: bodyWalletAddress } = req.body || {};
+  const { date, aircraftId, totalTime, dayLandings, nightLandings, from, to, remarks,
+          dual, solo, pic, xcCountry, night, sim, instrumentActual, instrumentHood,
+          txHash, walletAddress: bodyWalletAddress } = req.body || {};
   if (!aircraftId) {
     return res.status(400).json({ error: "aircraftId is required" });
   }
-  // Accept real txHash (64-char hex) or fallback sentinel `submitted-${Date.now()}`.
-  // AIR-233: Reject SDK txId values (Midnight contract identifiers, not blockchain hashes).
-  // A real blockchain hash is exactly 64 hex characters; anything else is treated as a fallback.
-  const txRef = txHash || null;
-  if (!txRef) {
-    return res.status(400).json({ error: "Wallet required to save flight — no transaction reference provided" });
-  }
-  // Normalise: if txRef is not a 64-char hex string and not a submitted- sentinel, treat as fallback.
-  const isRealHash = /^[0-9a-f]{64}$/i.test(txRef);
-  const normalisedTxRef = isRealHash ? txRef : (txRef.startsWith("submitted-") ? txRef : ("submitted-" + Date.now()));
+
+  // Wallet is OPTIONAL — flights can be saved locally without on-chain verification.
+  // If txHash/walletAddress is provided the entry is marked anchored/submitted; otherwise unverified.
   const walletSession = readWalletSession();
   const walletAddress = bodyWalletAddress || walletSession?.address || null;
-  if (!walletAddress) {
-    return res.status(400).json({ error: "Wallet not connected — connect your wallet before logging a flight" });
-  }
   const identity = readIdentity();
   const midname = (identity && identity.midnameVerified && identity.midname) ? identity.midname : undefined;
+
   const entryId = randomBytes(8).toString("hex");
+  const createdAt = new Date().toISOString();
   const entryBase = {
     id: entryId,
-    date: date || new Date().toISOString().slice(0, 10),
+    date: date || createdAt.slice(0, 10),
     aircraftId: String(aircraftId).toUpperCase().trim(),
     totalTime: Number(totalTime) || 0,
     dayLandings: Number(dayLandings) || 0,
@@ -2634,37 +2685,63 @@ app.post("/entries", (req, res) => {
     from: from ? String(from).toUpperCase().trim() : "",
     to: to ? String(to).toUpperCase().trim() : "",
     remarks: remarks ? String(remarks).trim() : "",
+    // FAA-relevant fields
+    ...(dual !== undefined     ? { dual:            Number(dual)            || 0 } : {}),
+    ...(solo !== undefined     ? { solo:            Number(solo)            || 0 } : {}),
+    ...(pic !== undefined      ? { pic:             Number(pic)             || 0 } : {}),
+    ...(xcCountry !== undefined ? { xcCountry:      Number(xcCountry)       || 0 } : {}),
+    ...(night !== undefined    ? { night:           Number(night)           || 0 } : {}),
+    ...(sim !== undefined      ? { sim:             Number(sim)             || 0 } : {}),
+    ...(instrumentActual !== undefined ? { instrumentActual: Number(instrumentActual) || 0 } : {}),
+    ...(instrumentHood !== undefined   ? { instrumentHood:   Number(instrumentHood)   || 0 } : {}),
   };
-  // Compute canonical hash — pilotId (wallet address) and midname (if verified) are bound into the hash
-  const { recordId, recordHash, canonical } = canonicalizeFlightEntry(
-    { ...entryBase, total: entryBase.totalTime, pilotId: walletAddress, ...(midname ? { midname } : {}) },
-    entryBase.aircraftId
-  );
-  const anchoredAt = new Date().toISOString();
-  // Determine chain status: real tx hash (64-char hex) = anchored; fallback ref = submitted (pending confirmation)
-  const isFallbackRef = normalisedTxRef.startsWith("submitted-");
-  const chainStatus = isFallbackRef ? "submitted" : "anchored";
+
+  // Determine chain status based on whether a wallet/txHash was provided
+  let anchorStatus = "unverified";
+  let anchored = false;
+  let anchorTx = null;
+  let anchorHash = null;
+  let canonicalPayload = null;
+
+  if (walletAddress) {
+    const txRef = txHash || null;
+    const isRealHash = txRef && /^[0-9a-f]{64}$/i.test(txRef);
+    const normalisedTxRef = txRef
+      ? (isRealHash ? txRef : (txRef.startsWith("submitted-") ? txRef : ("submitted-" + Date.now())))
+      : ("submitted-" + Date.now());
+    const isFallbackRef = normalisedTxRef.startsWith("submitted-");
+
+    const { recordId: rId, recordHash: rHash, canonical } = canonicalizeFlightEntry(
+      { ...entryBase, total: entryBase.totalTime, pilotId: walletAddress, ...(midname ? { midname } : {}) },
+      entryBase.aircraftId
+    );
+    anchorStatus = isFallbackRef ? "submitted" : "anchored";
+    anchored = !isFallbackRef;
+    anchorTx = normalisedTxRef;
+    anchorHash = rHash;
+    canonicalPayload = canonical;
+  }
+
   const entry = {
     ...entryBase,
-    pilotId: walletAddress,
+    ...(walletAddress ? { pilotId: walletAddress } : {}),
     ...(midname ? { midname } : {}),
-    recordId,
-    createdAt: anchoredAt,
-    anchored: !isFallbackRef,
-    anchorStatus: chainStatus,
-    anchoredAt,
-    anchorTx: normalisedTxRef,
-    anchorHash: recordHash,
-    canonicalPayload: canonical,
-    anchor: {
-      hash: recordHash,
-      walletAddress,
-      txHash: isFallbackRef ? null : normalisedTxRef,
-      anchoredAt,
-      status: chainStatus,
-      network: "preprod",
-    },
+    createdAt,
+    anchored,
+    anchorStatus,
+    ...(anchorTx ? { anchoredAt: createdAt, anchorTx, anchorHash, canonicalPayload } : {}),
+    ...(walletAddress ? {
+      anchor: {
+        hash: anchorHash,
+        walletAddress,
+        txHash: anchorTx && !anchorTx.startsWith("submitted-") ? anchorTx : null,
+        anchoredAt: createdAt,
+        status: anchorStatus,
+        network: "preprod",
+      }
+    } : {}),
   };
+
   const entries = readEntries();
   entries.push(entry);
   fs.writeFileSync(ENTRIES_PATH, JSON.stringify(entries, null, 2));
