@@ -621,13 +621,36 @@ function renderDashboard() {
   console.log(bold(cyan("  \u2500\u2500\u2500  Readiness  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")));
   console.log();
 
-  const readinessItems = Object.values(prog.readiness);
-  for (const r of readinessItems) {
-    const statusSymbol = r.status === "ready"   ? green("\u25cf") :
-                         r.status === "close"   ? yellow("\u25d1") :
-                         r.status === "building"? cyan("\u25cb") : gray("\u25cb");
+  // Curated primary progression metrics — max 7, guided experience
+  const PRIMARY_KEYS = ['totalTime', 'dualReceived', 'soloTime', 'soloXC', 'nightHours', 'simulatedInstrument', 'nightLandings'];
+  const SECONDARY_KEYS = ['dualXC', 'longSoloXC', 'soloControlledAirport', 'dualPrepMonths', 'nightXCHours'];
+
+  const primaryItems   = PRIMARY_KEYS.map(k => prog.readiness[k]).filter(Boolean);
+  const displayItems   = primaryItems.length >= 3 ? primaryItems : Object.values(prog.readiness);
+
+  function statusSymbol(r) {
+    const s = r.status;
+    if (s === "ready" || s === "completed") return green("\u25cf");
+    if (s === "close")                       return yellow("\u25d1");
+    if (s === "building" || s === "in_progress") return cyan("\u25cb");
+    return gray("\u25cb");
+  }
+
+  for (const r of displayItems) {
     const scoreLabel = `${r.score}%`.padStart(4);
-    console.log(`  ${statusSymbol}  ${r.label.padEnd(28)} ${scoreLabel}  ${bar(r.score, 18)}`);
+    console.log(`  ${statusSymbol(r)}  ${r.label.padEnd(28)} ${scoreLabel}  ${bar(r.score, 18)}`);
+  }
+
+  // Advanced FAA requirements — contextual detail strip (not primary progression)
+  const secondaryItems = SECONDARY_KEYS.map(k => prog.readiness[k]).filter(Boolean);
+  if (secondaryItems.length > 0 && primaryItems.length >= 3) {
+    const metCount = secondaryItems.filter(r => r.status === "completed").length;
+    console.log();
+    console.log(gray(`  \u2500\u2500\u2500  FAA Requirements  (${metCount}/${secondaryItems.length} met)`));
+    for (const r of secondaryItems) {
+      const sym = r.status === "completed" ? green("\u2713") : r.status === "close" ? yellow("\u25d1") : gray("\u25cb");
+      console.log(gray(`  ${sym}  ${r.label.padEnd(36)} ${String(r.score + "%").padStart(4)}`));
+    }
   }
 
   // ── Milestones ───────────────────────────────────────────────────────────────
