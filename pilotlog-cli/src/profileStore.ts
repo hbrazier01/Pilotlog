@@ -26,8 +26,8 @@ export type PilotProfile = {
 };
 
 const baseDir = process.env.PILOTLOG_HOME
-  ? process.env.PILOTLOG_HOME
-  : path.join(process.cwd(), ".pilotlog");
+  || process.env.PILOTLOG_DIR
+  || path.resolve(process.cwd(), "data");
 
 const profileFile = path.join(baseDir, "profile.json");
 

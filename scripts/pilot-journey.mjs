@@ -472,7 +472,7 @@ function renderMentor() {
 // ─── VIEW: DASHBOARD (redesigned) ─────────────────────────────────────────────
 
 function renderDashboard() {
-  const name      = profile?.pilot?.fullName || "Pilot";
+  const name      = profile?.pilot?.fullName?.trim() || "— Add pilot profile —";
   const totalH    = prog.stats.totalHours;
   const phase     = prog.label;
   const sinceLastFlight = daysSinceLastFlight(entries, asOf);
@@ -692,7 +692,7 @@ function renderDashboard() {
 // ─── VIEW: PASSPORT ───────────────────────────────────────────────────────────
 
 function renderPassport() {
-  const name = profile?.pilot?.fullName || "Pilot";
+  const name = profile?.pilot?.fullName?.trim() || "— Add pilot profile —";
 
   console.log();
   console.log(bold(cyan("  \u250f" + "\u2501".repeat(58) + "\u2513")));

@@ -153,9 +153,9 @@ if (command === "add") {
 
   const totals = entries.reduce(
     (acc, e: any) => {
-      acc.total += e.total || 0;
+      acc.total += e.total || (e as any).totalTime || 0;
       acc.pic += e.pic || 0;
-      acc.dual += e.dual || 0;
+      acc.dual += e.dual || (e as any).dualReceived || 0;
       acc.xc += e.xc || 0;
       acc.night += e.night || 0;
       acc.actualInstrument += e.actualInstrument || 0;
