@@ -171,8 +171,8 @@ function buildPilotState(asOf = new Date().toISOString()) {
   const verifiedFlights  = entries.filter(e => e.pilotId && !e.unverified).length;
   const attestationCount = Array.isArray(attestations) ? attestations.length : 0;
 
-  const walletConnected = !!(walletSession || identity?.walletAddress);
-  const walletAddress   = walletSession?.address || identity?.walletAddress || null;
+  const walletConnected = !!walletSession;
+  const walletAddress   = walletSession?.address || null;
   const midname         = identity?.midname || null;
   const midnameVerified = identity?.midnameVerified === true;
 
@@ -630,6 +630,14 @@ async function disconnectWallet() {
     await fetch('/wallet/disconnect', { method: 'POST' });
   } catch (_) {}
   if (el) { _walletSetDisconnected(el); }
+  // Update hero identity section to reflect disconnected state
+  const hero = document.getElementById('pilot-hero-identity');
+  if (hero) {
+    const hasProfile = hero.getAttribute('data-has-profile') === 'true';
+    hero.innerHTML = hasProfile
+      ? '<span class="pilot-name" style="color:#9aa3ff;">Local Profile Saved</span><span class="pilot-identity-line">Connect wallet to verify identity</span>'
+      : '<span class="pilot-name" style="color:#4b5563;">Pilot Identity Locked</span><span class="pilot-identity-line">Connect wallet to view your pilot profile</span>';
+  }
 }
 
 // ── Reconnect — re-runs the full connect flow ─────────────────────────────────
@@ -1279,6 +1287,7 @@ app.get("/", (_req, res) => {
     }
   }
 
+  const walletConnected = ps.walletConnected;
   const pilotName = ps.pilotName || null;
   const pilotPhaseLabel = ps.pilotPhaseLabel || null;
   const medicalStatus = ps.medicalStatus || "none";
@@ -1449,12 +1458,16 @@ app.get("/", (_req, res) => {
 
   <div class="hero">
     <div class="big" id="stat-total-hrs">${fmt(totals.total)} hrs</div>
-    <div id="pilot-hero-identity" style="margin-bottom:6px;">
-      ${pilotName
-        ? `<span class="pilot-name">${pilotName}<button class="pilot-edit-btn" onclick="fetch('/profile').then(r=>r.json()).then(p=>_showPilotIdentityModal(p))">edit</button></span>`
-        : `<button class="pilot-create-cta" onclick="_showPilotIdentityModal()">+ Create Pilot Profile</button>`
+    <div id="pilot-hero-identity" data-has-profile="${pilotName ? 'true' : 'false'}" style="margin-bottom:6px;">
+      ${walletConnected
+        ? (pilotName
+          ? `<span class="pilot-name">${pilotName}<button class="pilot-edit-btn" onclick="fetch('/profile').then(r=>r.json()).then(p=>_showPilotIdentityModal(p))">edit</button></span>`
+          : `<button class="pilot-create-cta" onclick="_showPilotIdentityModal()">+ Create Pilot Profile</button>`)
+        : (pilotName
+          ? `<span class="pilot-name" style="color:#9aa3ff;">Local Profile Saved</span><span class="pilot-identity-line">Connect wallet to verify identity</span>`
+          : `<span class="pilot-name" style="color:#4b5563;">Pilot Identity Locked</span><span class="pilot-identity-line">Connect wallet to view your pilot profile</span>`)
       }
-      ${(pilotPhaseLabel || medicalLabel) ? `<span class="pilot-identity-line">${[pilotPhaseLabel, medicalLabel ? `<span class="medical-status medical-${medicalStatus}">${medicalLabel}</span>` : null].filter(Boolean).join(' · ')}</span>` : ''}
+      ${walletConnected && (pilotPhaseLabel || medicalLabel) ? `<span class="pilot-identity-line">${[pilotPhaseLabel, medicalLabel ? `<span class="medical-status medical-${medicalStatus}">${medicalLabel}</span>` : null].filter(Boolean).join(' · ')}</span>` : ''}
     </div>
     <div class="sub" id="stat-sub"></div>
   </div>
