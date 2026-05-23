@@ -1250,12 +1250,17 @@ app.get("/", (_req, res) => {
   .progression-track { height:6px; border-radius:3px; background:#1a1f30; overflow:hidden; }
   .progression-fill { height:100%; border-radius:3px; background:linear-gradient(90deg,#1a3a8f,#9aa3ff); transition:width .4s ease; }
   /* Readiness scores */
-  #readiness-scores { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:8px; margin-bottom:14px; }
+  #readiness-scores { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:8px; margin-bottom:8px; }
   .readiness-score-item { background:#0e1220; border:1px solid #1a1f30; border-radius:10px; padding:10px 12px; }
   .readiness-score-label { font-size:10px; color:#6b7280; text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; }
   .readiness-score-val { font-size:16px; font-weight:800; margin-bottom:4px; }
   .readiness-score-track { height:3px; border-radius:2px; background:#1a1f30; overflow:hidden; }
   .readiness-score-fill { height:100%; border-radius:2px; }
+  /* Advanced FAA requirements — compact secondary strip */
+  #readiness-advanced { display:none; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
+  .adv-req-chip { font-size:11px; color:#4a5568; border:1px solid #1a1f30; border-radius:6px; padding:4px 10px; white-space:nowrap; }
+  .adv-req-chip.met { color:#374151; }
+  .adv-req-chip.unmet { color:#6b7280; }
   </style>
 </head>
 <body>
@@ -1303,6 +1308,7 @@ app.get("/", (_req, res) => {
     <div id="today-card" style="display:none;"></div>
     <div id="progression-bar" style="display:none;"></div>
     <div id="readiness-scores" style="display:none;"></div>
+    <div id="readiness-advanced"></div>
     <div class="currency-cards" id="readiness-cards">
       <div class="currency-card" style="color:#b6b9c6;font-size:13px;">Checking readiness…</div>
     </div>
@@ -1433,10 +1439,18 @@ app.get("/", (_req, res) => {
         }
 
         // ── Readiness Scores ─────────────────────────────────────────────────
+        // Curated 7-card progression strip — mirrors pilot-journey.mjs PRIMARY_KEYS.
+        // Advanced FAA requirements surface in a compact gray secondary strip below.
+        const PRIMARY_KEYS = ['totalTime', 'dualReceived', 'soloTime', 'soloXC', 'nightHours', 'simulatedInstrument', 'nightLandings'];
+        const ADVANCED_KEYS = ['longSoloXC', 'soloControlledAirport', 'dualPrepMonths', 'nightXCHours', 'dualXC'];
         const readinessScoresEl = document.getElementById('readiness-scores');
         if (d.readiness && Object.keys(d.readiness).length > 0) {
           const SCORE_COLOR = { ready: '#22c55e', close: '#f59e0b', building: '#9aa3ff', not_started: '#374151' };
-          readinessScoresEl.innerHTML = Object.values(d.readiness).map(r => {
+          const allReadiness = d.readiness;
+          const primaryItems = PRIMARY_KEYS.map(k => allReadiness[k]).filter(Boolean);
+          // Fallback: if readiness uses different keys (post-PPL), display all items as-is
+          const displayItems = primaryItems.length >= 3 ? primaryItems : Object.values(allReadiness);
+          readinessScoresEl.innerHTML = displayItems.map(r => {
             const col = SCORE_COLOR[r.status] || '#6b7280';
             return \`<div class="readiness-score-item">
               <div class="readiness-score-label">\${(r.label || '').replace(' Readiness','')}</div>
@@ -1445,12 +1459,25 @@ app.get("/", (_req, res) => {
             </div>\`;
           }).join('');
           readinessScoresEl.style.display = 'grid';
+
+          // Advanced requirements compact strip
+          const advancedEl = document.getElementById('readiness-advanced');
+          const advancedItems = ADVANCED_KEYS.map(k => allReadiness[k]).filter(Boolean);
+          if (advancedItems.length > 0 && primaryItems.length >= 3) {
+            advancedEl.innerHTML = advancedItems.map(r => {
+              const cls = r.status === 'ready' || r.status === 'completed' ? 'met' : 'unmet';
+              const check = cls === 'met' ? '✓ ' : '';
+              return \`<span class="adv-req-chip \${cls}">\${check}\${(r.label || '').replace(' Readiness','')}\${r.unit !== 'event' ? ' ' + r.score + '%' : (cls === 'met' ? '' : ' —')}</span>\`;
+            }).join('');
+            advancedEl.style.display = 'flex';
+          }
         }
 
         // ── Readiness Cards (guidance cards rendered as advisory lanes) ───────
-        // Skip the phase_summary card (index 0) — it is already shown in today-card.
+        // Skip the phase_summary card — it is already shown in today-card.
+        // Show up to 6 phase-appropriate req cards (phase_summary + 6 = 7-card total budget).
         const container = document.getElementById('readiness-cards');
-        const reqCards = d.guidanceCards.filter(c => c.type !== 'phase_summary').slice(0,4);
+        const reqCards = d.guidanceCards.filter(c => c.type !== 'phase_summary').slice(0,6);
         const laneHtml = reqCards.map(c => {
           const col = PRIORITY_COLOR[c.priority] || '#b6b9c6';
           const typeLabel = {
