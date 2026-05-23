@@ -1244,6 +1244,10 @@ app.get("/", (_req, res) => {
   .today-outcome { font-size:12px; color:#22c55e; font-weight:600; margin-bottom:4px; margin-top:-4px; }
   .today-cta { display:inline-block; margin-top:12px; padding:9px 20px; background:#1a3a8f; color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:700; cursor:pointer; text-decoration:none; }
   .today-cta:hover { background:#1e46b0; }
+  .earned-badges-section { margin:10px 0 12px; }
+  .earned-badges-label { font-size:9px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:#374151; margin-bottom:6px; }
+  .earned-badges { display:flex; flex-wrap:wrap; gap:5px; }
+  .earned-badge { font-size:10px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:3px 9px; border-radius:5px; border:1px solid #1a3050; background:#080f1a; color:#6ea8fe; white-space:nowrap; }
   .today-changed { font-size:12px; color:#22c55e; font-weight:600; margin-bottom:6px; }
   /* Progression bar */
   #progression-bar { margin-bottom:14px; }
@@ -1413,6 +1417,19 @@ app.get("/", (_req, res) => {
       const BG    = { current: '#052e16', needs_attention: '#1c1203', not_current: '#1c0505' };
       const PRIORITY_COLOR = { critical: '#ef4444', high: '#f97316', medium: '#f59e0b', low: '#60a5fa' };
 
+      // Build earned milestone badge HTML from progression milestones.
+      // Only renders completed milestones. Returns empty string when none earned.
+      function buildEarnedBadgesHtml(milestones) {
+        if (!Array.isArray(milestones)) return '';
+        const earned = milestones.filter(m => m.status === 'completed');
+        if (earned.length === 0) return '';
+        const chips = earned.map(m => \`<span class="earned-badge">\${m.label}</span>\`).join('');
+        return \`<div class="earned-badges-section">
+          <div class="earned-badges-label">Earned</div>
+          <div class="earned-badges">\${chips}</div>
+        </div>\`;
+      }
+
       try {
         const res = await fetch('/api/dashboard-state');
         if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -1441,7 +1458,8 @@ app.get("/", (_req, res) => {
               <span class="urgency-badge none">On Track</span>
             </div>
             <div class="today-headline" style="color:#22c55e;">You are on track. Keep the momentum.</div>
-            <div class="today-reason">\${fallback.slice(0,200)}</div>\`;
+            <div class="today-reason">\${fallback.slice(0,200)}</div>
+            \${buildEarnedBadgesHtml(d.milestones)}\`;
         } else {
           const c = d.todayCard;
           const ctaHref = c.actionHref || '/pilot-report';
@@ -1453,6 +1471,7 @@ app.get("/", (_req, res) => {
             <div class="today-headline">\${(c.title || '').slice(0,80)}</div>
             <div class="today-reason">\${(c.body || '').slice(0,200)}</div>
             \${c.whyItMatters ? \`<div class="today-why" style="font-size:12px;color:#6b7280;line-height:1.5;margin-bottom:12px;padding:10px 12px;background:#0b0f18;border-left:3px solid #1a3a8f;border-radius:0 6px 6px 0;">\${c.whyItMatters.slice(0,240)}</div>\` : ''}
+            \${buildEarnedBadgesHtml(d.milestones)}
             <a class="today-cta" href="\${ctaHref}">View Pilot Report →</a>
             <div class="today-footer" style="margin-top:10px;">
               \${d.secondaryCards.map(sc => \`<span class="secondary-chip">\${(sc.title || '').slice(0,52)}</span>\`).join('')}
