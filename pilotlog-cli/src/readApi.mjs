@@ -1133,7 +1133,10 @@ app.get("/", (_req, res) => {
     }
   }
 
-  const pilotName = profile?.pilot?.fullName || "Pilot";
+  const pilotName = ps.pilotName || null;
+  const pilotPhaseLabel = ps.pilotPhaseLabel || null;
+  const medicalStatus = ps.medicalStatus || "none";
+  const medicalLabel = ps.medicalLabel || null;
 
   const fmt = (n) => Number(n || 0).toFixed(1);
   const totalFlights = entries.length;
@@ -1225,6 +1228,15 @@ app.get("/", (_req, res) => {
   .currency-action { font-size:12px; color:#9aa3ff; margin-top:6px; }
   .section-title { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:#b6b9c6; margin-bottom:10px; }
   @media(max-width:820px) { .big { font-size:40px; } }
+  .pilot-name { display:block; font-size:18px; font-weight:700; color:#f1f5f9; margin-bottom:2px; }
+  .pilot-identity-line { display:block; font-size:13px; color:#b6b9c6; margin-top:2px; }
+  .medical-status { font-weight:600; }
+  .medical-current { color:#22c55e; }
+  .medical-basicmed { color:#22c55e; }
+  .medical-expiring_soon { color:#f59e0b; }
+  .medical-expired { color:#ef4444; }
+  .medical-none { color:#6b7280; }
+  .medical-unknown { color:#6b7280; }
   /* Today Card */
   #today-card { background:#0d1220; border:1px solid #1e2a48; border-radius:16px; padding:18px 20px; margin-bottom:14px; }
   .today-card-header { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
@@ -1289,7 +1301,10 @@ app.get("/", (_req, res) => {
 
   <div class="hero">
     <div class="big" id="stat-total-hrs">${fmt(totals.total)} hrs</div>
-    <div class="sub" id="stat-sub">${pilotName} · PIC ${fmt(totals.pic)} · XC ${fmt(totals.xc)} · Night ${fmt(totals.night)}</div>
+    <div class="sub" id="stat-sub">
+      ${pilotName ? `<span class="pilot-name">${pilotName}</span>` : ''}
+      ${(pilotPhaseLabel || medicalLabel) ? `<span class="pilot-identity-line">${[pilotPhaseLabel, medicalLabel ? `<span class="medical-status medical-${medicalStatus}">${medicalLabel}</span>` : null].filter(Boolean).join(' · ')}</span>` : ''}
+    </div>
   </div>
 
   <div class="grid">
