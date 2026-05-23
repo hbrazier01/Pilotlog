@@ -1,18 +1,18 @@
 {
-  "walletAddress": "mn_shield-cpk_preprod1ymqryyhvfj56kr2pqc2qg545r4rdz7g5rg7xu83hh8776j44yxdsjasp4x",
-  "midname": "hbrazier.night",
+  "walletAddress": null,
+  "midname": null,
   "did": null,
-  "midnameVerified": true,
-  "verifiedAt": "2026-05-07T22:28:15.629Z",
-  "identitySource": "midname",
-  "networkId": "preprod",
-  "resolvedType": "shielded",
-  "resolvedAddress": "mn_shield-cpk_preprod1ymqryyhvfj56kr2pqc2qg545r4rdz7g5rg7xu83hh8776j44yxdsjasp4x",
+  "midnameVerified": false,
+  "verifiedAt": null,
+  "identitySource": null,
+  "networkId": null,
+  "resolvedType": null,
+  "resolvedAddress": null,
   "fields": {
-    "name": "Holland",
+    "name": "",
     "avatar": "",
     "bio": "",
     "github": "",
-    "twitter": "@hollandbrazier"
+    "twitter": ""
   }
 }

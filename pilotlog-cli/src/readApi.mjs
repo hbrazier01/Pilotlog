@@ -685,7 +685,7 @@ function _showPilotIdentityModal(prefill) {
       <form id="pilot-identity-form">
         <div style="margin-bottom:16px;">
           <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#b6b9c6;margin-bottom:6px;">Full Name</label>
-          <input id="pi-fullname" type="text" placeholder="e.g. Holland Brazier" value="\${fullName}" style="width:100%;background:#0b0f18;border:1px solid #222843;border-radius:8px;padding:10px 12px;color:#fff;font-size:15px;box-sizing:border-box;" required />
+          <input id="pi-fullname" type="text" placeholder="e.g. Jane Smith" value="\${fullName}" style="width:100%;background:#0b0f18;border:1px solid #222843;border-radius:8px;padding:10px 12px;color:#fff;font-size:15px;box-sizing:border-box;" required />
         </div>
         <div style="margin-bottom:16px;">
           <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#b6b9c6;margin-bottom:6px;">Medical Type</label>
