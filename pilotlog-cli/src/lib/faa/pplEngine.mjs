@@ -70,8 +70,8 @@ export const PPL_PHASES = {
     order: 0,
   },
   discovery: {
-    label: 'Discovery Flight',
-    description: 'You have taken your first flight. Continue with scheduled lessons to build momentum.',
+    label: 'Discovery Phase',
+    description: 'You logged your first training flight. Consistency matters more than lesson duration during early progression.',
     order: 1,
   },
   foundation_training: {
@@ -241,6 +241,12 @@ export function aggregateStats(entries, asOf) {
   // Total landings
   const totalLandings = Math.round(dayLandings + nightLandings);
 
+  // Discovery flight: explicitly marked via trainingTags or lessonType
+  const hasDiscoveryFlight = entries.some(e =>
+    (Array.isArray(e.trainingTags) && e.trainingTags.includes('discovery_flight')) ||
+    e.lessonType === 'discovery'
+  );
+
   return {
     totalTime:              parseFloat(totalTime.toFixed(1)),
     pic:                    parseFloat(pic.toFixed(1)),
@@ -264,6 +270,7 @@ export function aggregateStats(entries, asOf) {
     lastFlightDate,
     daysSinceLastFlight,
     totalFlights:           entries.length,
+    hasDiscoveryFlight,
   };
 }
 
@@ -392,8 +399,11 @@ export function computePhase(stats, requirements, hasPpl) {
   // Foundation: early dual lessons
   if (stats.totalTime >= 1) return 'foundation_training';
 
-  // Discovery: first entry logged
-  if (stats.totalFlights > 0) return 'discovery';
+  // Discovery: explicitly tagged as discovery_flight or lessonType: 'discovery'
+  if (stats.hasDiscoveryFlight && stats.totalFlights > 0) return 'discovery';
+
+  // First entry logged but not tagged as discovery — treat as foundation
+  if (stats.totalFlights > 0) return 'foundation_training';
 
   return 'no_flights';
 }
@@ -671,10 +681,10 @@ function phaseSummaryCard(stats, phase, requirements) {
     },
     discovery: {
       icon: '✈️',
-      title: 'Discovery Flight Complete',
-      body: `You have ${stats.totalTime}h logged. Your next goal is to establish a regular lesson schedule.`,
-      whyItMatters: 'Frequency matters more than length. Consistent lessons build muscle memory faster than occasional long sessions.',
-      action: 'Schedule 2 lessons per week to build momentum',
+      title: 'Training Journey Started',
+      body: `You logged your first training flight${stats.totalTime > 0 ? ` — ${stats.totalTime}h in your logbook` : ''}. Consistency matters more than lesson duration during early progression.`,
+      whyItMatters: 'Frequency matters more than length. Consistent lessons build motor memory faster than occasional long sessions.',
+      action: 'Schedule your next lesson to build momentum',
     },
     foundation_training: {
       icon: '🎓',

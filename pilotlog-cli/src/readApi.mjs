@@ -1312,7 +1312,7 @@ app.get("/", (_req, res) => {
   </div>
 
   <div class="assistant-section">
-    <div class="section-title">Flight Readiness</div>
+    <div class="section-title">Training Journey</div>
     <div id="readiness-chip" class="readiness-chip" style="background:#1a1f30;color:#b6b9c6;">
       <span id="readiness-dot" style="width:8px;height:8px;border-radius:50%;background:#b6b9c6;display:inline-block;"></span>
       <span id="readiness-label">Loading…</span>
@@ -1373,6 +1373,7 @@ app.get("/", (_req, res) => {
       <div class="training-focus-section">
         <div class="training-focus-label">Training Focus <span style="color:#4a5568;font-weight:400;">(optional — select all that apply)</span></div>
         <div class="training-chips" id="trainingChips">
+          <span class="training-chip" data-tag="discovery_flight">Discovery Flight</span>
           <span class="training-chip" data-tag="pattern_work">Pattern Work</span>
           <span class="training-chip" data-tag="crosswind_landings">Crosswind</span>
           <span class="training-chip" data-tag="stalls">Stalls</span>
@@ -1462,8 +1463,6 @@ app.get("/", (_req, res) => {
             \${buildEarnedBadgesHtml(d.milestones)}\`;
         } else {
           const c = d.todayCard;
-          const ctaHref = c.actionHref || '/pilot-report';
-          const ctaLabel = c.type === 'phase_summary' ? 'View Pilot Report →' : (c.action ? c.action.slice(0,52) + ' →' : 'View Pilot Report →');
           todayEl.innerHTML = \`\${changedBanner}
             <div class="today-card-header">
               <span class="phase-badge">\${d.phaseLabel}</span>
@@ -1472,8 +1471,7 @@ app.get("/", (_req, res) => {
             <div class="today-reason">\${(c.body || '').slice(0,200)}</div>
             \${c.whyItMatters ? \`<div class="today-why" style="font-size:12px;color:#6b7280;line-height:1.5;margin-bottom:12px;padding:10px 12px;background:#0b0f18;border-left:3px solid #1a3a8f;border-radius:0 6px 6px 0;">\${c.whyItMatters.slice(0,240)}</div>\` : ''}
             \${buildEarnedBadgesHtml(d.milestones)}
-            <a class="today-cta" href="\${ctaHref}">View Pilot Report →</a>
-            <div class="today-footer" style="margin-top:10px;">
+            <div class="today-footer" style="margin-top:4px;">
               \${d.secondaryCards.map(sc => \`<span class="secondary-chip">\${(sc.title || '').slice(0,52)}</span>\`).join('')}
             </div>\`;
         }
