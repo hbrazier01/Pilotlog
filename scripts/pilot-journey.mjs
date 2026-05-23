@@ -472,16 +472,34 @@ function renderMentor() {
 // ─── VIEW: DASHBOARD (redesigned) ─────────────────────────────────────────────
 
 function renderDashboard() {
-  const name      = profile?.pilot?.fullName?.trim() || "— Add pilot profile —";
+  const name      = profile?.pilot?.fullName?.trim() || null;
   const totalH    = prog.stats.totalHours;
   const phase     = prog.label;
   const sinceLastFlight = daysSinceLastFlight(entries, asOf);
 
+  // Medical status badge
+  function medicalBadge() {
+    const ms = state.medicalStatus;
+    const label = state.medicalLabel;
+    if (ms === 'current' || ms === 'basicmed') return green(label);
+    if (ms === 'expiring_soon') return yellow(label);
+    if (ms === 'expired') return red(label);
+    return gray(label);
+  }
+
   // ── Header ──────────────────────────────────────────────────────────────────
+  const W = 58;
   console.log();
-  console.log(bold(cyan("  \u250f" + "\u2501".repeat(58) + "\u2513")));
-  console.log(bold(cyan("  \u2503") + `  \u2708  PilotLog  \u2014  ${name}`.padEnd(58) + cyan("\u2503")));
-  console.log(bold(cyan("  \u2517" + "\u2501".repeat(58) + "\u251b")));
+  console.log(bold(cyan("  \u250f" + "\u2501".repeat(W) + "\u2513")));
+  console.log(bold(cyan("  \u2503") + `  \u2708  PilotLog`.padEnd(W) + cyan("\u2503")));
+  if (name) {
+    console.log(bold(cyan("  \u2503") + `  ${bold(name)}`.padEnd(W + 8) + cyan("\u2503")));
+  } else {
+    console.log(bold(cyan("  \u2503") + `  \u2014 Add your name: pilotlog profile set --fullName "..."`.padEnd(W) + cyan("\u2503")));
+  }
+  const identityLine = `  ${phase}  \u00b7  ${state.medicalLabel}`;
+  console.log(bold(cyan("  \u2503")) + identityLine.padEnd(W) + bold(cyan("\u2503")));
+  console.log(bold(cyan("  \u2517" + "\u2501".repeat(W) + "\u251b")));
   console.log();
 
   // ── Identity Unlock Flow ─────────────────────────────────────────────────────
@@ -706,12 +724,18 @@ function renderDashboard() {
 // ─── VIEW: PASSPORT ───────────────────────────────────────────────────────────
 
 function renderPassport() {
-  const name = profile?.pilot?.fullName?.trim() || "— Add pilot profile —";
+  const name = profile?.pilot?.fullName?.trim() || null;
 
   console.log();
-  console.log(bold(cyan("  \u250f" + "\u2501".repeat(58) + "\u2513")));
-  console.log(bold(cyan("  \u2503") + `  \u{1F6E1}  Pilot Passport  \u2014  ${name}`.padEnd(58) + cyan("\u2503")));
-  console.log(bold(cyan("  \u2517" + "\u2501".repeat(58) + "\u251b")));
+  const PW = 58;
+  console.log(bold(cyan("  \u250f" + "\u2501".repeat(PW) + "\u2513")));
+  console.log(bold(cyan("  \u2503") + `  \u{1F6E1}  Pilot Passport`.padEnd(PW) + cyan("\u2503")));
+  if (name) {
+    console.log(bold(cyan("  \u2503") + `  ${bold(name)}`.padEnd(PW + 8) + cyan("\u2503")));
+  } else {
+    console.log(bold(cyan("  \u2503") + `  \u2014 pilotlog profile set --fullName "..."`.padEnd(PW) + cyan("\u2503")));
+  }
+  console.log(bold(cyan("  \u2517" + "\u2501".repeat(PW) + "\u251b")));
   console.log();
 
   // ── Identity Unlock Chain ─────────────────────────────────────────────────
@@ -743,10 +767,22 @@ function renderPassport() {
       ? yellow(`${state.pendingAttestations} Awaiting CFI Review`)
       : dim("none yet");
 
+  // Medical label with color
+  const medStatusLabel = (() => {
+    const ms = state.medicalStatus;
+    const label = state.medicalLabel;
+    if (ms === 'current' || ms === 'basicmed') return green(label);
+    if (ms === 'expiring_soon') return yellow(label);
+    if (ms === 'expired') return red(label);
+    return gray(label);
+  })();
+
   const rows = [
+    ["Name",             state.pilotName ? bold(state.pilotName) : dim("not set — pilotlog profile set --fullName")],
+    ["Pilot Phase",       state.pilotPhaseLabel || dim("unknown")],
+    ["Medical",           medStatusLabel],
     ["Verified Identity", state.midname ? `${state.midname}${state.midnameVerified ? "  \u2713" : ""}` : dim("not set")],
     ["Wallet",            state.walletConnected ? green("connected") : dim("not connected")],
-    ["Pilot Phase",       state.pilotPhaseLabel || dim("unknown")],
     ["Verified Flights",  String(state.verifiedFlights)],
     ["CFI Verifications", cfiVerifiedLabel],
     ["Milestones",        `${state.milestoneProgress}%`],

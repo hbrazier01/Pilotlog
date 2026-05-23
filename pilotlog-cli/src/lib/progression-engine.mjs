@@ -396,6 +396,41 @@ export function computeMilestones(profile, entries, attestations, asOf) {
         ? `Checkride prep session logged (${countTag(entries, 'checkride_prep')} session${countTag(entries, 'checkride_prep') !== 1 ? 's' : ''})`
         : 'Log a checkride_prep flight when approaching your checkride'
     ),
+    // ─── Pilot Identity Milestones ─────────────────────────────────────────────
+    ms(
+      'medical_obtained',
+      'Medical Certificate Obtained',
+      '🩺',
+      (() => {
+        const m = profile?.medical;
+        if (!m || m.kind === 'None') return 'upcoming';
+        if (m.kind === 'BasicMed') return m.basicMed?.onlineCourseDate ? 'completed' : 'upcoming';
+        return m.class ? 'completed' : 'upcoming';
+      })(),
+      (() => {
+        const m = profile?.medical;
+        if (!m || m.kind === 'None') return 'Obtain a medical certificate or BasicMed to fly solo';
+        if (m.kind === 'BasicMed') return m.basicMed?.onlineCourseDate ? 'BasicMed on file' : 'BasicMed (incomplete — add course date)';
+        return m.class ? `Class ${m.class} Medical on file` : 'Medical kind set but class missing';
+      })()
+    ),
+    ms(
+      'pilot_profile_complete',
+      'Pilot Profile Completed',
+      '🪪',
+      (() => {
+        const hasName = !!profile?.pilot?.fullName?.trim();
+        const hasMedical = !!profile?.medical && profile.medical.kind !== 'None';
+        return (hasName && hasMedical) ? 'completed' : (hasName ? 'in_progress' : 'upcoming');
+      })(),
+      (() => {
+        const hasName = !!profile?.pilot?.fullName?.trim();
+        const hasMedical = !!profile?.medical && profile.medical.kind !== 'None';
+        if (hasName && hasMedical) return 'Profile complete — name and medical on file';
+        if (hasName) return 'Add medical information to complete profile';
+        return 'Add your name via: pilotlog profile set --fullName "..."';
+      })()
+    ),
   ];
 }
 
@@ -640,8 +675,23 @@ export function buildGuidanceCards(progressionState, readiness, entries, profile
     }
   }
 
-  // Medical reminder
+  // Medical guidance
   const medical = profile?.medical;
+  if (!medical || medical.kind === 'None') {
+    // Only surface this for early-stage pilots where medical is truly blocking
+    if (['discovery', 'student_pilot', 'solo_ready', 'solo_complete'].includes(progressionState)) {
+      cards.push({
+        id: 'no_medical',
+        title: 'Medical Certificate Not on File',
+        body: 'A student pilot must hold at least a Class 3 medical certificate to fly solo.',
+        action: 'See an Aviation Medical Examiner (AME) and add your medical: pilotlog medical set --kind Medical --class 3',
+        priority: 'medium',
+        category: 'identity',
+        icon: '🩺',
+      });
+    }
+  }
+
   if (medical?.kind === 'Medical' && medical?.expires) {
     const daysLeft = Math.ceil((new Date(medical.expires) - new Date(asOf)) / 86400000);
     if (daysLeft <= 60 && daysLeft > 0) {

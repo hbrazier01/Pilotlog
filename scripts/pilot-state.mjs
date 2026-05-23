@@ -53,6 +53,40 @@ function computeIdentityLevel(walletSession, midname, verifiedFlights, attestati
 }
 
 /**
+ * Compute medical certificate status from profile.medical and asOf date.
+ * Returns { status, label, daysUntilExpiry }
+ *   status: 'current' | 'expiring_soon' | 'expired' | 'none' | 'basicmed'
+ */
+function computeMedicalStatus(medical, asOf) {
+  if (!medical || medical.kind === 'None') {
+    return { status: 'none', label: 'No Medical on File', daysUntilExpiry: null };
+  }
+  if (medical.kind === 'BasicMed') {
+    const courseDate = medical.basicMed?.onlineCourseDate;
+    if (!courseDate) {
+      return { status: 'none', label: 'BasicMed (incomplete)', daysUntilExpiry: null };
+    }
+    const courseExpiry = new Date(courseDate);
+    courseExpiry.setFullYear(courseExpiry.getFullYear() + 2);
+    const now = new Date(asOf);
+    const daysUntilExpiry = Math.ceil((courseExpiry - now) / 86400000);
+    if (now > courseExpiry) return { status: 'expired', label: 'BasicMed Expired', daysUntilExpiry };
+    if (daysUntilExpiry <= 90) return { status: 'expiring_soon', label: `BasicMed Expiring in ${daysUntilExpiry}d`, daysUntilExpiry };
+    return { status: 'basicmed', label: 'BasicMed Current', daysUntilExpiry };
+  }
+  // Medical certificate (Class 1/2/3)
+  if (!medical.expires) {
+    return { status: 'unknown', label: `Class ${medical.class} Medical (no expiry set)`, daysUntilExpiry: null };
+  }
+  const expiry = new Date(medical.expires);
+  const now = new Date(asOf);
+  const daysUntilExpiry = Math.ceil((expiry - now) / 86400000);
+  if (now > expiry) return { status: 'expired', label: `Class ${medical.class} Medical Expired`, daysUntilExpiry };
+  if (daysUntilExpiry <= 90) return { status: 'expiring_soon', label: `Class ${medical.class} Medical Expiring in ${daysUntilExpiry}d`, daysUntilExpiry };
+  return { status: 'current', label: `Class ${medical.class} Medical Current`, daysUntilExpiry };
+}
+
+/**
  * Compute trust level label.
  */
 function trustLevelLabel(level) {
@@ -104,6 +138,13 @@ export function buildPilotState(asOf = new Date().toISOString()) {
   const identityLevel    = computeIdentityLevel(walletSession, midname, verifiedFlights, attestationCount);
   const trustLevel       = trustLevelLabel(identityLevel);
 
+  // Medical status
+  const medicalData   = profile?.medical || null;
+  const medicalStatus = computeMedicalStatus(medicalData, asOf);
+
+  // Pilot name
+  const pilotName = profile?.pilot?.fullName?.trim() || null;
+
   // Milestone progress percent
   const completedMilestones = prog.milestones.filter(m => m.status === "completed").length;
   const totalMilestones     = prog.milestones.length;
@@ -134,6 +175,15 @@ export function buildPilotState(asOf = new Date().toISOString()) {
     stats:            prog.stats,
     guidanceCards:    prog.guidanceCards,
     recommendations:  prog.recommendations,
+
+    // Medical
+    medical:       medicalData,
+    medicalStatus: medicalStatus.status,
+    medicalLabel:  medicalStatus.label,
+    medicalDaysUntilExpiry: medicalStatus.daysUntilExpiry,
+
+    // Pilot identity
+    pilotName,
 
     // Trust
     verifiedFlights,
