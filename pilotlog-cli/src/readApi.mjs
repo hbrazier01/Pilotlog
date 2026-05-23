@@ -432,7 +432,7 @@ function pilotPassportCardHtml(session, identity, profile, totals, { mode = "ful
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
         ${verificationBadge}
-        <a href="/passport" style="font-size:12px;color:#9aa3ff;text-decoration:none;">Passport →</a>
+        <a href="/pilot-report" style="font-size:12px;color:#9aa3ff;text-decoration:none;">Pilot Report →</a>
       </div>
     </div>`;
   }
@@ -1443,8 +1443,6 @@ app.get("/", (_req, res) => {
     <div class="brand">PilotLog</div>
     <div class="nav">
       ${walletNavHtml(walletSession, identity)}
-      <a href="/passport">Passport</a>
-      <a href="/progression">Journey</a>
       <a href="/pilot-report">Pilot Report →</a>
     </div>
   </div>
@@ -1746,7 +1744,7 @@ app.get("/", (_req, res) => {
           tfSection.innerHTML = \`
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
               <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#b6b9c6;">Training Focus</span>
-              <a href="/progression" style="font-size:11px;color:#4a6fa5;text-decoration:none;">\${tfCompleted.length}/\${tfTotal} logged → View Journey</a>
+              <span style="font-size:11px;color:#4a6fa5;">\${tfCompleted.length}/\${tfTotal} logged</span>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:6px;">\${tfHtml}</div>
           \`;
@@ -6432,7 +6430,6 @@ app.get("/identity/card", (_req, res) => {
     <div class="nav">
       ${walletNavHtml(session, identity)}
       <a href="/">Dashboard</a>
-      <a href="/passport">Passport</a>
       <a href="/pilot-report">Pilot Report →</a>
     </div>
   </div>
@@ -6896,7 +6893,7 @@ app.get("/review", (_req, res) => {
     <div class="nav">
       ${walletNavHtml(session, identity)}
       <a href="/">Dashboard</a>
-      <a href="/passport">Passport</a>
+      <a href="/pilot-report">Pilot Report →</a>
     </div>
   </div>
 
@@ -6910,7 +6907,7 @@ app.get("/review", (_req, res) => {
   </div>
 
   <div style="margin-top:32px;">
-    <a href="/passport" style="color:#9aa3ff;font-size:14px;text-decoration:none;">← Back to Passport</a>
+    <a href="/" style="color:#9aa3ff;font-size:14px;text-decoration:none;">← Back to Dashboard</a>
   </div>
 </div>
 
@@ -7242,8 +7239,6 @@ app.get("/progression", (_req, res) => {
 <div class="page">
   <nav>
     <a href="/">Dashboard</a>
-    <a href="/passport">Passport</a>
-    <a href="/progression" class="active">Journey</a>
     <a href="/pilot-report">Pilot Report</a>
   </nav>
 

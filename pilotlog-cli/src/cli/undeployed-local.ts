@@ -43,9 +43,7 @@ function usage() {
   console.log("  report [--out <path>]          Pilot report (currency, certs, hours)");
   console.log("  trust-report [--out <path>]    Buyer-facing trust dossier (provenance, compliance, risk)");
   console.log("");
-  console.log("  passport                       Pilot identity + trust level + unlock chain");
-  console.log("  dashboard                      Pilot journey overview (progression + readiness + guidance)");
-  console.log("  journey                        Visual pilot progression timeline");
+  console.log("  dashboard                      Pilot operating system (progression + readiness + guidance)");
   console.log("  milestones                     Milestone achievement tracker");
   console.log("  whats-next                     Personalized next-step guidance");
   console.log("  readiness                      Readiness status at a glance");
