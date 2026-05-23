@@ -1376,6 +1376,10 @@ app.get("/", (_req, res) => {
   @media(max-width:820px) { .big { font-size:40px; } }
   .pilot-name { display:block; font-size:18px; font-weight:700; color:#f1f5f9; margin-bottom:2px; }
   .pilot-identity-line { display:block; font-size:13px; color:#b6b9c6; margin-top:2px; }
+  .pilot-create-cta { background:none; border:1px solid #374151; color:#9aa3ff; font-size:13px; padding:4px 12px; border-radius:6px; cursor:pointer; font-weight:600; margin-bottom:4px; }
+  .pilot-create-cta:hover { border-color:#9aa3ff; color:#c4b5fd; }
+  .pilot-edit-btn { background:none; border:none; color:#4b5563; font-size:11px; cursor:pointer; padding:0; margin-left:6px; text-decoration:underline; }
+  .pilot-edit-btn:hover { color:#9aa3ff; }
   .medical-status { font-weight:600; }
   .medical-current { color:#22c55e; }
   .medical-basicmed { color:#22c55e; }
@@ -1447,10 +1451,14 @@ app.get("/", (_req, res) => {
 
   <div class="hero">
     <div class="big" id="stat-total-hrs">${fmt(totals.total)} hrs</div>
-    <div class="sub" id="stat-sub">
-      ${pilotName ? `<span class="pilot-name">${pilotName}</span>` : ''}
+    <div id="pilot-hero-identity" style="margin-bottom:6px;">
+      ${pilotName
+        ? `<span class="pilot-name">${pilotName}<button class="pilot-edit-btn" onclick="fetch('/profile').then(r=>r.json()).then(p=>_showPilotIdentityModal(p))">edit</button></span>`
+        : `<button class="pilot-create-cta" onclick="_showPilotIdentityModal()">+ Create Pilot Profile</button>`
+      }
       ${(pilotPhaseLabel || medicalLabel) ? `<span class="pilot-identity-line">${[pilotPhaseLabel, medicalLabel ? `<span class="medical-status medical-${medicalStatus}">${medicalLabel}</span>` : null].filter(Boolean).join(' · ')}</span>` : ''}
     </div>
+    <div class="sub" id="stat-sub"></div>
   </div>
 
   <div class="grid">
@@ -2698,8 +2706,7 @@ app.get("/", (_req, res) => {
         if (el('stat-landings'))      el('stat-landings').textContent      = landings;
         const sub = el('stat-sub');
         if (sub) {
-          const name = sub.textContent.split('·')[0].trim();
-          sub.textContent = name + ' · PIC ' + fmt(pic) + ' · XC ' + fmt(xc) + ' · Night ' + fmt(night);
+          sub.textContent = 'PIC ' + fmt(pic) + ' · XC ' + fmt(xc) + ' · Night ' + fmt(night);
         }
 
         // Update recent flights table
