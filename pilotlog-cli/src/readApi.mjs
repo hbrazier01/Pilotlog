@@ -284,6 +284,7 @@ function buildDashboardState(ps) {
     readiness:        ps.readiness,
     progressPct:      ps.progressPct,
     milestones:       ps.milestones,
+    trainingFocusMilestones: (ps.milestones || []).filter(m => m.id && m.id.startsWith('tag_')),
   };
 }
 
@@ -1261,6 +1262,13 @@ app.get("/", (_req, res) => {
   .adv-req-chip { font-size:11px; color:#4a5568; border:1px solid #1a1f30; border-radius:6px; padding:4px 10px; white-space:nowrap; }
   .adv-req-chip.met { color:#374151; }
   .adv-req-chip.unmet { color:#6b7280; }
+  /* Training focus chip selector */
+  .training-focus-section { margin-bottom:12px; }
+  .training-focus-label { font-size:11px; color:#b6b9c6; text-transform:uppercase; letter-spacing:.06em; margin-bottom:8px; }
+  .training-chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .training-chip { background:#0b0f18; border:1px solid #222843; color:#6b7280; border-radius:8px; padding:6px 12px; font-size:12px; font-weight:600; cursor:pointer; transition:all .15s; user-select:none; }
+  .training-chip:hover { border-color:#4a5568; color:#9aa3ff; }
+  .training-chip.selected { background:#1a2a4a; border-color:#4a6fa5; color:#9aa3ff; }
   </style>
 </head>
 <body>
@@ -1358,6 +1366,28 @@ app.get("/", (_req, res) => {
           <input type="text" name="remarks" placeholder="Optional notes" />
         </div>
       </div>
+      <div class="training-focus-section">
+        <div class="training-focus-label">Training Focus <span style="color:#4a5568;font-weight:400;">(optional — select all that apply)</span></div>
+        <div class="training-chips" id="trainingChips">
+          <span class="training-chip" data-tag="pattern_work">Pattern Work</span>
+          <span class="training-chip" data-tag="crosswind_landings">Crosswind</span>
+          <span class="training-chip" data-tag="stalls">Stalls</span>
+          <span class="training-chip" data-tag="slow_flight">Slow Flight</span>
+          <span class="training-chip" data-tag="steep_turns">Steep Turns</span>
+          <span class="training-chip" data-tag="ground_reference">Ground Ref</span>
+          <span class="training-chip" data-tag="emergency_procedures">Emergency</span>
+          <span class="training-chip" data-tag="short_field">Short Field</span>
+          <span class="training-chip" data-tag="soft_field">Soft Field</span>
+          <span class="training-chip" data-tag="cross_country">XC</span>
+          <span class="training-chip" data-tag="night">Night</span>
+          <span class="training-chip" data-tag="instrument">Instrument</span>
+          <span class="training-chip" data-tag="takeoffs_landings">T&amp;Ls</span>
+          <span class="training-chip" data-tag="radio_work">Radio Work</span>
+          <span class="training-chip" data-tag="navigation">Navigation</span>
+          <span class="training-chip" data-tag="traffic_pattern">Traffic Pattern</span>
+          <span class="training-chip" data-tag="checkride_prep">Checkride Prep</span>
+        </div>
+      </div>
       <div class="form-actions">
         <button type="submit" class="btn btn-sm">Save Flight</button>
         <button type="button" class="btn-cancel" onclick="toggleForm()">Cancel</button>
@@ -1370,6 +1400,12 @@ app.get("/", (_req, res) => {
   <script>
     const lastUsedAircraft = ${JSON.stringify(lastUsedAircraft)};
     window.pilotlogAttestationMap = ${JSON.stringify(flightAttestationMap)};
+
+    // Training chip toggle
+    document.getElementById('trainingChips').addEventListener('click', function(e) {
+      const chip = e.target.closest('.training-chip');
+      if (chip) chip.classList.toggle('selected');
+    });
 
     // State-driven dashboard — consumes /api/dashboard-state (pilotState -> dashboardState -> UI)
     (async function loadDashboard() {
@@ -1508,6 +1544,29 @@ app.get("/", (_req, res) => {
         }).join('');
         container.innerHTML = laneHtml || '<div class="currency-card" style="color:#22c55e;font-size:13px;">All minimums met — you are eligible for the PPL practical test.</div>';
 
+        // ── Training Focus Strip ──────────────────────────────────────────────
+        if (d.trainingFocusMilestones && d.trainingFocusMilestones.length > 0) {
+          const tfCompleted = d.trainingFocusMilestones.filter(m => m.status === 'completed');
+          const tfTotal     = d.trainingFocusMilestones.length;
+          const tfPct       = Math.round((tfCompleted.length / tfTotal) * 100);
+          const tfHtml = d.trainingFocusMilestones.map(m => {
+            const done = m.status === 'completed';
+            return \`<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:4px 10px;border-radius:8px;border:1px solid \${done ? '#1a3a2a' : '#1a1f30'};color:\${done ? '#22c55e' : '#374151'};background:\${done ? '#0a1f14' : 'transparent'};white-space:nowrap;">
+              \${done ? '✓ ' : ''}\${(m.label || '').replace(' Training','').replace(' Practice','').replace(' Maneuvers','').replace(' Proficiency','').replace(' Procedures','')}
+            </span>\`;
+          }).join('');
+          const tfSection = document.createElement('div');
+          tfSection.style.cssText = 'margin-top:16px;';
+          tfSection.innerHTML = \`
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#b6b9c6;">Training Focus</span>
+              <a href="/progression" style="font-size:11px;color:#4a6fa5;text-decoration:none;">\${tfCompleted.length}/\${tfTotal} logged → View Journey</a>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">\${tfHtml}</div>
+          \`;
+          container.parentNode.insertBefore(tfSection, container.nextSibling);
+        }
+
       } catch (err) {
         document.getElementById('readiness-label').textContent = 'Unavailable';
         document.getElementById('readiness-cards').innerHTML =
@@ -1559,6 +1618,8 @@ app.get("/", (_req, res) => {
 
       // 3. Build flight payload
       const fd = new FormData(e.target);
+      const selectedTags = Array.from(document.querySelectorAll('#trainingChips .training-chip.selected'))
+        .map(el => el.dataset.tag).filter(Boolean);
       const body = {
         aircraftId: fd.get('aircraftId').toUpperCase().trim(),
         date: fd.get('date'),
@@ -1568,6 +1629,7 @@ app.get("/", (_req, res) => {
         from: (fd.get('from') || '').toUpperCase().trim(),
         to: (fd.get('to') || '').toUpperCase().trim(),
         remarks: (fd.get('remarks') || '').trim(),
+        ...(selectedTags.length > 0 ? { trainingTags: selectedTags } : {}),
       };
 
       // 4. Show "Saving to chain..."
@@ -2418,6 +2480,7 @@ app.get("/", (_req, res) => {
 
       e.target.reset();
       e.target.querySelector('input[name="date"]').value = new Date().toISOString().slice(0,10);
+      document.querySelectorAll('#trainingChips .training-chip.selected').forEach(c => c.classList.remove('selected'));
       toggleForm();
       btn.textContent = origBtnText;
       btn.disabled = false;
@@ -2623,7 +2686,7 @@ app.get("/entries", (_req, res) => {
 });
 
 app.post("/entries", (req, res) => {
-  const { date, aircraftId, totalTime, dayLandings, nightLandings, from, to, remarks, txHash, walletAddress: bodyWalletAddress } = req.body || {};
+  const { date, aircraftId, totalTime, dayLandings, nightLandings, from, to, remarks, trainingTags, txHash, walletAddress: bodyWalletAddress } = req.body || {};
   if (!aircraftId) {
     return res.status(400).json({ error: "aircraftId is required" });
   }
@@ -2645,6 +2708,9 @@ app.post("/entries", (req, res) => {
   const identity = readIdentity();
   const midname = (identity && identity.midnameVerified && identity.midname) ? identity.midname : undefined;
   const entryId = randomBytes(8).toString("hex");
+  const parsedTags = Array.isArray(trainingTags)
+    ? trainingTags.map(t => String(t).trim()).filter(Boolean)
+    : (typeof trainingTags === 'string' ? trainingTags.split(',').map(t => t.trim()).filter(Boolean) : []);
   const entryBase = {
     id: entryId,
     date: date || new Date().toISOString().slice(0, 10),
@@ -2655,6 +2721,7 @@ app.post("/entries", (req, res) => {
     from: from ? String(from).toUpperCase().trim() : "",
     to: to ? String(to).toUpperCase().trim() : "",
     remarks: remarks ? String(remarks).trim() : "",
+    ...(parsedTags.length > 0 ? { trainingTags: parsedTags } : {}),
   };
   // Compute canonical hash — pilotId (wallet address) and midname (if verified) are bound into the hash
   const { recordId, recordHash, canonical } = canonicalizeFlightEntry(
@@ -6796,7 +6863,11 @@ app.get("/progression", (_req, res) => {
     return '<span style="background:#1e293b;color:#64748b;padding:2px 10px;border-radius:99px;font-size:11px;font-weight:700;">Upcoming</span>';
   }
 
-  const milestonesHtml = prog.milestones.map(m => `
+  const coreMilestones = prog.milestones.filter(m => !m.id.startsWith('tag_'));
+  const tagMilestones  = prog.milestones.filter(m => m.id.startsWith('tag_'));
+
+  function renderMilestoneItem(m) {
+    return `
     <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid #1e293b;">
       <span style="font-size:22px;margin-top:2px;">${m.icon}</span>
       <div style="flex:1;">
@@ -6807,7 +6878,14 @@ app.get("/progression", (_req, res) => {
         <div style="color:#64748b;font-size:12px;">${m.detail || ''}</div>
       </div>
     </div>
-  `).join('');
+  `;
+  }
+
+  const milestonesHtml = coreMilestones.map(renderMilestoneItem).join('');
+  const tagMilestonesCompletedCount = tagMilestones.filter(m => m.status === 'completed').length;
+  const tagMilestonesHtml = tagMilestones.length > 0
+    ? tagMilestones.map(renderMilestoneItem).join('')
+    : '<div style="color:#475569;font-size:12px;padding:12px 0;">No training tags logged yet — use the flight form to tag training sessions.</div>';
 
   const readinessHtml = Object.values(prog.readiness).map(r => `
     <div style="margin-bottom:16px;">
@@ -6861,8 +6939,8 @@ app.get("/progression", (_req, res) => {
     </div>
   `).join('');
 
-  const completedCount = prog.milestones.filter(m => m.status === 'completed').length;
-  const inProgCount = prog.milestones.filter(m => m.status === 'in_progress').length;
+  const completedCount = coreMilestones.filter(m => m.status === 'completed').length;
+  const inProgCount = coreMilestones.filter(m => m.status === 'in_progress').length;
 
   // Journey Timeline
   const PROGRESSION_PHASES = [
@@ -6995,10 +7073,30 @@ app.get("/progression", (_req, res) => {
       ${prog.guidanceCards.length === 0 && recsHtml ? `<div style="margin-top:20px;"><div class="section-title">Recommendations</div>${recsHtml}</div>` : ''}
     </div>
 
-    <!-- Milestones Summary -->
+    <!-- Core Milestones -->
     <div class="card">
       <div class="section-title">Milestones</div>
       ${milestonesHtml}
+    </div>
+  </div>
+
+  <!-- Training Focus — full-width card -->
+  <div class="card" style="margin-bottom:20px;">
+    <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;">
+      <span>Training Focus</span>
+      <span style="font-size:11px;color:#475569;font-weight:400;text-transform:none;letter-spacing:0;">${tagMilestonesCompletedCount} / ${tagMilestones.length} skills logged</span>
+    </div>
+    <div style="color:#475569;font-size:11px;margin-bottom:12px;line-height:1.5;">
+      Tag your flights with training focus areas to track skill development. Each unique tag earns a milestone when first logged.
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:0;">
+      ${tagMilestonesHtml}
+    </div>
+    <div style="margin-top:16px;padding:12px 14px;background:#0b0f18;border-radius:8px;border:1px solid #1e293b;">
+      <div style="font-size:11px;color:#475569;margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;">How to log training focus</div>
+      <div style="font-size:12px;color:#64748b;line-height:1.6;">
+        On the <a href="/" style="color:#818cf8;">Dashboard</a>, click <strong style="color:#94a3b8;">+ Log Flight</strong> and select the focus areas at the bottom of the form.
+      </div>
     </div>
   </div>
 
