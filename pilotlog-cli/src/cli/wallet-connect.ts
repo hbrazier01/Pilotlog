@@ -52,9 +52,11 @@ import { DustWallet } from "@midnight-ntwrk/wallet-sdk-dust-wallet";
 import * as Rx from "rxjs";
 
 import { Airlog, createAirlogPrivateState } from "@repo/airlog-contract";
+import * as readline from "node:readline";
 import { saveWalletSession, loadWalletSession, clearWalletSession } from "../walletSession.js";
 import { loadMidnameIdentity, saveMidnameIdentity, clearMidnameIdentity } from "../midnameStore.js";
 import { resolveMidnameIdentity, validateMidname } from "../midnameResolver.js";
+import { loadProfile, saveProfile } from "../profileStore.js";
 
 // @ts-expect-error global WebSocket polyfill
 globalThis.WebSocket = WebSocket;
@@ -255,6 +257,124 @@ const runTestTx = args.includes("--test-tx");
 const disconnect = args.includes("--disconnect");
 const forceReset = args.includes("--force-reset");
 
+function getFlag(argv: string[], name: string): string | undefined {
+  const i = argv.indexOf(`--${name}`);
+  if (i !== -1 && i + 1 < argv.length && !argv[i + 1].startsWith("--")) return argv[i + 1];
+  return undefined;
+}
+
+const identityFlags = {
+  fullName: getFlag(args, "fullName"),
+  trainingGoal: getFlag(args, "trainingGoal"),
+  medicalKind: getFlag(args, "medicalKind"),
+  medicalClass: getFlag(args, "medicalClass"),
+  medicalExpires: getFlag(args, "medicalExpires"),
+};
+
+// ─── Pilot Identity Setup ─────────────────────────────────────────────────────
+
+async function setupPilotIdentity(isNewConnection: boolean): Promise<void> {
+  const profile = loadProfile();
+
+  // Only run if new connection and no identity set yet
+  if (!isNewConnection || profile.pilot.fullName.trim()) return;
+
+  console.log("\n[4c] Pilot Identity");
+  console.log("─".repeat(50));
+  console.log("  Your wallet is now your pilot identity.");
+  console.log("  A few quick details to get you started.\n");
+
+  const isInteractive = process.stdin.isTTY;
+
+  let fullName = identityFlags.fullName ?? "";
+  let trainingGoal = identityFlags.trainingGoal ?? "";
+  let medicalKind = identityFlags.medicalKind ?? "";
+  let medicalClass = identityFlags.medicalClass ?? "";
+  let medicalExpires = identityFlags.medicalExpires ?? "";
+
+  if (isInteractive && !identityFlags.fullName) {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const ask = (q: string): Promise<string> =>
+      new Promise((resolve) => rl.question(q, resolve));
+
+    fullName = (await ask("  Full Name: ")).trim();
+
+    if (!fullName) {
+      console.log("  Skipping identity setup — name is required.");
+      rl.close();
+      return;
+    }
+
+    trainingGoal = (await ask("  Training Goal (optional, e.g. PPL): ")).trim();
+
+    const medRaw = (await ask("  Medical Class (1/2/3/BasicMed/None) [None]: ")).trim();
+    medicalKind = medRaw || "None";
+
+    if (medicalKind === "1" || medicalKind === "2" || medicalKind === "3") {
+      medicalClass = medicalKind;
+      medicalKind = "Medical";
+      medicalExpires = (await ask("  Medical Expiration Date (YYYY-MM-DD): ")).trim();
+    } else if (medicalKind.toLowerCase() === "basicmed") {
+      medicalKind = "BasicMed";
+    } else {
+      medicalKind = "None";
+    }
+
+    rl.close();
+  } else if (!isInteractive && !identityFlags.fullName) {
+    // Non-interactive with no flags — skip silently
+    return;
+  }
+
+  if (!fullName.trim()) {
+    console.log("  Skipping identity setup — no name provided.");
+    return;
+  }
+
+  // Save pilot identity
+  profile.pilot.fullName = fullName;
+
+  if (trainingGoal) {
+    const goalToPhase: Record<string, string> = {
+      ppl: "student_ppl",
+      "private pilot": "student_ppl",
+      instrument: "instrument_training",
+      "instrument rating": "instrument_training",
+      commercial: "commercial",
+      cfi: "cfi",
+    };
+    const matched = goalToPhase[trainingGoal.toLowerCase()];
+    if (matched) {
+      (profile as any).pilotPhase = matched;
+    }
+  }
+
+  if (medicalKind === "Medical" && (medicalClass === "1" || medicalClass === "2" || medicalClass === "3")) {
+    profile.medical.kind = "Medical";
+    profile.medical.class = medicalClass as "1" | "2" | "3";
+    if (medicalExpires) profile.medical.expires = medicalExpires;
+  } else if (medicalKind === "BasicMed") {
+    profile.medical.kind = "BasicMed";
+  } else {
+    profile.medical.kind = "None";
+  }
+
+  saveProfile(profile);
+
+  const medLabel =
+    profile.medical.kind === "Medical"
+      ? `Class ${profile.medical.class} Medical${profile.medical.expires ? ` · Expires ${profile.medical.expires}` : ""}`
+      : profile.medical.kind === "BasicMed"
+      ? "BasicMed"
+      : "No Medical on file";
+
+  console.log(`\n  ✓ Pilot identity created`);
+  console.log(`  Name:    ${profile.pilot.fullName}`);
+  console.log(`  Medical: ${medLabel}`);
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+
 async function main() {
   console.log("╔══════════════════════════════════════════════════╗");
   console.log("║      AirLog — 1AM Wallet Connect                ║");
@@ -334,6 +454,8 @@ async function main() {
     console.log("\n  --force-reset supplied. Overwriting stored identity.");
   }
 
+  const isNewConnection = !existingSession || forceReset;
+
   saveWalletSession({
     address,
     coinPublicKey,
@@ -341,6 +463,9 @@ async function main() {
   });
   console.log("  ✓ Session saved → .pilotlog/wallet.json");
   console.log(`  Address: ${address}`);
+
+  // ── Step 4c: Pilot Identity (first-time only) ────────────────────────────
+  await setupPilotIdentity(isNewConnection);
 
   // ── Step 4b: Midnames sync ───────────────────────────────────────────────
   console.log("\n[4b] Syncing Midnames identity");
@@ -391,8 +516,15 @@ async function main() {
   }
 
   if (!runTestTx) {
+    const finalProfile = loadProfile();
+    const pilotName = finalProfile.pilot.fullName.trim();
     console.log("\n╔══════════════════════════════════════════════════╗");
-    console.log("║  WALLET CONNECTED                                ║");
+    if (pilotName) {
+      console.log(`║  WELCOME, ${pilotName.toUpperCase().padEnd(38)}║`);
+      console.log("║  Pilot Identity Active                           ║");
+    } else {
+      console.log("║  WALLET CONNECTED                                ║");
+    }
     console.log("╚══════════════════════════════════════════════════╝");
     console.log(`\n  Run with --test-tx to submit a contract transaction.`);
     process.exit(0);
