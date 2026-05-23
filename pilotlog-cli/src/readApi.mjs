@@ -211,6 +211,31 @@ function buildPilotState(asOf = new Date().toISOString()) {
     recommendations:  prog.recommendations,
     verifiedFlights,
     attestations:     attestationCount,
+    pilotName:        profile?.pilot?.fullName || null,
+    medicalStatus: (() => {
+      const med = profile?.medical;
+      if (!med || med.kind === 'None') return 'none';
+      if (med.kind === 'Medical' && med.expires) {
+        return isFuture(new Date().toISOString(), med.expires) ? 'current' : 'expired';
+      }
+      if (med.kind === 'BasicMed') {
+        return (med.basicMed?.cmecDate && med.basicMed?.onlineCourseDate) ? 'current' : 'expired';
+      }
+      return 'none';
+    })(),
+    medicalLabel: (() => {
+      const med = profile?.medical;
+      if (!med || med.kind === 'None') return null;
+      if (med.kind === 'Medical' && med.class) {
+        const current = med.expires && isFuture(new Date().toISOString(), med.expires);
+        return `Class ${med.class} Medical ${current ? 'Current' : 'Expired'}`;
+      }
+      if (med.kind === 'BasicMed') {
+        const current = !!(med.basicMed?.cmecDate && med.basicMed?.onlineCourseDate);
+        return `BasicMed ${current ? 'Current' : 'Incomplete'}`;
+      }
+      return null;
+    })(),
     // Raw sources available to route handlers
     _walletSession:   walletSession,
     _identity:        identity,
@@ -640,6 +665,120 @@ async function reconnectWallet() {
   }).catch(() => {});
 })();
 
+// ── Pilot Identity Onboarding Modal ──────────────────────────────────────────
+function _showPilotIdentityModal(prefill) {
+  if (document.getElementById('pilot-identity-modal')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'pilot-identity-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:20000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:16px;';
+
+  const medKind = (prefill && prefill.medical && prefill.medical.kind) || 'None';
+  const medClass = (prefill && prefill.medical && prefill.medical.class) || '';
+  const medExpires = (prefill && prefill.medical && prefill.medical.expires) || '';
+  const fullName = (prefill && prefill.pilot && prefill.pilot.fullName) || '';
+  const pilotPhase = (prefill && prefill.pilotPhase) || '';
+
+  overlay.innerHTML = \`
+    <div style="background:#121624;border:1px solid #2a3060;border-radius:16px;padding:32px 28px;max-width:440px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.6);">
+      <h2 style="margin:0 0 4px;font-size:22px;font-weight:800;color:#f1f5f9;">Set Up Your Pilot Identity</h2>
+      <p style="margin:0 0 24px;font-size:14px;color:#9aa3ff;">This information personalizes your logbook and dashboard.</p>
+      <form id="pilot-identity-form">
+        <div style="margin-bottom:16px;">
+          <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#b6b9c6;margin-bottom:6px;">Full Name</label>
+          <input id="pi-fullname" type="text" placeholder="e.g. Holland Brazier" value="\${fullName}" style="width:100%;background:#0b0f18;border:1px solid #222843;border-radius:8px;padding:10px 12px;color:#fff;font-size:15px;box-sizing:border-box;" required />
+        </div>
+        <div style="margin-bottom:16px;">
+          <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#b6b9c6;margin-bottom:6px;">Medical Type</label>
+          <select id="pi-med-kind" onchange="_piMedKindChange()" style="width:100%;background:#0b0f18;border:1px solid #222843;border-radius:8px;padding:10px 12px;color:#fff;font-size:14px;box-sizing:border-box;">
+            <option value="None" \${medKind==='None'?'selected':''}>None</option>
+            <option value="Medical" \${medKind==='Medical'?'selected':''}>FAA Medical (Class 1/2/3)</option>
+            <option value="BasicMed" \${medKind==='BasicMed'?'selected':''}>BasicMed</option>
+          </select>
+        </div>
+        <div id="pi-med-fields" style="display:\${medKind==='Medical'?'block':'none'};">
+          <div style="margin-bottom:16px;">
+            <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#b6b9c6;margin-bottom:6px;">Medical Class</label>
+            <select id="pi-med-class" style="width:100%;background:#0b0f18;border:1px solid #222843;border-radius:8px;padding:10px 12px;color:#fff;font-size:14px;box-sizing:border-box;">
+              <option value="1" \${medClass==='1'?'selected':''}>Class 1</option>
+              <option value="2" \${medClass==='2'?'selected':''}>Class 2</option>
+              <option value="3" \${medClass==='3'?'selected':''}>Class 3</option>
+            </select>
+          </div>
+          <div style="margin-bottom:16px;">
+            <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#b6b9c6;margin-bottom:6px;">Medical Expiration Date</label>
+            <input id="pi-med-expires" type="date" value="\${medExpires}" style="width:100%;background:#0b0f18;border:1px solid #222843;border-radius:8px;padding:10px 12px;color:#fff;font-size:14px;box-sizing:border-box;" />
+          </div>
+        </div>
+        <div style="margin-bottom:24px;">
+          <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#b6b9c6;margin-bottom:6px;">Training Goal <span style="color:#4a5568;font-weight:400;">(optional)</span></label>
+          <select id="pi-phase" style="width:100%;background:#0b0f18;border:1px solid #222843;border-radius:8px;padding:10px 12px;color:#fff;font-size:14px;box-sizing:border-box;">
+            <option value="">— Select a goal</option>
+            <option value="student_ppl" \${pilotPhase==='student_ppl'?'selected':''}>Working toward Private Pilot</option>
+            <option value="ppl_complete" \${pilotPhase==='ppl_complete'?'selected':''}>Private Pilot Complete</option>
+            <option value="instrument_training" \${pilotPhase==='instrument_training'?'selected':''}>Instrument Training</option>
+            <option value="instrument_rated" \${pilotPhase==='instrument_rated'?'selected':''}>Instrument Rated</option>
+            <option value="commercial" \${pilotPhase==='commercial'?'selected':''}>Commercial Pilot</option>
+            <option value="cfi" \${pilotPhase==='cfi'?'selected':''}>CFI / Flight Instructor</option>
+          </select>
+        </div>
+        <div id="pi-error" style="display:none;color:#f87171;font-size:13px;margin-bottom:12px;"></div>
+        <div style="display:flex;gap:12px;">
+          <button type="submit" id="pi-submit" style="flex:1;background:#1a3a8f;color:#fff;border:none;border-radius:8px;padding:12px 0;font-size:15px;font-weight:700;cursor:pointer;">Save Identity</button>
+          <button type="button" onclick="_closePilotIdentityModal()" style="background:transparent;border:1px solid #222843;color:#9aa3ff;border-radius:8px;padding:12px 20px;font-size:15px;cursor:pointer;">Skip</button>
+        </div>
+      </form>
+    </div>
+  \`;
+
+  document.body.appendChild(overlay);
+
+  document.getElementById('pilot-identity-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const btn = document.getElementById('pi-submit');
+    const errEl = document.getElementById('pi-error');
+    errEl.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    const fullName = document.getElementById('pi-fullname').value.trim();
+    const medicalKind = document.getElementById('pi-med-kind').value;
+    const medicalClass = document.getElementById('pi-med-class') ? document.getElementById('pi-med-class').value : null;
+    const medicalExpires = document.getElementById('pi-med-expires') ? document.getElementById('pi-med-expires').value : null;
+    const trainingGoal = document.getElementById('pi-phase').value || null;
+    try {
+      const resp = await fetch('/profile/identity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fullName, medicalKind, medicalClass, medicalExpires, trainingGoal }),
+      });
+      if (!resp.ok) { const d = await resp.json(); throw new Error(d.error || 'Save failed'); }
+      _closePilotIdentityModal();
+      window.location.reload();
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Save Identity';
+    }
+  });
+}
+
+function _piMedKindChange() {
+  const kind = document.getElementById('pi-med-kind').value;
+  const fields = document.getElementById('pi-med-fields');
+  if (fields) fields.style.display = kind === 'Medical' ? 'block' : 'none';
+}
+
+function _closePilotIdentityModal() {
+  const el = document.getElementById('pilot-identity-modal');
+  if (el) el.remove();
+}
+
+function editPilotIdentity() {
+  fetch('/profile').then(r => r.json()).then(p => {
+    _showPilotIdentityModal(p);
+  }).catch(() => { _showPilotIdentityModal(); });
+}
+
 async function connectWalletHeader() {
   const el = document.getElementById('wallet-nav-link');
   if (el) { el.textContent = 'Connecting\\u2026'; el.disabled = true; el.onclick = null; }
@@ -721,6 +860,13 @@ async function connectWalletHeader() {
 
     // Show connected immediately — auto-resolve will update the label when it completes
     if (el) { _walletSetConnected(el, addr); }
+
+    // Check if pilot identity needs to be set (first-time onboarding)
+    fetch('/profile').then(r => r.json()).then(p => {
+      if (!p.pilot || !p.pilot.fullName || !String(p.pilot.fullName).trim()) {
+        _showPilotIdentityModal();
+      }
+    }).catch(() => {});
 
     // Auto-resolve Midname for this wallet (reverse lookup via Midnames contract ledger)
     console.log('[identity] auto-resolve start');
@@ -5520,6 +5666,46 @@ app.patch("/profile/phase", (req, res) => {
   res.json({ ok: true, pilotPhase, label: PILOT_PHASES[pilotPhase].label });
 });
 
+// POST /profile/identity — browser onboarding: save pilot identity (fullName, medical, trainingGoal)
+app.post("/profile/identity", (req, res) => {
+  const { fullName, medicalKind, medicalClass, medicalExpires, trainingGoal } = req.body || {};
+  if (!fullName || !String(fullName).trim()) {
+    return res.status(400).json({ error: "fullName required" });
+  }
+  const validKinds = ["None", "Medical", "BasicMed"];
+  const kind = validKinds.includes(medicalKind) ? medicalKind : "None";
+  const profile = readProfile() || {
+    pilot: { fullName: "", email: "", phone: "" },
+    certificates: [], ratings: [],
+    medical: { kind: "None", class: null, issued: null, expires: null, basicMed: { cmecDate: null, onlineCourseDate: null } },
+    proficiency: { flightReviewDate: null, ipcDate: null },
+    endorsements: []
+  };
+  profile.pilot.fullName = String(fullName).trim();
+  profile.medical.kind = kind;
+  if (kind === "Medical") {
+    const validClasses = ["1", "2", "3"];
+    profile.medical.class = validClasses.includes(String(medicalClass)) ? String(medicalClass) : null;
+    profile.medical.expires = medicalExpires ? String(medicalExpires) : null;
+    profile.medical.basicMed = { cmecDate: null, onlineCourseDate: null };
+  } else if (kind === "BasicMed") {
+    profile.medical.class = null;
+    profile.medical.issued = null;
+    profile.medical.expires = null;
+  } else {
+    profile.medical.class = null;
+    profile.medical.issued = null;
+    profile.medical.expires = null;
+    profile.medical.basicMed = { cmecDate: null, onlineCourseDate: null };
+  }
+  const validPhases = ["student_ppl", "ppl_complete", "instrument_training", "instrument_rated", "commercial", "cfi"];
+  if (trainingGoal && validPhases.includes(trainingGoal)) {
+    profile.pilotPhase = trainingGoal;
+  }
+  saveProfile(profile);
+  res.json({ ok: true, fullName: profile.pilot.fullName, medical: profile.medical });
+});
+
 // ── Wallet State (server-side session) ───────────────────────────────────────
 
 // POST /wallet/connect — browser posts connected wallet address here
@@ -6608,6 +6794,7 @@ app.get("/passport", (_req, res) => {
 
   <div class="actions">
     <a href="/" class="btn btn-outline">← Dashboard</a>
+    <button onclick="editPilotIdentity()" class="btn btn-outline" style="cursor:pointer;">Edit Profile</button>
     <a href="/review" class="btn">Review Requests →</a>
     ${!midnameVerified ? `<a href="/identity/card" class="btn btn-outline">Verify Identity →</a>` : ""}
     <a href="/pilot-report" class="btn btn-outline">Pilot Report →</a>
