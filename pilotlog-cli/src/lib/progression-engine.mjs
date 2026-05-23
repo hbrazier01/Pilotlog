@@ -37,6 +37,20 @@ export const PROGRESSION_STATES = {
 
 function num(v) { return Number(v) || 0; }
 
+/**
+ * Check if any entry contains the given training tag.
+ */
+function hasTag(entries, tag) {
+  return entries.some(e => Array.isArray(e.trainingTags) && e.trainingTags.includes(tag));
+}
+
+/**
+ * Count distinct entries that contain the given training tag.
+ */
+function countTag(entries, tag) {
+  return entries.filter(e => Array.isArray(e.trainingTags) && e.trainingTags.includes(tag)).length;
+}
+
 function totalHours(entries) {
   return entries.reduce((s, e) => s + num(e.totalTime || e.total), 0);
 }
@@ -308,6 +322,79 @@ export function computeMilestones(profile, entries, attestations, asOf) {
       instrumentRated ? 'Instrument rating earned' :
         instrument >= 40 ? `${instrument.toFixed(1)}h instrument — approaching IFR checkride` :
         `${instrument.toFixed(1)}h instrument time logged`
+    ),
+    // ─── Training Tag Milestones ───────────────────────────────────────────────
+    ms(
+      'tag_pattern_work',
+      'Pattern Work Training',
+      '🔄',
+      hasTag(entries, 'pattern_work') ? 'completed' : 'upcoming',
+      hasTag(entries, 'pattern_work')
+        ? `Pattern work logged (${countTag(entries, 'pattern_work')} session${countTag(entries, 'pattern_work') !== 1 ? 's' : ''})`
+        : 'Log a flight with pattern_work tag to earn this milestone'
+    ),
+    ms(
+      'tag_crosswind_landings',
+      'Crosswind Landing Practice',
+      '💨',
+      hasTag(entries, 'crosswind_landings') ? 'completed' : 'upcoming',
+      hasTag(entries, 'crosswind_landings')
+        ? `Crosswind landings practiced (${countTag(entries, 'crosswind_landings')} session${countTag(entries, 'crosswind_landings') !== 1 ? 's' : ''})`
+        : 'Log a flight with crosswind_landings tag'
+    ),
+    ms(
+      'tag_ground_reference',
+      'Ground Reference Maneuvers',
+      '🎯',
+      hasTag(entries, 'ground_reference') ? 'completed' : 'upcoming',
+      hasTag(entries, 'ground_reference')
+        ? `Ground reference maneuvers introduced (${countTag(entries, 'ground_reference')} session${countTag(entries, 'ground_reference') !== 1 ? 's' : ''})`
+        : 'Log a flight with ground_reference tag'
+    ),
+    ms(
+      'tag_slow_flight',
+      'Slow Flight Training',
+      '🐢',
+      hasTag(entries, 'slow_flight') ? 'completed' : 'upcoming',
+      hasTag(entries, 'slow_flight')
+        ? `Slow flight practiced (${countTag(entries, 'slow_flight')} session${countTag(entries, 'slow_flight') !== 1 ? 's' : ''})`
+        : 'Log a flight with slow_flight tag'
+    ),
+    ms(
+      'tag_stalls',
+      'Stall Training',
+      '⚠️',
+      hasTag(entries, 'stalls') ? 'completed' : 'upcoming',
+      hasTag(entries, 'stalls')
+        ? `Stall training logged (${countTag(entries, 'stalls')} session${countTag(entries, 'stalls') !== 1 ? 's' : ''})`
+        : 'Log a flight with stalls tag'
+    ),
+    ms(
+      'tag_steep_turns',
+      'Steep Turn Proficiency',
+      '🌀',
+      hasTag(entries, 'steep_turns') ? 'completed' : 'upcoming',
+      hasTag(entries, 'steep_turns')
+        ? `Steep turns practiced (${countTag(entries, 'steep_turns')} session${countTag(entries, 'steep_turns') !== 1 ? 's' : ''})`
+        : 'Log a flight with steep_turns tag'
+    ),
+    ms(
+      'tag_emergency_procedures',
+      'Emergency Procedures Training',
+      '🚨',
+      hasTag(entries, 'emergency_procedures') ? 'completed' : 'upcoming',
+      hasTag(entries, 'emergency_procedures')
+        ? `Emergency procedures practiced (${countTag(entries, 'emergency_procedures')} session${countTag(entries, 'emergency_procedures') !== 1 ? 's' : ''})`
+        : 'Log a flight with emergency_procedures tag'
+    ),
+    ms(
+      'tag_checkride_prep',
+      'Checkride Prep',
+      '📝',
+      hasTag(entries, 'checkride_prep') ? 'completed' : 'upcoming',
+      hasTag(entries, 'checkride_prep')
+        ? `Checkride prep session logged (${countTag(entries, 'checkride_prep')} session${countTag(entries, 'checkride_prep') !== 1 ? 's' : ''})`
+        : 'Log a checkride_prep flight when approaching your checkride'
     ),
   ];
 }

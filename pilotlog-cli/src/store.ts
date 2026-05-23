@@ -25,6 +25,9 @@ export type FlightEntry = {
   nightLandings: number;
   remarks?: string;
 
+  // Structured training focus tags (e.g. ["pattern_work", "stalls"])
+  trainingTags?: string[];
+
   // Pilot identity — wallet address (bech32); set at time of logging
   // Must be a wallet address when wallet is connected; NOT a name string.
   pilotId?: string;

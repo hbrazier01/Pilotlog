@@ -37,7 +37,7 @@ const str = (k: string, d = "") => (flags[k] !== undefined ? String(flags[k]) : 
 
 function usage() {
   console.log("pilotlog commands:");
-  console.log('  add --from KAPA --to KADS --total 1.3 --pic 1.3 --remarks "XC hop"');
+  console.log('  add --from KAPA --to KADS --total 1.3 --pic 1.3 --remarks "XC hop" [--trainingTags "pattern_work,stalls"]');
   console.log("  list");
   console.log("  totals");
   console.log("  report [--out <path>]          Pilot report (currency, certs, hours)");
@@ -121,6 +121,11 @@ if (command === "add") {
     nightLandings: num("nightLandings", 0),
 
     remarks: str("remarks", ""),
+
+    // Training tags: comma-separated list, e.g. --trainingTags "pattern_work,stalls"
+    ...(flags["trainingTags"] !== undefined
+      ? { trainingTags: String(flags["trainingTags"]).split(",").map(t => t.trim()).filter(Boolean) }
+      : {}),
 
     ...(pilotId ? { pilotId } : { unverified: true }),
   };
