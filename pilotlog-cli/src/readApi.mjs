@@ -335,6 +335,9 @@ function buildDashboardState(ps) {
     progressPct:      ps.progressPct,
     milestones:       ps.milestones,
     trainingFocusMilestones: (ps.milestones || []).filter(m => m.id && m.id.startsWith('tag_')),
+    pilotName:        ps.pilotName || null,
+    medicalStatus:    ps.medicalStatus || 'none',
+    medicalLabel:     ps.medicalLabel || null,
   };
 }
 
@@ -1764,11 +1767,15 @@ app.get("/", (_req, res) => {
         }
 
         // ── Chip ──────────────────────────────────────────────────────────────
+        // If page was initially served disconnected, interactive IDs are absent — reload to hydrate.
         const chip = document.getElementById('readiness-chip');
+        if (!chip) { console.log('[dashboard] connected — DOM in dormant state, reloading to hydrate'); window.location.reload(); return; }
         chip.style.background = BG[d.chipStatus] || BG.current;
         chip.style.color = COLOR[d.chipStatus] || COLOR.current;
-        document.getElementById('readiness-dot').style.background = COLOR[d.chipStatus] || COLOR.current;
-        document.getElementById('readiness-label').textContent = d.chipLabel;
+        const dotEl = document.getElementById('readiness-dot');
+        if (dotEl) dotEl.style.background = COLOR[d.chipStatus] || COLOR.current;
+        const lblEl = document.getElementById('readiness-label');
+        if (lblEl) lblEl.textContent = d.chipLabel;
 
         // Post-action feedback banner
         const justLogged = sessionStorage.getItem('airlog_just_logged');
@@ -1909,6 +1916,23 @@ app.get("/", (_req, res) => {
             <div style="display:flex;flex-wrap:wrap;gap:6px;">\${tfHtml}</div>
           \`;
           container.parentNode.insertBefore(tfSection, container.nextSibling);
+        }
+
+        // Restore pilot hero identity section after reconnect
+        const heroEl = document.getElementById('pilot-hero-identity');
+        if (heroEl) {
+          const medBadge = d.medicalLabel
+            ? \`<span class="medical-status medical-\${d.medicalStatus}">\${d.medicalLabel}</span>\`
+            : '';
+          const identityLine = (d.phaseLabel || medBadge)
+            ? \`<span class="pilot-identity-line">\${[d.phaseLabel, medBadge].filter(Boolean).join(' · ')}</span>\`
+            : '';
+          if (d.pilotName) {
+            heroEl.innerHTML = \`<span class="pilot-name">\${d.pilotName}<button class="pilot-edit-btn" onclick="fetch('/profile').then(r=>r.json()).then(p=>_showPilotIdentityModal(p))">edit</button></span>\${identityLine}\`;
+          } else {
+            heroEl.innerHTML = \`<button class="pilot-create-cta" onclick="_showPilotIdentityModal()">+ Create Pilot Profile</button>\${identityLine}\`;
+          }
+          heroEl.setAttribute('data-has-profile', d.pilotName ? 'true' : 'false');
         }
 
         // Refresh stats + recent flights table from /entries (wallet-scoped)
