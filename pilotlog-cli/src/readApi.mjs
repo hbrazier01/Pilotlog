@@ -659,6 +659,8 @@ async function disconnectWallet() {
       ? '<span class="pilot-name" style="color:#9aa3ff;">Local Profile Saved</span><span class="pilot-identity-line">Connect wallet to verify identity</span>'
       : '<span class="pilot-name" style="color:#4b5563;">Pilot Identity Locked</span><span class="pilot-identity-line">Connect wallet to view your pilot profile</span>';
   }
+  // Re-render dashboard to clear pilot data (wallet-scoped)
+  if (typeof window.loadDashboard === 'function') window.loadDashboard();
 }
 
 // ── Reconnect — re-runs the full connect flow ─────────────────────────────────
@@ -1621,7 +1623,7 @@ app.get("/", (_req, res) => {
     });
 
     // State-driven dashboard — consumes /api/dashboard-state (pilotState -> dashboardState -> UI)
-    (async function loadDashboard() {
+    window.loadDashboard = async function loadDashboard() {
       const COLOR = { current: '#22c55e', needs_attention: '#f59e0b', not_current: '#ef4444' };
       const BG    = { current: '#052e16', needs_attention: '#1c1203', not_current: '#1c0505' };
       const PRIORITY_COLOR = { critical: '#ef4444', high: '#f97316', medium: '#f59e0b', low: '#60a5fa' };
@@ -1643,6 +1645,29 @@ app.get("/", (_req, res) => {
         const res = await fetch('/api/dashboard-state');
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const d = await res.json();
+
+        // ── Disconnected state — wallet not connected ─────────────────────────
+        if (d.disconnected) {
+          const chip = document.getElementById('readiness-chip');
+          if (chip) { chip.style.background = '#0b0f18'; chip.style.color = '#4b5563'; }
+          const dot = document.getElementById('readiness-dot');
+          if (dot) dot.style.background = '#374151';
+          const lbl = document.getElementById('readiness-label');
+          if (lbl) lbl.textContent = 'No Session';
+          const todayEl = document.getElementById('today-card');
+          if (todayEl) todayEl.innerHTML = \`<div style="text-align:center;padding:24px 0;color:#4b5563;"><div style="font-size:15px;font-weight:700;margin-bottom:8px;color:#6b7280;">No Active Pilot Session</div><div style="font-size:13px;">Connect wallet to load pilot profile</div></div>\`;
+          const progBarEl = document.getElementById('progression-bar');
+          if (progBarEl) { progBarEl.innerHTML = ''; progBarEl.style.display = 'none'; }
+          const readinessScoresEl = document.getElementById('readiness-scores');
+          if (readinessScoresEl) readinessScoresEl.innerHTML = '';
+          const recentFlightsEl = document.getElementById('recent-flights-list');
+          if (recentFlightsEl) recentFlightsEl.innerHTML = '<div style="color:#4b5563;font-size:13px;padding:16px 0;">Connect wallet to view flights</div>';
+          const aircraftEl = document.getElementById('aircraft-list');
+          if (aircraftEl) aircraftEl.innerHTML = '<div style="color:#4b5563;font-size:13px;padding:16px 0;">Connect wallet to view aircraft</div>';
+          const readinessCardsEl = document.getElementById('readiness-cards');
+          if (readinessCardsEl) readinessCardsEl.innerHTML = '';
+          return;
+        }
 
         // ── Chip ──────────────────────────────────────────────────────────────
         const chip = document.getElementById('readiness-chip');
@@ -1797,7 +1822,7 @@ app.get("/", (_req, res) => {
         document.getElementById('readiness-cards').innerHTML =
           '<div class="currency-card" style="color:#ef4444;font-size:13px;">Could not load readiness data.</div>';
       }
-    })();
+    }; loadDashboard();
 
     function toggleForm() {
       const form = document.getElementById('logForm');
@@ -7077,6 +7102,11 @@ app.get("/api/pilot-state", (_req, res) => {
 // Fully derived dashboard structure: pilotState -> dashboardState -> UI
 // UI should consume this instead of assembling state from multiple endpoints.
 app.get("/api/dashboard-state", (req, res) => {
+  // Wallet-scoped: no wallet = no pilot data
+  const session = readWalletSession();
+  if (!session) {
+    return res.json({ disconnected: true, walletConnected: false });
+  }
   const asOf = String(req.query.asOf || new Date().toISOString());
   const ps = buildPilotState(asOf);
   res.json(buildDashboardState(ps));
