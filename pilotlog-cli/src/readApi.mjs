@@ -114,9 +114,10 @@ if (!fs.existsSync(ATTESTATIONS_PATH)) {
 }
 
 function readEntries() {
-  // pg mode: return wallet-scoped in-memory cache (loaded on wallet connect)
-  if (getPool() && pgCache.entries !== null) return pgCache.entries;
-  // file fallback
+  // pg mode: wallet-scoped cache only — no wallet = no data
+  if (getPool()) return pgCache.walletAddress ? (pgCache.entries ?? []) : [];
+  // file mode: gate on active wallet session
+  if (!readWalletSession()) return [];
   try {
     const raw = fs.readFileSync(ENTRIES_PATH, "utf-8");
     const parsed = JSON.parse(raw);
@@ -142,7 +143,10 @@ function saveWalletSession(session) {
 }
 
 function readIdentity() {
-  if (getPool() && pgCache.identity !== null) return pgCache.identity;
+  // pg mode: wallet-scoped only — no wallet = no identity
+  if (getPool()) return pgCache.walletAddress ? pgCache.identity : null;
+  // file mode: gate on active wallet session
+  if (!readWalletSession()) return null;
   try {
     if (!fs.existsSync(IDENTITY_PATH)) return null;
     return JSON.parse(fs.readFileSync(IDENTITY_PATH, "utf-8"));
@@ -986,7 +990,10 @@ async function anchorEntryInBackground(entryId, aircraftId) {
 }
 
 function readProfile() {
-  if (getPool() && pgCache.profile !== null) return pgCache.profile;
+  // pg mode: wallet-scoped only — no wallet = no profile
+  if (getPool()) return pgCache.walletAddress ? pgCache.profile : null;
+  // file mode: gate on active wallet session
+  if (!readWalletSession()) return null;
   try {
     const raw = fs.readFileSync(PROFILE_PATH, "utf-8");
     const parsed = JSON.parse(raw);
@@ -1007,6 +1014,9 @@ function saveProfile(profile) {
 }
 
 function readAircraft() {
+  // Gate on active wallet session — no wallet = no aircraft
+  if (getPool() && !pgCache.walletAddress) return [];
+  if (!getPool() && !readWalletSession()) return [];
   try {
     const raw = fs.readFileSync(AIRCRAFT_PATH, "utf-8");
     const parsed = JSON.parse(raw);
@@ -1656,6 +1666,7 @@ app.get("/", (_req, res) => {
           if (lbl) lbl.textContent = 'No Session';
           const todayEl = document.getElementById('today-card');
           if (todayEl) todayEl.innerHTML = \`<div style="text-align:center;padding:24px 0;color:#4b5563;"><div style="font-size:15px;font-weight:700;margin-bottom:8px;color:#6b7280;">No Active Pilot Session</div><div style="font-size:13px;">Connect wallet to load pilot profile</div></div>\`;
+          if (todayEl) todayEl.style.display = 'block';
           const progBarEl = document.getElementById('progression-bar');
           if (progBarEl) { progBarEl.innerHTML = ''; progBarEl.style.display = 'none'; }
           const readinessScoresEl = document.getElementById('readiness-scores');
@@ -1666,6 +1677,17 @@ app.get("/", (_req, res) => {
           if (aircraftEl) aircraftEl.innerHTML = '<div style="color:#4b5563;font-size:13px;padding:16px 0;">Connect wallet to view aircraft</div>';
           const readinessCardsEl = document.getElementById('readiness-cards');
           if (readinessCardsEl) readinessCardsEl.innerHTML = '';
+          // Zero out all stats — no active session means no visible pilot data
+          const hrsEl = document.getElementById('stat-total-hrs');
+          if (hrsEl) hrsEl.textContent = '— hrs';
+          const flightsEl = document.getElementById('stat-total-flights');
+          if (flightsEl) flightsEl.textContent = '—';
+          const timeEl = document.getElementById('stat-total-time');
+          if (timeEl) timeEl.textContent = '— hrs';
+          const lastEl = document.getElementById('stat-last-flight');
+          if (lastEl) lastEl.textContent = '—';
+          const landingsEl = document.getElementById('stat-landings');
+          if (landingsEl) landingsEl.textContent = '—';
           return;
         }
 
