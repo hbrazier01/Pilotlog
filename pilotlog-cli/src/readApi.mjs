@@ -1492,26 +1492,25 @@ app.get("/", (_req, res) => {
     <div class="brand">PilotLog</div>
     <div class="nav">
       ${walletNavHtml(walletSession, identity)}
-      <a href="/pilot-report">Pilot Report →</a>
+      ${walletConnected ? `<a href="/pilot-report">Pilot Report →</a>` : ''}
     </div>
   </div>
 
   <div class="hero">
-    <div class="big" id="stat-total-hrs">${fmt(totals.total)} hrs</div>
+    <div class="big" id="stat-total-hrs">${walletConnected ? fmt(totals.total) + ' hrs' : '— hrs'}</div>
     <div id="pilot-hero-identity" data-has-profile="${pilotName ? 'true' : 'false'}" style="margin-bottom:6px;">
       ${walletConnected
         ? (pilotName
           ? `<span class="pilot-name">${pilotName}<button class="pilot-edit-btn" onclick="fetch('/profile').then(r=>r.json()).then(p=>_showPilotIdentityModal(p))">edit</button></span>`
           : `<button class="pilot-create-cta" onclick="_showPilotIdentityModal()">+ Create Pilot Profile</button>`)
-        : (pilotName
-          ? `<span class="pilot-name" style="color:#9aa3ff;">Local Profile Saved</span><span class="pilot-identity-line">Connect wallet to verify identity</span>`
-          : `<span class="pilot-name" style="color:#4b5563;">Pilot Identity Locked</span><span class="pilot-identity-line">Connect wallet to view your pilot profile</span>`)
+        : `<span class="pilot-name" style="color:#4b5563;">Pilot Identity Locked</span><span class="pilot-identity-line">Connect wallet to load your pilot profile, flight history, aircraft, and training progress.</span>`
       }
       ${walletConnected && (pilotPhaseLabel || medicalLabel) ? `<span class="pilot-identity-line">${[pilotPhaseLabel, medicalLabel ? `<span class="medical-status medical-${medicalStatus}">${medicalLabel}</span>` : null].filter(Boolean).join(' · ')}</span>` : ''}
     </div>
     <div class="sub" id="stat-sub"></div>
   </div>
 
+  ${walletConnected ? `
   <div class="grid">
     <div class="card">
       <div class="label">Total Flights</div>
@@ -1553,7 +1552,13 @@ app.get("/", (_req, res) => {
 
   <div class="log-form" id="logForm">
     <h3>Log a Flight</h3>
-    <form id="flightForm" onsubmit="submitFlight(event)">
+    <form id="flightForm" onsubmit="submitFlight(event)">` : `
+  <div style="margin-top:32px;padding:32px 0;text-align:center;">
+    <div style="color:#4b5563;font-size:13px;margin-top:16px;">Your pilot data loads only after wallet connection.</div>
+    <div style="color:#374151;font-size:12px;margin-top:10px;">Wallet-scoped pilot records keep each pilot's logbook separate.</div>
+  </div>
+  <!-- disconnected: log form hidden -->
+  <div id="logForm" style="display:none;"><form id="flightForm" onsubmit="return false;">
       <div class="form-row">
         <div class="form-field">
           <label>Aircraft ID</label>
@@ -1619,6 +1624,7 @@ app.get("/", (_req, res) => {
       </div>
     </form>
   </div>
+  ` /* end walletConnected conditional */}
 
   <div class="toast" id="toast"></div>
 
@@ -1626,8 +1632,9 @@ app.get("/", (_req, res) => {
     const lastUsedAircraft = ${JSON.stringify(lastUsedAircraft)};
     window.pilotlogAttestationMap = ${JSON.stringify(flightAttestationMap)};
 
-    // Training chip toggle
-    document.getElementById('trainingChips').addEventListener('click', function(e) {
+    // Training chip toggle (only present when wallet connected)
+    const _trainingChips = document.getElementById('trainingChips');
+    if (_trainingChips) _trainingChips.addEventListener('click', function(e) {
       const chip = e.target.closest('.training-chip');
       if (chip) chip.classList.toggle('selected');
     });
@@ -2875,7 +2882,7 @@ app.get("/", (_req, res) => {
 
   ${walletStatusScript}
 
-  ${aircraftRows ? `
+  ${walletConnected && aircraftRows ? `
   <div class="table">
     <div class="table-title">Aircraft</div>
     <table>
@@ -2885,7 +2892,7 @@ app.get("/", (_req, res) => {
   </div>
   ` : ""}
 
-  <div class="table">
+  ${walletConnected ? `<div class="table">
     <div class="table-title">Recent Flights</div>
     <table>
       <thead>
@@ -2928,7 +2935,7 @@ app.get("/", (_req, res) => {
         ${recent.length === 0 ? '<tr><td colspan="8" class="muted">No flights logged yet.</td></tr>' : ""}
       </tbody>
     </table>
-  </div>
+  </div>` : ""}
 </div>
 <script>
 (function() {
