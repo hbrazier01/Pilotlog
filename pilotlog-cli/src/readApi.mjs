@@ -653,17 +653,11 @@ async function disconnectWallet() {
   if (el) { el.textContent = 'Disconnecting\\u2026'; el.disabled = true; el.onclick = null; }
   try {
     await fetch('/wallet/disconnect', { method: 'POST' });
+    console.log('[wallet] disconnect success — server session cleared');
   } catch (_) {}
   if (el) { _walletSetDisconnected(el); }
-  // Update hero identity section to reflect disconnected state
-  const hero = document.getElementById('pilot-hero-identity');
-  if (hero) {
-    const hasProfile = hero.getAttribute('data-has-profile') === 'true';
-    hero.innerHTML = hasProfile
-      ? '<span class="pilot-name" style="color:#6b7280;letter-spacing:.02em;font-style:italic;">Awaiting Pilot Session</span><span class="pilot-identity-line" style="color:#4b5563;">Connect wallet to verify identity</span>'
-      : '<span class="pilot-name" style="color:#6b7280;letter-spacing:.02em;font-style:italic;">Awaiting Pilot Session</span><span class="pilot-identity-line" style="color:#4b5563;">Connect wallet to initialize your pilot identity and flight records.</span>';
-  }
-  // Re-render dashboard to clear pilot data (wallet-scoped)
+  // Re-render dashboard to clear pilot data (wallet-scoped) — loadDashboard handles full ghost state
+  console.log('[wallet] calling loadDashboard() after disconnect');
   if (typeof window.loadDashboard === 'function') window.loadDashboard();
 }
 
@@ -787,7 +781,12 @@ function _showPilotIdentityModal(prefill) {
       });
       if (!resp.ok) { const d = await resp.json(); throw new Error(d.error || 'Save failed'); }
       _closePilotIdentityModal();
-      window.location.reload();
+      // Reactively update hero + dashboard without page reload
+      const hero = document.getElementById('pilot-hero-identity');
+      if (hero) {
+        hero.innerHTML = '<span class="pilot-name" style="color:#f1f5f9;">' + fullName + '</span>';
+      }
+      if (typeof window.loadDashboard === 'function') window.loadDashboard();
     } catch (err) {
       errEl.textContent = err.message;
       errEl.style.display = 'block';
@@ -892,9 +891,14 @@ async function connectWalletHeader() {
       body: JSON.stringify({ address: addr, shieldedAddress, coinPublicKey }),
     });
     if (!resp.ok) throw new Error('Server rejected wallet session');
+    console.log('[wallet] connect success — server session established for:', addr);
 
     // Show connected immediately — auto-resolve will update the label when it completes
     if (el) { _walletSetConnected(el, addr); }
+
+    // Reactively update dashboard without page reload
+    console.log('[wallet] calling loadDashboard() after connect');
+    if (typeof window.loadDashboard === 'function') window.loadDashboard();
 
     // Check if pilot identity needs to be set (first-time onboarding)
     fetch('/profile').then(r => r.json()).then(p => {
@@ -911,6 +915,8 @@ async function connectWalletHeader() {
         const displayLabel = (result && result.ok && result.midname) ? result.midname : null;
         console.log('[identity] auto-resolve result:', displayLabel || 'none');
         if (el) { _walletSetConnected(el, addr, displayLabel); }
+        // Refresh dashboard again after midname resolves (label + identity level may change)
+        if (typeof window.loadDashboard === 'function') window.loadDashboard();
       })
       .catch(err => {
         console.log('[identity] auto-resolve failed:', err?.message || String(err));
@@ -1692,12 +1698,15 @@ app.get("/", (_req, res) => {
       }
 
       try {
+        console.log('[dashboard] loadDashboard() called — fetching /api/dashboard-state');
         const res = await fetch('/api/dashboard-state');
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const d = await res.json();
+        console.log('[dashboard] /api/dashboard-state response:', d.disconnected ? 'disconnected' : 'connected', '| chipStatus:', d.chipStatus);
 
         // ── Disconnected state — dormant flight deck ──────────────────────────
         if (d.disconnected) {
+          console.log('[dashboard] wallet disconnected — clearing all sections to ghost state');
           const chip = document.getElementById('readiness-chip');
           if (chip) { chip.style.background = '#0b0f18'; chip.style.color = '#374151'; }
           const dot = document.getElementById('readiness-dot');
@@ -1730,6 +1739,27 @@ app.get("/", (_req, res) => {
           if (readinessScoresEl) readinessScoresEl.innerHTML = '';
           const readinessCardsEl = document.getElementById('readiness-cards');
           if (readinessCardsEl) readinessCardsEl.innerHTML = '';
+          // Clear stats to ghost state
+          const gEl = id => document.getElementById(id);
+          if (gEl('stat-total-hrs'))     gEl('stat-total-hrs').textContent     = '— hrs';
+          if (gEl('stat-total-flights')) gEl('stat-total-flights').textContent = '—';
+          if (gEl('stat-total-time'))    gEl('stat-total-time').textContent    = '— hrs';
+          if (gEl('stat-last-flight'))   gEl('stat-last-flight').textContent   = '—';
+          if (gEl('stat-landings'))      gEl('stat-landings').textContent      = '—';
+          const sub = gEl('stat-sub');
+          if (sub) sub.textContent = 'Connect wallet to view flight records';
+          // Clear recent flights table
+          const tbody = gEl('recent-flights-tbody');
+          if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="muted" style="opacity:.4;text-align:center;padding:24px;">Connect wallet to view flights.</td></tr>';
+          // Clear hero identity
+          const heroEl = gEl('pilot-hero-identity');
+          if (heroEl) {
+            const hasProfile = heroEl.getAttribute('data-has-profile') === 'true';
+            heroEl.innerHTML = hasProfile
+              ? '<span class="pilot-name" style="color:#6b7280;letter-spacing:.02em;font-style:italic;">Awaiting Pilot Session</span><span class="pilot-identity-line" style="color:#4b5563;">Connect wallet to verify identity</span>'
+              : '<span class="pilot-name" style="color:#6b7280;letter-spacing:.02em;font-style:italic;">Awaiting Pilot Session</span><span class="pilot-identity-line" style="color:#4b5563;">Connect wallet to initialize your pilot identity and flight records.</span>';
+          }
+          console.log('[dashboard] DOM cleared to ghost state — done');
           return;
         }
 
@@ -1881,7 +1911,13 @@ app.get("/", (_req, res) => {
           container.parentNode.insertBefore(tfSection, container.nextSibling);
         }
 
+        // Refresh stats + recent flights table from /entries (wallet-scoped)
+        console.log('[dashboard] connected — refreshing stats + flights via refreshEntries()');
+        if (typeof refreshEntries === 'function') refreshEntries();
+        console.log('[dashboard] DOM update complete');
+
       } catch (err) {
+        console.error('[dashboard] loadDashboard() error:', err?.message || String(err));
         document.getElementById('readiness-label').textContent = 'Unavailable';
         document.getElementById('readiness-cards').innerHTML =
           '<div class="currency-card" style="color:#ef4444;font-size:13px;">Could not load readiness data.</div>';
@@ -6731,8 +6767,26 @@ app.get("/identity/card", (_req, res) => {
       });
       const data = await resp.json();
       if (data.ok) {
-        showMsg('ok', 'Midname verified! Reloading…');
-        setTimeout(() => location.reload(), 1200);
+        showMsg('ok', 'Midname verified! ✓ ' + midname);
+        // Update wallet nav label without reload
+        const navEl = document.getElementById('wallet-nav-link');
+        if (navEl && typeof _walletSetConnected === 'function') {
+          const addr = navEl.getAttribute('title')?.replace('Click to disconnect · ', '') || '';
+          _walletSetConnected(navEl, addr, midname);
+        }
+        // Reveal clear button inline
+        const clearBtn = document.querySelector('button[onclick="clearMidname()"]');
+        if (!clearBtn) {
+          const verifyBtn = document.querySelector('button[onclick="verifyMidname()"]');
+          if (verifyBtn) {
+            const cb = document.createElement('button');
+            cb.className = 'btn btn-danger';
+            cb.style.marginLeft = '10px';
+            cb.setAttribute('onclick', 'clearMidname()');
+            cb.textContent = 'Clear Midname';
+            verifyBtn.parentNode.insertBefore(cb, verifyBtn.nextSibling);
+          }
+        }
       } else {
         showMsg('err', data.error || 'Verification failed.');
       }
@@ -6744,7 +6798,21 @@ app.get("/identity/card", (_req, res) => {
   async function clearMidname() {
     const resp = await fetch('/identity/clear-midname', { method: 'POST' });
     const data = await resp.json();
-    if (data.ok) location.reload();
+    if (data.ok) {
+      showMsg('ok', 'Midname cleared.');
+      // Reset wallet nav label without reload
+      const navEl = document.getElementById('wallet-nav-link');
+      if (navEl && typeof _walletSetConnected === 'function') {
+        const addr = navEl.getAttribute('title')?.replace('Click to disconnect · ', '') || '';
+        _walletSetConnected(navEl, addr, null);
+      }
+      // Remove clear button inline
+      const clearBtn = document.querySelector('button[onclick="clearMidname()"]');
+      if (clearBtn) clearBtn.remove();
+      // Reset input
+      const inp = document.getElementById('midname-input');
+      if (inp) inp.value = '';
+    }
   }
 
   function showMsg(type, text) {
@@ -7137,7 +7205,6 @@ app.get("/review", (_req, res) => {
         card.querySelector('[style*="Pending"]')?.parentElement && Object.assign(card.querySelector('[style*="1a1203"]').style, { background: '#0d1f10', borderColor: '#22c55e33' });
       }
       showToast('Flight Confirmed — Instructor Verified');
-      setTimeout(() => { window.location.reload(); }, 1400);
     } catch (err) {
       showToast('Failed to approve: ' + err.message, true);
     }
@@ -7156,7 +7223,6 @@ app.get("/review", (_req, res) => {
       });
       if (!res.ok) throw new Error(await res.text());
       showToast('Verification request rejected.');
-      setTimeout(() => { window.location.reload(); }, 1400);
     } catch (err) {
       showToast('Failed to reject: ' + err.message, true);
     }
