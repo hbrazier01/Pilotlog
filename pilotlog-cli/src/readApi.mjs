@@ -660,8 +660,8 @@ async function disconnectWallet() {
   if (hero) {
     const hasProfile = hero.getAttribute('data-has-profile') === 'true';
     hero.innerHTML = hasProfile
-      ? '<span class="pilot-name" style="color:#9aa3ff;">Local Profile Saved</span><span class="pilot-identity-line">Connect wallet to verify identity</span>'
-      : '<span class="pilot-name" style="color:#4b5563;">Pilot Identity Locked</span><span class="pilot-identity-line">Connect wallet to view your pilot profile</span>';
+      ? '<span class="pilot-name" style="color:#6b7280;letter-spacing:.02em;font-style:italic;">Awaiting Pilot Session</span><span class="pilot-identity-line" style="color:#4b5563;">Connect wallet to verify identity</span>'
+      : '<span class="pilot-name" style="color:#6b7280;letter-spacing:.02em;font-style:italic;">Awaiting Pilot Session</span><span class="pilot-identity-line" style="color:#4b5563;">Connect wallet to initialize your pilot identity and flight records.</span>';
   }
   // Re-render dashboard to clear pilot data (wallet-scoped)
   if (typeof window.loadDashboard === 'function') window.loadDashboard();
@@ -1503,7 +1503,7 @@ app.get("/", (_req, res) => {
         ? (pilotName
           ? `<span class="pilot-name">${pilotName}<button class="pilot-edit-btn" onclick="fetch('/profile').then(r=>r.json()).then(p=>_showPilotIdentityModal(p))">edit</button></span>`
           : `<button class="pilot-create-cta" onclick="_showPilotIdentityModal()">+ Create Pilot Profile</button>`)
-        : `<span class="pilot-name" style="color:#4b5563;">Pilot Identity Locked</span><span class="pilot-identity-line">Connect wallet to load your pilot profile, flight history, aircraft, and training progress.</span>`
+        : `<span class="pilot-name" style="color:#6b7280;letter-spacing:.02em;font-style:italic;">Awaiting Pilot Session</span><span class="pilot-identity-line" style="color:#4b5563;">Connect wallet to initialize your pilot identity, aircraft records, training progression, and verified flight history.</span>`
       }
       ${walletConnected && (pilotPhaseLabel || medicalLabel) ? `<span class="pilot-identity-line">${[pilotPhaseLabel, medicalLabel ? `<span class="medical-status medical-${medicalStatus}">${medicalLabel}</span>` : null].filter(Boolean).join(' · ')}</span>` : ''}
     </div>
@@ -1553,10 +1553,43 @@ app.get("/", (_req, res) => {
   <div class="log-form" id="logForm">
     <h3>Log a Flight</h3>
     <form id="flightForm" onsubmit="submitFlight(event)">` : `
-  <div style="margin-top:32px;padding:32px 0;text-align:center;">
-    <div style="color:#4b5563;font-size:13px;margin-top:16px;">Your pilot data loads only after wallet connection.</div>
-    <div style="color:#374151;font-size:12px;margin-top:10px;">Wallet-scoped pilot records keep each pilot's logbook separate.</div>
+  <!-- dormant flight deck: ghost metric cards -->
+  <div class="grid" style="opacity:.22;pointer-events:none;user-select:none;">
+    <div class="card"><div class="label">Total Flights</div><div class="val">—</div></div>
+    <div class="card"><div class="label">Total Time</div><div class="val">— hrs</div></div>
+    <div class="card"><div class="label">Last Flight</div><div class="val" style="font-size:20px;margin-top:10px;">—</div></div>
+    <div class="card"><div class="label">Landings</div><div class="val">—</div></div>
   </div>
+
+  <!-- dormant flight deck: ghost training journey -->
+  <div class="assistant-section" style="opacity:.22;pointer-events:none;user-select:none;">
+    <div class="section-title">Training Journey</div>
+    <div class="readiness-chip" style="background:#0b0f18;color:#374151;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#374151;display:inline-block;"></span>
+      <span style="margin-left:8px;">Awaiting Initialization</span>
+    </div>
+    <div style="margin-top:12px;background:#0d1117;border:1px solid #1a2040;border-radius:10px;padding:16px 20px;">
+      <div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:8px;">Pilot Phase</div>
+      <div style="height:6px;background:#111827;border-radius:3px;overflow:hidden;">
+        <div style="width:0%;height:100%;background:#1a3a8f;border-radius:3px;"></div>
+      </div>
+      <div style="font-size:11px;color:#374151;margin-top:6px;">0%</div>
+    </div>
+    <div class="currency-cards" style="margin-top:12px;">
+      ${['Total Time','Dual Received','Solo Time','Solo XC','Night Hours','Sim Instrument','Night Ldgs'].map(label =>
+        `<div class="currency-card" style="opacity:.6;"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#374151;margin-bottom:4px;">${label}</div><div style="font-size:18px;font-weight:700;color:#1f2937;">—</div><div style="font-size:10px;color:#374151;">/ — hrs</div></div>`
+      ).join('')}
+    </div>
+  </div>
+
+  <!-- dormant: CTA strip -->
+  <div style="margin-top:28px;padding:24px;background:linear-gradient(135deg,#0d1117 0%,#0f172a 100%);border:1px solid #1a2040;border-radius:12px;text-align:center;">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#374151;margin-bottom:10px;">System Status</div>
+    <div style="font-size:20px;font-weight:800;color:#4b5563;margin-bottom:8px;letter-spacing:.04em;">AWAITING PILOT INITIALIZATION</div>
+    <div style="font-size:13px;color:#374151;line-height:1.6;max-width:400px;margin:0 auto 20px;">Connect your wallet to activate your pilot identity, load aircraft records, and begin verified flight history.</div>
+    <button onclick="connectWalletHeader()" style="background:#1a3a8f;color:#c7d2fe;border:none;border-radius:8px;padding:12px 32px;font-size:14px;font-weight:700;cursor:pointer;letter-spacing:.04em;">Initialize PilotLog Identity →</button>
+  </div>
+
   <!-- disconnected: log form hidden -->
   <div id="logForm" style="display:none;"><form id="flightForm" onsubmit="return false;">
       <div class="form-row">
@@ -1663,38 +1696,40 @@ app.get("/", (_req, res) => {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const d = await res.json();
 
-        // ── Disconnected state — wallet not connected ─────────────────────────
+        // ── Disconnected state — dormant flight deck ──────────────────────────
         if (d.disconnected) {
           const chip = document.getElementById('readiness-chip');
-          if (chip) { chip.style.background = '#0b0f18'; chip.style.color = '#4b5563'; }
+          if (chip) { chip.style.background = '#0b0f18'; chip.style.color = '#374151'; }
           const dot = document.getElementById('readiness-dot');
-          if (dot) dot.style.background = '#374151';
+          if (dot) dot.style.background = '#1f2937';
           const lbl = document.getElementById('readiness-label');
-          if (lbl) lbl.textContent = 'No Session';
+          if (lbl) lbl.textContent = 'Awaiting Initialization';
           const todayEl = document.getElementById('today-card');
-          if (todayEl) todayEl.innerHTML = \`<div style="text-align:center;padding:24px 0;color:#4b5563;"><div style="font-size:15px;font-weight:700;margin-bottom:8px;color:#6b7280;">No Active Pilot Session</div><div style="font-size:13px;">Connect wallet to load pilot profile</div></div>\`;
-          if (todayEl) todayEl.style.display = 'block';
+          if (todayEl) {
+            todayEl.innerHTML = \`
+              <div style="padding:20px;background:#0d1117;border:1px solid #1a2040;border-radius:10px;opacity:.5;">
+                <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#374151;margin-bottom:10px;">Flight Deck</div>
+                <div style="font-size:15px;font-weight:700;color:#1f2937;margin-bottom:6px;">Systems Dormant</div>
+                <div style="font-size:12px;color:#374151;line-height:1.5;">Pilot identity not initialized. Connect wallet to load flight records, training state, and aircraft registry.</div>
+              </div>\`;
+            todayEl.style.display = 'block';
+          }
           const progBarEl = document.getElementById('progression-bar');
-          if (progBarEl) { progBarEl.innerHTML = ''; progBarEl.style.display = 'none'; }
+          if (progBarEl) {
+            progBarEl.innerHTML = \`
+              <div class="progression-phase" style="opacity:.3;">
+                <span style="color:#374151;">Pilot Phase</span>
+                <span style="color:#374151;">0%</span>
+              </div>
+              <div class="progression-track" style="opacity:.2;">
+                <div class="progression-fill" style="width:0%;"></div>
+              </div>\`;
+            progBarEl.style.display = 'block';
+          }
           const readinessScoresEl = document.getElementById('readiness-scores');
           if (readinessScoresEl) readinessScoresEl.innerHTML = '';
-          const recentFlightsEl = document.getElementById('recent-flights-list');
-          if (recentFlightsEl) recentFlightsEl.innerHTML = '<div style="color:#4b5563;font-size:13px;padding:16px 0;">Connect wallet to view flights</div>';
-          const aircraftEl = document.getElementById('aircraft-list');
-          if (aircraftEl) aircraftEl.innerHTML = '<div style="color:#4b5563;font-size:13px;padding:16px 0;">Connect wallet to view aircraft</div>';
           const readinessCardsEl = document.getElementById('readiness-cards');
           if (readinessCardsEl) readinessCardsEl.innerHTML = '';
-          // Zero out all stats — no active session means no visible pilot data
-          const hrsEl = document.getElementById('stat-total-hrs');
-          if (hrsEl) hrsEl.textContent = '— hrs';
-          const flightsEl = document.getElementById('stat-total-flights');
-          if (flightsEl) flightsEl.textContent = '—';
-          const timeEl = document.getElementById('stat-total-time');
-          if (timeEl) timeEl.textContent = '— hrs';
-          const lastEl = document.getElementById('stat-last-flight');
-          if (lastEl) lastEl.textContent = '—';
-          const landingsEl = document.getElementById('stat-landings');
-          if (landingsEl) landingsEl.textContent = '—';
           return;
         }
 
@@ -2890,6 +2925,17 @@ app.get("/", (_req, res) => {
       <tbody>${aircraftRows}</tbody>
     </table>
   </div>
+  ` : !walletConnected ? `
+  <div class="table" style="opacity:.18;pointer-events:none;user-select:none;">
+    <div class="table-title">Aircraft Registry</div>
+    <table>
+      <thead><tr><th>Ident</th><th>Type</th><th>Flights</th><th>Hours</th><th>Last Flight</th></tr></thead>
+      <tbody>
+        <tr><td style="color:#1f2937;">— — —</td><td style="color:#1f2937;">—</td><td style="color:#1f2937;">—</td><td style="color:#1f2937;">—</td><td style="color:#1f2937;">—</td></tr>
+        <tr><td style="color:#1f2937;">— — —</td><td style="color:#1f2937;">—</td><td style="color:#1f2937;">—</td><td style="color:#1f2937;">—</td><td style="color:#1f2937;">—</td></tr>
+      </tbody>
+    </table>
+  </div>
   ` : ""}
 
   ${walletConnected ? `<div class="table">
@@ -2935,7 +2981,20 @@ app.get("/", (_req, res) => {
         ${recent.length === 0 ? '<tr><td colspan="8" class="muted">No flights logged yet.</td></tr>' : ""}
       </tbody>
     </table>
-  </div>` : ""}
+  </div>` : `
+  <div class="table" style="opacity:.18;pointer-events:none;user-select:none;">
+    <div class="table-title">Flight History</div>
+    <table>
+      <thead>
+        <tr><th>Date</th><th>Aircraft</th><th>Route</th><th>Total</th><th>PIC</th><th class="muted">Remarks</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <tr><td style="color:#1f2937;">— — — —</td><td style="color:#1f2937;">—</td><td style="color:#1f2937;">— → —</td><td style="color:#1f2937;">—</td><td style="color:#1f2937;">—</td><td style="color:#1f2937;">—</td><td style="color:#1f2937;">—</td></tr>
+        <tr><td style="color:#1f2937;">— — — —</td><td style="color:#1f2937;">—</td><td style="color:#1f2937;">— → —</td><td style="color:#1f2937;">—</td><td style="color:#1f2937;">—</td><td style="color:#1f2937;">—</td><td style="color:#1f2937;">—</td></tr>
+        <tr><td style="color:#1f2937;">— — — —</td><td style="color:#1f2937;">—</td><td style="color:#1f2937;">— → —</td><td style="color:#1f2937;">—</td><td style="color:#1f2937;">—</td><td style="color:#1f2937;">—</td><td style="color:#1f2937;">—</td></tr>
+      </tbody>
+    </table>
+  </div>`}
 </div>
 <script>
 (function() {
