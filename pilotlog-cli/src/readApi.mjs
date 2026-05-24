@@ -5,6 +5,17 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { createHash, randomBytes } from "node:crypto";
+import { migrate, getPool, pgReadEntries, pgSaveEntry, pgUpdateEntryTxHash, pgReadProfile, pgSaveProfile, pgReadIdentity, pgSaveIdentity } from "./db.mjs";
+
+// ─── Postgres in-memory wallet cache ─────────────────────────────────────────
+// Loaded from Postgres on wallet connect; cleared on wallet disconnect.
+// Sync read functions consult this cache first so no async plumbing is needed.
+const pgCache = {
+  walletAddress: null,
+  entries: null,   // null = not loaded; [] = loaded (empty)
+  profile: null,
+  identity: null,
+};
 import { buildIntegrityResult } from "../../src/services/build-integrity-result.mjs";
 import { anchorOnMidnight } from "../../src/services/airlog-anchor-midnight.mjs";
 import { canonicalizeFlightEntry } from "../../src/lib/canonicalize-entry.mjs";
@@ -103,6 +114,9 @@ if (!fs.existsSync(ATTESTATIONS_PATH)) {
 }
 
 function readEntries() {
+  // pg mode: return wallet-scoped in-memory cache (loaded on wallet connect)
+  if (getPool() && pgCache.entries !== null) return pgCache.entries;
+  // file fallback
   try {
     const raw = fs.readFileSync(ENTRIES_PATH, "utf-8");
     const parsed = JSON.parse(raw);
@@ -128,6 +142,7 @@ function saveWalletSession(session) {
 }
 
 function readIdentity() {
+  if (getPool() && pgCache.identity !== null) return pgCache.identity;
   try {
     if (!fs.existsSync(IDENTITY_PATH)) return null;
     return JSON.parse(fs.readFileSync(IDENTITY_PATH, "utf-8"));
@@ -138,6 +153,12 @@ function readIdentity() {
 
 function saveIdentity(identity) {
   fs.writeFileSync(IDENTITY_PATH, JSON.stringify(identity, null, 2));
+  // pg write-through (fire and forget)
+  const wa = pgCache.walletAddress || readWalletSession()?.address;
+  if (getPool() && wa) {
+    pgCache.identity = identity;
+    pgSaveIdentity(wa, identity).catch(err => console.error("[db] saveIdentity error:", err.message));
+  }
 }
 
 function readAttestations() {
@@ -963,6 +984,7 @@ async function anchorEntryInBackground(entryId, aircraftId) {
 }
 
 function readProfile() {
+  if (getPool() && pgCache.profile !== null) return pgCache.profile;
   try {
     const raw = fs.readFileSync(PROFILE_PATH, "utf-8");
     const parsed = JSON.parse(raw);
@@ -974,6 +996,12 @@ function readProfile() {
 
 function saveProfile(profile) {
   fs.writeFileSync(PROFILE_PATH, JSON.stringify(profile, null, 2));
+  // pg write-through (fire and forget)
+  const wa = pgCache.walletAddress || readWalletSession()?.address;
+  if (getPool() && wa) {
+    pgCache.profile = profile;
+    pgSaveProfile(wa, profile).catch(err => console.error("[db] saveProfile error:", err.message));
+  }
 }
 
 function readAircraft() {
@@ -2881,7 +2909,7 @@ app.get("/entries", (_req, res) => {
   res.json({ count: entries.length, entries });
 });
 
-app.post("/entries", (req, res) => {
+app.post("/entries", async (req, res) => {
   const { date, aircraftId, totalTime, dayLandings, nightLandings, from, to, remarks, trainingTags, txHash, walletAddress: bodyWalletAddress } = req.body || {};
   if (!aircraftId) {
     return res.status(400).json({ error: "aircraftId is required" });
@@ -2952,13 +2980,22 @@ app.post("/entries", (req, res) => {
   const entries = readEntries();
   entries.push(entry);
   fs.writeFileSync(ENTRIES_PATH, JSON.stringify(entries, null, 2));
+  // pg write-through
+  if (getPool()) {
+    try {
+      await pgSaveEntry(entry, walletAddress);
+      if (pgCache.entries !== null) pgCache.entries.unshift(entry);
+    } catch (err) {
+      console.error("[db] pgSaveEntry error:", err.message);
+    }
+  }
   res.status(201).json(entry);
 });
 
 // /entries/chain-submit is REMOVED — transactions are executed browser-side via 1AM wallet
 
 // PATCH /entries/:id/txhash — AIR-234: backfill real txHash after submission timeout
-app.patch("/entries/:id/txhash", (req, res) => {
+app.patch("/entries/:id/txhash", async (req, res) => {
   const { id } = req.params;
   const { txHash: newTxHash } = req.body || {};
   if (!newTxHash || !/^[0-9a-f]{64}$/i.test(newTxHash)) {
@@ -2985,6 +3022,19 @@ app.patch("/entries/:id/txhash", (req, res) => {
     },
   };
   fs.writeFileSync(ENTRIES_PATH, JSON.stringify(entries, null, 2));
+  // pg write-through
+  const walletSession = readWalletSession();
+  if (getPool() && walletSession?.address) {
+    try {
+      await pgUpdateEntryTxHash(id, newTxHash, walletSession.address);
+      if (pgCache.entries !== null) {
+        const ci = pgCache.entries.findIndex(e => e.id === id);
+        if (ci !== -1) pgCache.entries[ci] = entries[idx];
+      }
+    } catch (err) {
+      console.error("[db] pgUpdateEntryTxHash error:", err.message);
+    }
+  }
   console.log('[backfill] entry', id, 'patched with real txHash:', newTxHash);
   res.json(entries[idx]);
 });
@@ -5727,7 +5777,7 @@ app.post("/profile/identity", (req, res) => {
 // ── Wallet State (server-side session) ───────────────────────────────────────
 
 // POST /wallet/connect — browser posts connected wallet address here
-app.post("/wallet/connect", (req, res) => {
+app.post("/wallet/connect", async (req, res) => {
   const { address, coinPublicKey, shieldedAddress } = req.body || {};
   console.log("[wallet/connect] raw body:", JSON.stringify({ address, coinPublicKey, shieldedAddress }));
   if (!address) return res.status(400).json({ error: "address required" });
@@ -5736,12 +5786,34 @@ app.post("/wallet/connect", (req, res) => {
   console.log("[wallet/connect] stored session.shieldedAddress:", session.shieldedAddress);
   console.log("[wallet/connect] stored session.coinPublicKey:", session.coinPublicKey);
   saveWalletSession(session);
+  // Load wallet-scoped data from Postgres into in-memory cache
+  if (getPool()) {
+    try {
+      const [pgEntries, pgProfile, pgIdentity] = await Promise.all([
+        pgReadEntries(address),
+        pgReadProfile(address),
+        pgReadIdentity(address),
+      ]);
+      pgCache.walletAddress = address;
+      if (pgEntries !== null) pgCache.entries = pgEntries;
+      if (pgProfile !== null) pgCache.profile = pgProfile;
+      if (pgIdentity !== null) pgCache.identity = pgIdentity;
+      console.log(`[db] loaded wallet ${address}: ${(pgEntries || []).length} flights, profile=${!!pgProfile}, identity=${!!pgIdentity}`);
+    } catch (err) {
+      console.error("[db] wallet connect load error:", err.message);
+    }
+  }
   res.json({ ok: true, session });
 });
 
 // POST /wallet/disconnect — clear wallet session
 app.post("/wallet/disconnect", (_req, res) => {
   if (fs.existsSync(WALLET_PATH)) fs.unlinkSync(WALLET_PATH);
+  // Clear pg cache — wallet disconnect means no pilot data should be visible
+  pgCache.walletAddress = null;
+  pgCache.entries = null;
+  pgCache.profile = null;
+  pgCache.identity = null;
   res.json({ ok: true });
 });
 
@@ -7342,10 +7414,17 @@ app.get("/progression", (_req, res) => {
 </html>`);
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`pilotlog-read-api listening on :${PORT}`);
-  console.log(`Reading entries from: ${ENTRIES_PATH}`);
-  console.log(`Reading profile from: ${PROFILE_PATH}`);
-  console.log(`Reading aircraft from: ${AIRCRAFT_PATH}`);
-  console.log(`Reading verification from: ${VERIFICATION_PATH}`);
-});
+// Run DB migrations then start server
+migrate()
+  .catch(err => console.error("[db] migrate error (non-fatal):", err.message))
+  .finally(() => {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`pilotlog-read-api listening on :${PORT}`);
+      if (process.env.DATABASE_URL) {
+        console.log("[db] Postgres mode: wallet-scoped data backed by DATABASE_URL");
+      } else {
+        console.log(`Reading entries from: ${ENTRIES_PATH}`);
+        console.log(`Reading profile from: ${PROFILE_PATH}`);
+      }
+    });
+  });
