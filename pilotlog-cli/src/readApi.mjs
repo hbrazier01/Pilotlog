@@ -3216,17 +3216,19 @@ app.post("/entries", async (req, res) => {
       network: "preprod",
     },
   };
-  const entries = readEntries();
-  entries.push(entry);
-  fs.writeFileSync(ENTRIES_PATH, JSON.stringify(entries, null, 2));
-  // pg write-through
   if (getPool()) {
+    // pg mode: persist to Postgres and update cache; skip JSON file mutation
     try {
       await pgSaveEntry(entry, walletAddress);
       if (pgCache.entries !== null) pgCache.entries.unshift(entry);
     } catch (err) {
       console.error("[db] pgSaveEntry error:", err.message);
     }
+  } else {
+    // file mode: append to JSON file
+    const entries = readEntries();
+    entries.push(entry);
+    fs.writeFileSync(ENTRIES_PATH, JSON.stringify(entries, null, 2));
   }
   res.status(201).json(entry);
 });
