@@ -1561,7 +1561,73 @@ app.get("/", (_req, res) => {
 
   <div class="log-form" id="logForm">
     <h3>Log a Flight</h3>
-    <form id="flightForm" onsubmit="submitFlight(event)">` : `
+    <form id="flightForm" onsubmit="submitFlight(event)">
+      <div class="form-row">
+        <div class="form-field">
+          <label>Aircraft ID</label>
+          <input type="text" name="aircraftId" placeholder="e.g. N123AB" required />
+        </div>
+        <div class="form-field">
+          <label>Date</label>
+          <input type="date" name="date" value="${new Date().toISOString().slice(0,10)}" required />
+        </div>
+        <div class="form-field">
+          <label>Total Time (hrs)</label>
+          <input type="number" name="totalTime" placeholder="1.5" min="0" step="0.1" required />
+        </div>
+        <div class="form-field">
+          <label>Day Landings</label>
+          <input type="number" name="dayLandings" placeholder="1" min="0" step="1" value="0" />
+        </div>
+        <div class="form-field">
+          <label>Night Landings</label>
+          <input type="number" name="nightLandings" placeholder="0" min="0" step="1" value="0" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-field">
+          <label>From</label>
+          <input type="text" name="from" placeholder="KAPA" maxlength="10" />
+        </div>
+        <div class="form-field">
+          <label>To</label>
+          <input type="text" name="to" placeholder="KADS" maxlength="10" />
+        </div>
+        <div class="form-field" style="flex:2;min-width:200px;">
+          <label>Remarks</label>
+          <input type="text" name="remarks" placeholder="Optional notes" />
+        </div>
+      </div>
+      <div class="training-focus-section">
+        <div class="training-focus-label">Training Focus <span style="color:#4a5568;font-weight:400;">(optional — select all that apply)</span></div>
+        <div class="training-chips" id="trainingChips">
+          <span class="training-chip" data-tag="discovery_flight">Discovery Flight</span>
+          <span class="training-chip" data-tag="pattern_work">Pattern Work</span>
+          <span class="training-chip" data-tag="crosswind_landings">Crosswind</span>
+          <span class="training-chip" data-tag="stalls">Stalls</span>
+          <span class="training-chip" data-tag="slow_flight">Slow Flight</span>
+          <span class="training-chip" data-tag="steep_turns">Steep Turns</span>
+          <span class="training-chip" data-tag="ground_reference">Ground Ref</span>
+          <span class="training-chip" data-tag="emergency_procedures">Emergency</span>
+          <span class="training-chip" data-tag="short_field">Short Field</span>
+          <span class="training-chip" data-tag="soft_field">Soft Field</span>
+          <span class="training-chip" data-tag="cross_country">XC</span>
+          <span class="training-chip" data-tag="night">Night</span>
+          <span class="training-chip" data-tag="instrument">Instrument</span>
+          <span class="training-chip" data-tag="takeoffs_landings">T&amp;Ls</span>
+          <span class="training-chip" data-tag="radio_work">Radio Work</span>
+          <span class="training-chip" data-tag="navigation">Navigation</span>
+          <span class="training-chip" data-tag="traffic_pattern">Traffic Pattern</span>
+          <span class="training-chip" data-tag="checkride_prep">Checkride Prep</span>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-sm">Save Flight</button>
+        <button type="button" class="btn-cancel" onclick="toggleForm()">Cancel</button>
+      </div>
+    </form>
+  </div>
+` : `
   <!-- dormant flight deck: ghost metric cards -->
   <div class="grid" style="opacity:.22;pointer-events:none;user-select:none;">
     <div class="card"><div class="label">Total Flights</div><div class="val">—</div></div>
