@@ -686,8 +686,15 @@ async function reconnectWallet() {
         ? identityData.midname
         : null;
       _walletSetConnected(el, walletData.session.address, displayLabel);
-      // AIR-272: check if the extension is actually available; if not, session is stale
-      const extPresent = !!(window.midnight && window.midnight['1am'] && typeof window.midnight['1am'].connect === 'function');
+      // AIR-272 / AIR-307: check if the extension is actually available; if not, session is stale
+      // Use stored walletName to check the correct extension
+      const storedWalletName = walletData.session?.walletName || '1am';
+      let extPresent = false;
+      if (storedWalletName === 'lace') {
+        extPresent = !!(window.cardano && window.cardano.lace && typeof window.cardano.lace.enable === 'function');
+      } else {
+        extPresent = !!(window.midnight && window.midnight['1am'] && typeof window.midnight['1am'].connect === 'function');
+      }
       if (!extPresent) {
         showReconnectBanner();
       }
@@ -816,67 +823,88 @@ function editPilotIdentity() {
   }).catch(() => { _showPilotIdentityModal(); });
 }
 
-async function connectWalletHeader() {
+// ── AIR-307: Multi-wallet support (1AM + Lace) ────────────────────────────────
+
+// Shared post-connect handler — called after either wallet connects successfully.
+async function _finishWalletConnect(addr, { shieldedAddress, coinPublicKey, walletName }) {
   const el = document.getElementById('wallet-nav-link');
-  if (el) { el.textContent = 'Connecting\\u2026'; el.disabled = true; el.onclick = null; }
-  const wallet = window.midnight?.['1am'];
-  if (!wallet || typeof wallet.connect !== 'function') {
-    alert('1AM wallet extension not found. Install the Midnight 1AM extension to continue.');
-    if (el) { _walletSetDisconnected(el); }
-    return;
+  const resp = await fetch('/wallet/connect', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address: addr, shieldedAddress: shieldedAddress || null, coinPublicKey: coinPublicKey || null, walletName }),
+  });
+  if (!resp.ok) throw new Error('Server rejected wallet session');
+  console.log('[wallet] connect success — session established for:', addr, '(', walletName, ')');
+
+  if (el) { _walletSetConnected(el, addr); }
+  if (typeof window.loadDashboard === 'function') window.loadDashboard();
+
+  fetch('/profile').then(r => r.json()).then(p => {
+    if (!p.pilot || !p.pilot.fullName || !String(p.pilot.fullName).trim()) {
+      _showPilotIdentityModal();
+    }
+  }).catch(() => {});
+
+  // Auto-resolve Midname (1AM only — Lace doesn't use Midnames)
+  if (walletName !== 'lace') {
+    console.log('[identity] auto-resolve start');
+    fetch('/identity/auto-resolve-midname', { method: 'POST' })
+      .then(r => r.json())
+      .then(result => {
+        const displayLabel = (result && result.ok && result.midname) ? result.midname : null;
+        console.log('[identity] auto-resolve result:', displayLabel || 'none');
+        if (el) { _walletSetConnected(el, addr, displayLabel); }
+        if (typeof window.loadDashboard === 'function') window.loadDashboard();
+      })
+      .catch(err => {
+        console.log('[identity] auto-resolve failed:', err?.message || String(err));
+      });
   }
+}
+
+async function _connect1AMWallet() {
+  const el = document.getElementById('wallet-nav-link');
+  const wallet = window.midnight?.['1am'];
   try {
     const api = await wallet.connect('preprod');
     if (!api) throw new Error('Connection rejected');
 
-    // Primary: getUnshieldedAddress() — returns { unshieldedAddress }
+    // Primary: getUnshieldedAddress()
     let addr = null;
     try {
       const { unshieldedAddress } = await api.getUnshieldedAddress();
       addr = unshieldedAddress || null;
     } catch (_) {}
-    // Fallback: api.state() looking for bech32 mn_addr_* unshielded address
+    // Fallback: api.state()
     if (!addr) {
       try {
         const state = await api.state();
         const candidate = state?.address || state?.unshieldedAddress || null;
-        if (candidate && String(candidate).startsWith('mn_addr')) {
-          addr = candidate;
-        }
+        if (candidate && String(candidate).startsWith('mn_addr')) addr = candidate;
       } catch (_) {}
     }
-    // Always capture shielded addresses for midname identity verification
+    // Capture shielded addresses
     let shieldedAddress = null;
     let coinPublicKey = null;
     let _rawShieldedResult = null;
     try {
       console.log('[wallet-connect] typeof api.getShieldedAddresses:', typeof api.getShieldedAddresses);
-      console.log('[wallet-connect] calling getShieldedAddresses...');
       const shielded = await api.getShieldedAddresses();
       _rawShieldedResult = shielded;
-      // AIR-247: log raw result and all keys to detect field name mismatches
       try {
         console.log('[wallet-connect] getShieldedAddresses RAW keys:', shielded ? Object.keys(shielded) : 'null/undefined');
         console.log('[wallet-connect] getShieldedAddresses RAW result:', JSON.stringify(shielded));
       } catch (_) {
         console.log('[wallet-connect] getShieldedAddresses RAW result (non-serializable):', String(shielded));
       }
-      console.log('[wallet-connect] getShieldedAddresses extracted:', JSON.stringify({
-        shieldedAddress: shielded?.shieldedAddress || null,
-        shieldedCoinPublicKey: shielded?.shieldedCoinPublicKey || null,
-        shieldedEncryptionPublicKey: shielded?.shieldedEncryptionPublicKey ? '(present)' : null,
-      }));
       shieldedAddress = shielded?.shieldedAddress || null;
       coinPublicKey = shielded?.shieldedCoinPublicKey || null;
       if (!addr) addr = coinPublicKey || shieldedAddress;
     } catch (e) {
       console.warn('[wallet-connect] getShieldedAddresses failed:', e?.message || String(e));
-      console.warn('[wallet-connect] getShieldedAddresses error stack:', e?.stack || 'no stack');
       _rawShieldedResult = { error: e?.message || String(e) };
     }
-    // AIR-247: persist raw shielded result in session-level debug state
     try { window.__pilotlog_shielded_debug = _rawShieldedResult; } catch (_) {}
-    console.log('[wallet-connect] final shieldedAddress:', shieldedAddress, '| coinPublicKey:', coinPublicKey ? '(present)' : 'null');
     if (!addr) {
       try {
         const state = await api.state();
@@ -885,49 +913,98 @@ async function connectWalletHeader() {
         if (!coinPublicKey) coinPublicKey = state?.coinPublicKey || null;
       } catch (_) {}
     }
-
-    if (!addr) throw new Error('No address returned from wallet');
-
-    const resp = await fetch('/wallet/connect', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address: addr, shieldedAddress, coinPublicKey }),
-    });
-    if (!resp.ok) throw new Error('Server rejected wallet session');
-    console.log('[wallet] connect success — server session established for:', addr);
-
-    // Show connected immediately — auto-resolve will update the label when it completes
-    if (el) { _walletSetConnected(el, addr); }
-
-    // Reactively update dashboard without page reload
-    console.log('[wallet] calling loadDashboard() after connect');
-    if (typeof window.loadDashboard === 'function') window.loadDashboard();
-
-    // Check if pilot identity needs to be set (first-time onboarding)
-    fetch('/profile').then(r => r.json()).then(p => {
-      if (!p.pilot || !p.pilot.fullName || !String(p.pilot.fullName).trim()) {
-        _showPilotIdentityModal();
-      }
-    }).catch(() => {});
-
-    // Auto-resolve Midname for this wallet (reverse lookup via Midnames contract ledger)
-    console.log('[identity] auto-resolve start');
-    fetch('/identity/auto-resolve-midname', { method: 'POST' })
-      .then(r => r.json())
-      .then(result => {
-        const displayLabel = (result && result.ok && result.midname) ? result.midname : null;
-        console.log('[identity] auto-resolve result:', displayLabel || 'none');
-        if (el) { _walletSetConnected(el, addr, displayLabel); }
-        // Refresh dashboard again after midname resolves (label + identity level may change)
-        if (typeof window.loadDashboard === 'function') window.loadDashboard();
-      })
-      .catch(err => {
-        console.log('[identity] auto-resolve failed:', err?.message || String(err));
-        // UI already set connected above — no further action needed
-      });
+    if (!addr) throw new Error('No address returned from 1AM wallet');
+    await _finishWalletConnect(addr, { shieldedAddress, coinPublicKey, walletName: '1am' });
   } catch (err) {
     if (el) { _walletSetDisconnected(el); }
-    alert('Wallet connection failed: ' + err.message);
+    alert('1AM wallet connection failed: ' + err.message);
+  }
+}
+
+async function _connectLaceWallet() {
+  const el = document.getElementById('wallet-nav-link');
+  try {
+    const laceApi = await window.cardano.lace.enable();
+    if (!laceApi) throw new Error('Lace enable() returned null');
+    // getChangeAddress() returns the wallet's main receive address (bech32 or hex CBOR)
+    let addr = null;
+    try {
+      addr = await laceApi.getChangeAddress();
+    } catch (_) {}
+    // Fallback: getUsedAddresses()
+    if (!addr) {
+      try {
+        const addrs = await laceApi.getUsedAddresses();
+        addr = (addrs && addrs.length > 0) ? addrs[0] : null;
+      } catch (_) {}
+    }
+    if (!addr) throw new Error('No address returned from Lace wallet');
+    console.log('[wallet-connect] Lace address:', addr);
+    await _finishWalletConnect(addr, { shieldedAddress: null, coinPublicKey: null, walletName: 'lace' });
+  } catch (err) {
+    if (el) { _walletSetDisconnected(el); }
+    alert('Lace wallet connection failed: ' + err.message);
+  }
+}
+
+function _showWalletPickerModal(has1AM, hasLace) {
+  if (document.getElementById('wallet-picker-modal')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'wallet-picker-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:20000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.innerHTML = \`
+    <div style="background:#121624;border:1px solid #2a3060;border-radius:16px;padding:32px 28px;max-width:380px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.6);">
+      <h2 style="margin:0 0 8px;font-size:20px;font-weight:800;color:#f1f5f9;">Connect Wallet</h2>
+      <p style="margin:0 0 24px;font-size:13px;color:#9aa3ff;">Select a wallet to continue.</p>
+      \${has1AM ? \`<button onclick="_dismissWalletPicker();_connect1AMWalletFromPicker()" style="display:block;width:100%;background:#1a3a8f;color:#fff;border:none;border-radius:10px;padding:14px 20px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:12px;text-align:left;">&#9679; Midnight 1AM<br><span style="font-size:12px;font-weight:400;color:#9aa3ff;">Full chain support &#183; Midnight PreProd</span></button>\` : ''}
+      \${hasLace ? \`<button onclick="_dismissWalletPicker();_connectLaceWalletFromPicker()" style="display:block;width:100%;background:#1a3060;color:#fff;border:none;border-radius:10px;padding:14px 20px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:12px;text-align:left;">&#9675; Lace<br><span style="font-size:12px;font-weight:400;color:#9aa3ff;">Cardano identity wallet</span></button>\` : ''}
+      <button onclick="_dismissWalletPicker()" style="background:transparent;border:1px solid #222843;color:#6b7280;border-radius:8px;padding:10px 20px;font-size:14px;cursor:pointer;width:100%;">Cancel</button>
+    </div>
+  \`;
+  document.body.appendChild(overlay);
+}
+
+function _dismissWalletPicker() {
+  const el = document.getElementById('wallet-picker-modal');
+  if (el) el.remove();
+}
+
+async function _connect1AMWalletFromPicker() {
+  const el = document.getElementById('wallet-nav-link');
+  if (el) { el.textContent = 'Connecting\\u2026'; el.disabled = true; el.onclick = null; }
+  await _connect1AMWallet();
+}
+
+async function _connectLaceWalletFromPicker() {
+  const el = document.getElementById('wallet-nav-link');
+  if (el) { el.textContent = 'Connecting\\u2026'; el.disabled = true; el.onclick = null; }
+  await _connectLaceWallet();
+}
+
+async function connectWalletHeader() {
+  const el = document.getElementById('wallet-nav-link');
+  if (el) { el.textContent = 'Connecting\\u2026'; el.disabled = true; el.onclick = null; }
+
+  const has1AM = !!(window.midnight && window.midnight['1am'] && typeof window.midnight['1am'].connect === 'function');
+  const hasLace = !!(window.cardano && window.cardano.lace && typeof window.cardano.lace.enable === 'function');
+
+  if (!has1AM && !hasLace) {
+    alert('No wallet extension found. Install the Midnight 1AM or Lace extension to continue.');
+    if (el) { _walletSetDisconnected(el); }
+    return;
+  }
+
+  // Show picker when both wallets are available
+  if (has1AM && hasLace) {
+    if (el) { _walletSetDisconnected(el); }
+    _showWalletPickerModal(has1AM, hasLace);
+    return;
+  }
+
+  if (has1AM) {
+    await _connect1AMWallet();
+  } else {
+    await _connectLaceWallet();
   }
 }
 </script>`;
@@ -2049,10 +2126,15 @@ app.get("/", (_req, res) => {
         return;
       }
 
-      // 2. Require 1AM extension
+      // 2. Require 1AM extension (Lace sessions cannot submit Midnight chain transactions)
+      const sessionWalletName = walletStatus?.session?.walletName || '1am';
+      if (sessionWalletName === 'lace') {
+        showToast('Chain anchoring requires the Midnight 1AM wallet · Lace sessions log flights off-chain only', true);
+        return;
+      }
       const walletExt = window.midnight?.['1am'];
       if (!walletExt || typeof walletExt.connect !== 'function') {
-        showToast('Wallet extension unavailable · Reconnect wallet to continue', true);
+        showToast('1AM wallet extension unavailable · Reconnect with 1AM to save on-chain', true);
         return;
       }
 
@@ -6019,10 +6101,10 @@ app.post("/profile/identity", (req, res) => {
 
 // POST /wallet/connect — browser posts connected wallet address here
 app.post("/wallet/connect", async (req, res) => {
-  const { address, coinPublicKey, shieldedAddress } = req.body || {};
-  console.log("[wallet/connect] raw body:", JSON.stringify({ address, coinPublicKey, shieldedAddress }));
+  const { address, coinPublicKey, shieldedAddress, walletName } = req.body || {};
+  console.log("[wallet/connect] raw body:", JSON.stringify({ address, coinPublicKey, shieldedAddress, walletName }));
   if (!address) return res.status(400).json({ error: "address required" });
-  const session = { address, coinPublicKey: coinPublicKey || null, shieldedAddress: shieldedAddress || null, connectedAt: new Date().toISOString() };
+  const session = { address, coinPublicKey: coinPublicKey || null, shieldedAddress: shieldedAddress || null, walletName: walletName || '1am', connectedAt: new Date().toISOString() };
   console.log("[wallet/connect] stored session.address:", session.address);
   console.log("[wallet/connect] stored session.shieldedAddress:", session.shieldedAddress);
   console.log("[wallet/connect] stored session.coinPublicKey:", session.coinPublicKey);
