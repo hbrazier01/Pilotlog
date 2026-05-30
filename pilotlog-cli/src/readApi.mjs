@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { createHash, randomBytes } from "node:crypto";
-import { migrate, getPool, pgReadEntries, pgSaveEntry, pgUpdateEntryTxHash, pgReadProfile, pgSaveProfile, pgReadIdentity, pgSaveIdentity } from "./db.mjs";
+import { migrate, getPool, pgReadEntries, pgSaveEntry, pgUpdateEntryTxHash, pgReadProfile, pgSaveProfile, pgReadIdentity, pgSaveIdentity, pgReadAircraft, pgSaveAircraft } from "./db.mjs";
 
 // ─── Postgres in-memory wallet cache ─────────────────────────────────────────
 // Loaded from Postgres on wallet connect; cleared on wallet disconnect.
@@ -15,6 +15,7 @@ const pgCache = {
   entries: null,   // null = not loaded; [] = loaded (empty)
   profile: null,
   identity: null,
+  aircraft: null,  // null = not loaded; [] = loaded (empty)
 };
 import { buildIntegrityResult } from "../../src/services/build-integrity-result.mjs";
 import { anchorOnMidnight } from "../../src/services/airlog-anchor-midnight.mjs";
@@ -1177,9 +1178,10 @@ function saveProfile(profile) {
 }
 
 function readAircraft() {
-  // Gate on active wallet session — no wallet = no aircraft
-  if (getPool() && !pgCache.walletAddress) return [];
-  if (!getPool() && !readWalletSession()) return [];
+  // pg mode: wallet-scoped cache only — no wallet = no data
+  if (getPool()) return pgCache.walletAddress ? (pgCache.aircraft ?? []) : [];
+  // file mode: gate on active wallet session
+  if (!readWalletSession()) return [];
   try {
     const raw = fs.readFileSync(AIRCRAFT_PATH, "utf-8");
     const parsed = JSON.parse(raw);
@@ -6204,16 +6206,19 @@ app.post("/wallet/connect", async (req, res) => {
     pgCache.entries = null;
     pgCache.profile = null;
     pgCache.identity = null;
+    pgCache.aircraft = null;
     try {
-      const [pgEntries, pgProfile, pgIdentity] = await Promise.all([
+      const [pgEntries, pgProfile, pgIdentity, pgAircraft] = await Promise.all([
         pgReadEntries(address),
         pgReadProfile(address),
         pgReadIdentity(address),
+        pgReadAircraft(address),
       ]);
       if (pgEntries !== null) pgCache.entries = pgEntries;
       if (pgProfile !== null) pgCache.profile = pgProfile;
       if (pgIdentity !== null) pgCache.identity = pgIdentity;
-      console.log(`[db] loaded wallet ${address}: ${(pgEntries || []).length} flights, profile=${!!pgProfile}, identity=${!!pgIdentity}`);
+      if (pgAircraft !== null) pgCache.aircraft = pgAircraft;
+      console.log(`[db] loaded wallet ${address}: ${(pgEntries || []).length} flights, profile=${!!pgProfile}, identity=${!!pgIdentity}, aircraft=${(pgAircraft || []).length}`);
     } catch (err) {
       console.error("[db] wallet connect load error:", err.message);
     }
@@ -6229,6 +6234,7 @@ app.post("/wallet/disconnect", (_req, res) => {
   pgCache.entries = null;
   pgCache.profile = null;
   pgCache.identity = null;
+  pgCache.aircraft = null;
   res.json({ ok: true });
 });
 

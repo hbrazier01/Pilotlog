@@ -228,3 +228,29 @@ export async function pgSaveIdentity(walletAddress, identity) {
   );
   return true;
 }
+
+/** Load all aircraft for a given wallet address. Returns [] if none. */
+export async function pgReadAircraft(walletAddress) {
+  const p = getPool();
+  if (!p || !walletAddress) return null; // null = fall through to JSON
+  const { rows } = await p.query(
+    "SELECT id, ident, type, created_at FROM aircraft WHERE wallet_address = $1 ORDER BY created_at ASC",
+    [walletAddress]
+  );
+  console.log(`[db] pgReadAircraft: ${rows.length} aircraft for wallet ${walletAddress}`);
+  return rows.map((r) => ({ id: r.id, ident: r.ident, type: r.type || "" }));
+}
+
+/** Upsert an aircraft record scoped to walletAddress. */
+export async function pgSaveAircraft(aircraft, walletAddress) {
+  const p = getPool();
+  if (!p) return false;
+  await p.query(
+    `INSERT INTO aircraft (wallet_address, ident, type)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (wallet_address, ident) DO UPDATE
+       SET type = EXCLUDED.type`,
+    [walletAddress, aircraft.ident || "", aircraft.type || ""]
+  );
+  return true;
+}
