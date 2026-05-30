@@ -103,6 +103,7 @@ export async function pgReadEntries(walletAddress) {
     "SELECT entry_json FROM flights WHERE wallet_address = $1 ORDER BY date DESC, created_at DESC",
     [walletAddress]
   );
+  console.log(`[db] pgReadEntries: ${rows.length} flights for wallet ${walletAddress}`);
   return rows.map((r) => r.entry_json);
 }
 
@@ -110,6 +111,7 @@ export async function pgReadEntries(walletAddress) {
 export async function pgSaveEntry(entry, walletAddress) {
   const p = getPool();
   if (!p) return false;
+  console.log(`[db] pgSaveEntry: persisting flight ${entry.id} for wallet ${walletAddress}`);
   await p.query(
     `INSERT INTO flights
        (id, wallet_address, aircraft_ident, date, total_time, pic_time, xc_time,
@@ -159,10 +161,12 @@ export async function pgUpdateEntryTxHash(id, txHash, walletAddress) {
     anchorTx: txHash,
     anchor: { ...(old.anchor || {}), txHash, status: "anchored" },
   };
-  await p.query(
-    "UPDATE flights SET entry_json = $1, verification_status = 'anchored' WHERE id = $2",
-    [JSON.stringify(updated), id]
+  const result = await p.query(
+    "UPDATE flights SET entry_json = $1, verification_status = 'anchored' WHERE id = $2 AND wallet_address = $3",
+    [JSON.stringify(updated), id, walletAddress]
   );
+  if (result.rowCount === 0) return false; // wallet mismatch guard
+  console.log(`[db] pgUpdateEntryTxHash: updated flight ${id} for wallet ${walletAddress}`);
   return updated;
 }
 

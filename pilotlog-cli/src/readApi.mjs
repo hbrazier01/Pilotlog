@@ -156,12 +156,14 @@ function readIdentity() {
 }
 
 function saveIdentity(identity) {
-  fs.writeFileSync(IDENTITY_PATH, JSON.stringify(identity, null, 2));
-  // pg write-through (fire and forget)
   const wa = pgCache.walletAddress || readWalletSession()?.address;
   if (getPool() && wa) {
+    // pg mode: Postgres is authoritative; skip JSON file write
     pgCache.identity = identity;
     pgSaveIdentity(wa, identity).catch(err => console.error("[db] saveIdentity error:", err.message));
+    console.log("[db] saveIdentity: persisted to pg for wallet", wa);
+  } else {
+    fs.writeFileSync(IDENTITY_PATH, JSON.stringify(identity, null, 2));
   }
 }
 
@@ -1078,6 +1080,14 @@ async function connectWalletHeader() {
 
 function updateEntryAnchorFields(entryId, fields) {
   try {
+    if (getPool()) {
+      // pg mode: update pgCache only — JSON file is not authoritative
+      if (pgCache.entries !== null) {
+        const ci = pgCache.entries.findIndex((e) => e.id === entryId);
+        if (ci !== -1) pgCache.entries[ci] = { ...pgCache.entries[ci], ...fields };
+      }
+      return;
+    }
     const entries = readEntries();
     const idx = entries.findIndex((e) => e.id === entryId);
     if (idx === -1) return;
@@ -1155,12 +1165,14 @@ function readProfile() {
 }
 
 function saveProfile(profile) {
-  fs.writeFileSync(PROFILE_PATH, JSON.stringify(profile, null, 2));
-  // pg write-through (fire and forget)
   const wa = pgCache.walletAddress || readWalletSession()?.address;
   if (getPool() && wa) {
+    // pg mode: Postgres is authoritative; skip JSON file write
     pgCache.profile = profile;
     pgSaveProfile(wa, profile).catch(err => console.error("[db] saveProfile error:", err.message));
+    console.log("[db] saveProfile: persisted to pg for wallet", wa);
+  } else {
+    fs.writeFileSync(PROFILE_PATH, JSON.stringify(profile, null, 2));
   }
 }
 
@@ -3409,20 +3421,30 @@ app.patch("/entries/:id/txhash", async (req, res) => {
       status: "anchored",
     },
   };
-  fs.writeFileSync(ENTRIES_PATH, JSON.stringify(entries, null, 2));
-  // pg write-through
   const walletSession = readWalletSession();
-  if (getPool() && walletSession?.address) {
-    try {
-      await pgUpdateEntryTxHash(id, newTxHash, walletSession.address);
-      if (pgCache.entries !== null) {
-        const ci = pgCache.entries.findIndex(e => e.id === id);
-        if (ci !== -1) pgCache.entries[ci] = entries[idx];
+  if (getPool()) {
+    // pg mode: persist to Postgres only; skip JSON file write
+    if (walletSession?.address) {
+      try {
+        const updated = await pgUpdateEntryTxHash(id, newTxHash, walletSession.address);
+        if (!updated) {
+          return res.status(403).json({ error: "wallet mismatch or entry not found in pg" });
+        }
+        if (pgCache.entries !== null) {
+          const ci = pgCache.entries.findIndex(e => e.id === id);
+          if (ci !== -1) pgCache.entries[ci] = updated;
+        }
+        console.log('[backfill][pg] entry', id, 'patched with real txHash:', newTxHash);
+        return res.json(updated);
+      } catch (err) {
+        console.error("[db] pgUpdateEntryTxHash error:", err.message);
+        return res.status(500).json({ error: "pg update failed" });
       }
-    } catch (err) {
-      console.error("[db] pgUpdateEntryTxHash error:", err.message);
     }
+    return res.status(401).json({ error: "no wallet session" });
   }
+  // file mode: write JSON
+  fs.writeFileSync(ENTRIES_PATH, JSON.stringify(entries, null, 2));
   console.log('[backfill] entry', id, 'patched with real txHash:', newTxHash);
   res.json(entries[idx]);
 });
