@@ -6196,15 +6196,20 @@ app.post("/wallet/connect", async (req, res) => {
   console.log("[wallet/connect] stored session.shieldedAddress:", session.shieldedAddress);
   console.log("[wallet/connect] stored session.coinPublicKey:", session.coinPublicKey);
   saveWalletSession(session);
-  // Load wallet-scoped data from Postgres into in-memory cache
+  // Load wallet-scoped data from Postgres into in-memory cache.
+  // Clear prior wallet data first so stale data from a previous wallet never
+  // bleeds through when the new wallet has no stored profile/identity yet.
   if (getPool()) {
+    pgCache.walletAddress = address;
+    pgCache.entries = null;
+    pgCache.profile = null;
+    pgCache.identity = null;
     try {
       const [pgEntries, pgProfile, pgIdentity] = await Promise.all([
         pgReadEntries(address),
         pgReadProfile(address),
         pgReadIdentity(address),
       ]);
-      pgCache.walletAddress = address;
       if (pgEntries !== null) pgCache.entries = pgEntries;
       if (pgProfile !== null) pgCache.profile = pgProfile;
       if (pgIdentity !== null) pgCache.identity = pgIdentity;
