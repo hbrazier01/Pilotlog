@@ -692,6 +692,8 @@ async function reconnectWallet() {
       let extPresent = false;
       if (storedWalletName === 'lace') {
         extPresent = !!(window.cardano && window.cardano.lace && typeof window.cardano.lace.enable === 'function');
+      } else if (storedWalletName === 'lace-midnight') {
+        extPresent = !!(window.midnight && window.midnight.mnLace);
       } else {
         extPresent = !!(window.midnight && window.midnight['1am'] && typeof window.midnight['1am'].connect === 'function');
       }
@@ -845,8 +847,8 @@ async function _finishWalletConnect(addr, { shieldedAddress, coinPublicKey, wall
     }
   }).catch(() => {});
 
-  // Auto-resolve Midname (1AM only — Lace doesn't use Midnames)
-  if (walletName !== 'lace') {
+  // Auto-resolve Midname (1AM only — Lace wallets don't use Midnames)
+  if (walletName !== 'lace' && walletName !== 'lace-midnight') {
     console.log('[identity] auto-resolve start');
     fetch('/identity/auto-resolve-midname', { method: 'POST' })
       .then(r => r.json())
@@ -921,6 +923,57 @@ async function _connect1AMWallet() {
   }
 }
 
+async function _connectLaceMidnightWallet() {
+  const el = document.getElementById('wallet-nav-link');
+  try {
+    const mnLace = window.midnight?.mnLace;
+    if (!mnLace) throw new Error('Lace Midnight provider not found at window.midnight.mnLace');
+
+    // Lace Midnight may expose enable() or serviceUriConfig() before connect
+    let api = null;
+    if (typeof mnLace.enable === 'function') {
+      api = await mnLace.enable();
+    } else if (typeof mnLace.connect === 'function') {
+      api = await mnLace.connect('preprod');
+    } else {
+      // Provider itself may be the connected API
+      api = mnLace;
+    }
+    if (!api) throw new Error('Lace Midnight returned no API');
+
+    console.log('[wallet-connect] Lace Midnight api methods:', Object.keys(api).filter(k => typeof api[k] === 'function'));
+
+    // Try to get Midnight unshielded address
+    let addr = null;
+    let shieldedAddress = null;
+    let coinPublicKey = null;
+    try {
+      const unshielded = await api.getUnshieldedAddress();
+      addr = unshielded?.unshieldedAddress || null;
+    } catch (_) {}
+    try {
+      const shielded = await api.getShieldedAddresses();
+      shieldedAddress = shielded?.shieldedAddress || null;
+      coinPublicKey = shielded?.shieldedCoinPublicKey || null;
+      if (!addr) addr = shieldedAddress || coinPublicKey || null;
+    } catch (_) {}
+    // Fallback: state()
+    if (!addr) {
+      try {
+        const state = await api.state();
+        addr = state?.unshieldedAddress || state?.address || state?.shieldedAddress || null;
+        if (!shieldedAddress) shieldedAddress = state?.shieldedAddress || null;
+      } catch (_) {}
+    }
+    if (!addr) throw new Error('No address returned from Lace Midnight wallet');
+    console.log('[wallet-connect] Lace Midnight address:', addr);
+    await _finishWalletConnect(addr, { shieldedAddress, coinPublicKey, walletName: 'lace-midnight' });
+  } catch (err) {
+    if (el) { _walletSetDisconnected(el); }
+    alert('Lace Midnight connection failed: ' + err.message);
+  }
+}
+
 async function _connectLaceWallet() {
   const el = document.getElementById('wallet-nav-link');
   try {
@@ -947,7 +1000,7 @@ async function _connectLaceWallet() {
   }
 }
 
-function _showWalletPickerModal(has1AM, hasLace) {
+function _showWalletPickerModal(has1AM, hasLaceMidnight, hasLaceCardano) {
   if (document.getElementById('wallet-picker-modal')) return;
   const overlay = document.createElement('div');
   overlay.id = 'wallet-picker-modal';
@@ -957,7 +1010,8 @@ function _showWalletPickerModal(has1AM, hasLace) {
       <h2 style="margin:0 0 8px;font-size:20px;font-weight:800;color:#f1f5f9;">Connect Wallet</h2>
       <p style="margin:0 0 24px;font-size:13px;color:#9aa3ff;">Select a wallet to continue.</p>
       \${has1AM ? \`<button onclick="_dismissWalletPicker();_connect1AMWalletFromPicker()" style="display:block;width:100%;background:#1a3a8f;color:#fff;border:none;border-radius:10px;padding:14px 20px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:12px;text-align:left;">&#9679; Midnight 1AM<br><span style="font-size:12px;font-weight:400;color:#9aa3ff;">Full chain support &#183; Midnight PreProd</span></button>\` : ''}
-      \${hasLace ? \`<button onclick="_dismissWalletPicker();_connectLaceWalletFromPicker()" style="display:block;width:100%;background:#1a3060;color:#fff;border:none;border-radius:10px;padding:14px 20px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:12px;text-align:left;">&#9675; Lace<br><span style="font-size:12px;font-weight:400;color:#9aa3ff;">Cardano identity wallet</span></button>\` : ''}
+      \${hasLaceMidnight ? \`<button onclick="_dismissWalletPicker();_connectLaceMidnightWalletFromPicker()" style="display:block;width:100%;background:#1a2a60;color:#fff;border:none;border-radius:10px;padding:14px 20px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:12px;text-align:left;">&#9675; Lace Midnight<br><span style="font-size:12px;font-weight:400;color:#9aa3ff;">Midnight-capable Lace wallet</span></button>\` : ''}
+      \${hasLaceCardano ? \`<button onclick="_dismissWalletPicker();_connectLaceWalletFromPicker()" style="display:block;width:100%;background:#0f1e40;color:#fff;border:none;border-radius:10px;padding:14px 20px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:12px;text-align:left;">&#9675; Lace Cardano<br><span style="font-size:12px;font-weight:400;color:#6b7280;">Cardano identity only &#183; No chain anchoring</span></button>\` : ''}
       <button onclick="_dismissWalletPicker()" style="background:transparent;border:1px solid #222843;color:#6b7280;border-radius:8px;padding:10px 20px;font-size:14px;cursor:pointer;width:100%;">Cancel</button>
     </div>
   \`;
@@ -975,6 +1029,12 @@ async function _connect1AMWalletFromPicker() {
   await _connect1AMWallet();
 }
 
+async function _connectLaceMidnightWalletFromPicker() {
+  const el = document.getElementById('wallet-nav-link');
+  if (el) { el.textContent = 'Connecting\\u2026'; el.disabled = true; el.onclick = null; }
+  await _connectLaceMidnightWallet();
+}
+
 async function _connectLaceWalletFromPicker() {
   const el = document.getElementById('wallet-nav-link');
   if (el) { el.textContent = 'Connecting\\u2026'; el.disabled = true; el.onclick = null; }
@@ -986,23 +1046,28 @@ async function connectWalletHeader() {
   if (el) { el.textContent = 'Connecting\\u2026'; el.disabled = true; el.onclick = null; }
 
   const has1AM = !!(window.midnight && window.midnight['1am'] && typeof window.midnight['1am'].connect === 'function');
-  const hasLace = !!(window.cardano && window.cardano.lace && typeof window.cardano.lace.enable === 'function');
+  const hasLaceMidnight = !!(window.midnight && window.midnight.mnLace);
+  const hasLaceCardano = !!(window.cardano && window.cardano.lace && typeof window.cardano.lace.enable === 'function');
 
-  if (!has1AM && !hasLace) {
+  const totalOptions = (has1AM ? 1 : 0) + (hasLaceMidnight ? 1 : 0) + (hasLaceCardano ? 1 : 0);
+
+  if (totalOptions === 0) {
     alert('No wallet extension found. Install the Midnight 1AM or Lace extension to continue.');
     if (el) { _walletSetDisconnected(el); }
     return;
   }
 
-  // Show picker when both wallets are available
-  if (has1AM && hasLace) {
+  // Show picker when multiple wallets are available
+  if (totalOptions > 1) {
     if (el) { _walletSetDisconnected(el); }
-    _showWalletPickerModal(has1AM, hasLace);
+    _showWalletPickerModal(has1AM, hasLaceMidnight, hasLaceCardano);
     return;
   }
 
   if (has1AM) {
     await _connect1AMWallet();
+  } else if (hasLaceMidnight) {
+    await _connectLaceMidnightWallet();
   } else {
     await _connectLaceWallet();
   }
