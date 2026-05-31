@@ -1,16 +1,16 @@
 {
   "pilot": {
-    "fullName": "",
+    "fullName": "Sam Sammy",
     "email": "",
     "phone": ""
   },
   "certificates": [],
   "ratings": [],
   "medical": {
-    "kind": "None",
-    "class": null,
+    "kind": "Medical",
+    "class": "1",
     "issued": null,
-    "expires": null,
+    "expires": "2027-12-01",
     "basicMed": {
       "cmecDate": null,
       "onlineCourseDate": null
@@ -20,5 +20,6 @@
     "flightReviewDate": null,
     "ipcDate": null
   },
-  "endorsements": []
+  "endorsements": [],
+  "pilotPhase": "ppl_complete"
 }

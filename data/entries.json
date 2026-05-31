@@ -49,5 +49,58 @@
       "status": "submitted",
       "network": "preprod"
     }
+  },
+  {
+    "id": "66654095e1f6eeef",
+    "date": "2026-05-30",
+    "aircraftId": "N456CD",
+    "totalTime": 0.3,
+    "dayLandings": 1,
+    "nightLandings": 0,
+    "from": "KAPA",
+    "to": "KADS",
+    "remarks": "",
+    "trainingTags": [
+      "crosswind_landings",
+      "stalls"
+    ],
+    "pilotId": "mn_shield-cpk_preprod1ymqryyhvfj56kr2pqc2qg545r4rdz7g5rg7xu83hh8776j44yxdsjasp4x",
+    "recordId": "44f671b7ae61696dbda6095f6b974af0b54068440fe63f0a5146c100f3e2e094",
+    "createdAt": "2026-05-30T18:46:12.435Z",
+    "anchored": false,
+    "anchorStatus": "submitted",
+    "anchoredAt": "2026-05-30T18:46:12.435Z",
+    "anchorTx": "submitted-1780166772528",
+    "anchorHash": "f987925b63dc2df65d69434f196fdf210f20e9f9b7c33633a29fbcbd4f0c0536",
+    "canonicalPayload": {
+      "aircraftIdent": "N456CD",
+      "aircraftType": "",
+      "actualInstrument": 0,
+      "approaches": 0,
+      "date": "2026-05-30",
+      "dayLandings": 1,
+      "dual": 0,
+      "from": "KAPA",
+      "holds": 0,
+      "id": "66654095e1f6eeef",
+      "intercepts": 0,
+      "night": 0,
+      "nightLandings": 0,
+      "pic": 0,
+      "remarks": "",
+      "simulatedInstrument": 0,
+      "to": "KADS",
+      "total": 0.3,
+      "xc": 0,
+      "pilotId": "mn_shield-cpk_preprod1ymqryyhvfj56kr2pqc2qg545r4rdz7g5rg7xu83hh8776j44yxdsjasp4x"
+    },
+    "anchor": {
+      "hash": "f987925b63dc2df65d69434f196fdf210f20e9f9b7c33633a29fbcbd4f0c0536",
+      "walletAddress": "mn_shield-cpk_preprod1ymqryyhvfj56kr2pqc2qg545r4rdz7g5rg7xu83hh8776j44yxdsjasp4x",
+      "txHash": null,
+      "anchoredAt": "2026-05-30T18:46:12.435Z",
+      "status": "submitted",
+      "network": "preprod"
+    }
   }
 ]
