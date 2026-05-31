@@ -2420,7 +2420,11 @@ app.get("/", (_req, res) => {
         }
         console.log('[tx-debug] shieldedCoinPublicKey:', shielded?.shieldedCoinPublicKey ? '(present)' : 'null');
         console.log('[tx-debug] shieldedEncryptionPublicKey:', shielded?.shieldedEncryptionPublicKey ? '(present)' : 'null');
-        walletAddress = shielded.shieldedCoinPublicKey || walletAddress;
+        // AIR-314: do NOT overwrite walletAddress with shieldedCoinPublicKey.
+        // walletAddress must remain the canonical mn_addr_preprod... identity for all
+        // flight persistence (wallet_address, pilotId, anchor ownership).
+        // shieldedCoinPublicKey is only used for Midnight crypto ops via walletProvider below.
+        console.log('[tx-debug] canonical walletAddress (preserved):', walletAddress ? walletAddress.slice(0, 20) + '...' : 'null');
 
         walletProvider = {
           getCoinPublicKey: () => shielded.shieldedCoinPublicKey,
@@ -6208,8 +6212,10 @@ app.post("/wallet/connect", async (req, res) => {
     pgCache.identity = null;
     pgCache.aircraft = null;
     try {
+      // AIR-314: pass coinPublicKey as legacy address so flights saved under the old
+      // mn_shield-cpk identity are recovered during this reconnect hydration.
       const [pgEntries, pgProfile, pgIdentity, pgAircraft] = await Promise.all([
-        pgReadEntries(address),
+        pgReadEntries(address, coinPublicKey || null),
         pgReadProfile(address),
         pgReadIdentity(address),
         pgReadAircraft(address),

@@ -96,7 +96,7 @@ export async function migrate() {
 // ─── Wallet-scoped read helpers ───────────────────────────────────────────────
 
 /** Load all flights for a given wallet address. Returns [] if no pg. */
-export async function pgReadEntries(walletAddress) {
+export async function pgReadEntries(walletAddress, legacyAddress) {
   const p = getPool();
   if (!p || !walletAddress) return null; // null = fall through to JSON
   const { rows } = await p.query(
@@ -104,6 +104,22 @@ export async function pgReadEntries(walletAddress) {
     [walletAddress]
   );
   console.log(`[db] pgReadEntries: ${rows.length} flights for wallet ${walletAddress}`);
+  // AIR-314: dual-query legacy recovery — also load rows saved under old shielded CPK identity.
+  // These were written before the canonical identity fix. We merge them in without re-saving
+  // so legacy data survives immediately after deployment. A separate migration script handles
+  // the permanent remap.
+  if (legacyAddress && legacyAddress !== walletAddress) {
+    const { rows: legacyRows } = await p.query(
+      "SELECT entry_json FROM flights WHERE wallet_address = $1 ORDER BY date DESC, created_at DESC",
+      [legacyAddress]
+    );
+    if (legacyRows.length > 0) {
+      console.log(`[db] pgReadEntries: ${legacyRows.length} legacy flights recovered from ${legacyAddress}`);
+      const existingIds = new Set(rows.map((r) => r.entry_json?.id));
+      const newLegacy = legacyRows.filter((r) => !existingIds.has(r.entry_json?.id));
+      rows.push(...newLegacy);
+    }
+  }
   return rows.map((r) => r.entry_json);
 }
 
