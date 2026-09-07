@@ -375,9 +375,9 @@ function flightAttestationCardHtml(attestation, { theme = "dark" } = {}) {
 
   return `<div style="background:${bg};border:1px solid ${border};border-radius:10px;padding:14px 16px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
     <div style="flex:1;min-width:0;">
-      <div style="font-size:13px;font-weight:700;color:${textColor};margin-bottom:4px;">${typeLabel}</div>
-      ${attestation.attestorMidname ? `<div style="font-size:12px;color:${dimColor};margin-bottom:2px;">By <strong>${attestation.attestorMidname}</strong>${attestation.attestorRole ? ` · ${attestation.attestorRole}` : ""}</div>` : ""}
-      <div style="font-size:11px;color:${labelColor};">${signedDate ? `Signed ${signedDate}` : `Requested ${createdDate}`}${attestation.notes ? ` · ${attestation.notes}` : ""}</div>
+      <div style="font-size:13px;font-weight:700;color:${textColor};margin-bottom:4px;">${escapeHtml(typeLabel)}</div>
+      ${attestation.attestorMidname ? `<div style="font-size:12px;color:${dimColor};margin-bottom:2px;">By <strong>${escapeHtml(attestation.attestorMidname)}</strong>${attestation.attestorRole ? ` · ${escapeHtml(attestation.attestorRole)}` : ""}</div>` : ""}
+      <div style="font-size:11px;color:${labelColor};">${signedDate ? `Signed ${escapeHtml(signedDate)}` : `Requested ${escapeHtml(createdDate)}`}${attestation.notes ? ` · ${escapeHtml(attestation.notes)}` : ""}</div>
     </div>
     <div style="display:flex;align-items:center;gap:6px;background:${s.bg};border:1px solid ${s.color}33;border-radius:20px;padding:3px 10px;flex-shrink:0;">
       <span style="width:6px;height:6px;border-radius:50%;background:${s.color};display:inline-block;"></span>
@@ -410,7 +410,7 @@ function walletNavHtml(session, identity) {
     const displayLabel = (identity && identity.midnameVerified && identity.midname)
       ? identity.midname
       : truncateWalletAddress(session.address);
-    return `<button id="wallet-nav-link" data-connected="true" title="Click to disconnect · ${session.address}" onclick="walletHeaderClick()" style="background:none;border:1px solid #14532d;color:#22c55e;font-size:14px;padding:5px 12px;border-radius:6px;cursor:pointer;font-weight:600;">&#9679; ${displayLabel}</button>`;
+    return `<button id="wallet-nav-link" data-connected="true" title="Click to disconnect · ${escapeHtml(session.address)}" onclick="walletHeaderClick()" style="background:none;border:1px solid #14532d;color:#22c55e;font-size:14px;padding:5px 12px;border-radius:6px;cursor:pointer;font-weight:600;">&#9679; ${escapeHtml(displayLabel)}</button>`;
   }
   return `<button id="wallet-nav-link" onclick="connectWalletHeader()" style="background:none;border:1px solid #374151;color:#9aa3ff;font-size:14px;padding:5px 12px;border-radius:6px;cursor:pointer;font-weight:600;">Connect Wallet</button>`;
 }
@@ -453,9 +453,9 @@ function pilotPassportCardHtml(session, identity, profile, totals, { mode = "ful
     return `<div style="display:flex;align-items:center;gap:12px;background:#121624;border:1px solid #222843;border-radius:12px;padding:14px 18px;margin-bottom:16px;">
       <div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#1a3a8f,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">&#9992;</div>
       <div style="flex:1;min-width:0;">
-        <div style="font-size:16px;font-weight:800;color:#fff;">${midname || idName || "Pilot"}</div>
+        <div style="font-size:16px;font-weight:800;color:#fff;">${escapeHtml(midname || idName || "Pilot")}</div>
         <div style="font-size:12px;color:#b6b9c6;margin-top:2px;">
-          ${phaseLabel ? `<span>${phaseLabel}</span>` : ""}
+          ${phaseLabel ? `<span>${escapeHtml(phaseLabel)}</span>` : ""}
           ${phaseLabel && totalHrs !== "—" ? `<span style="color:#374151;"> · </span>` : ""}
           ${totalHrs !== "—" ? `<span>${totalHrs} hrs total</span>` : ""}
           ${aircraftCount > 0 ? `<span style="color:#374151;"> · </span><span>${aircraftCount} aircraft</span>` : ""}
@@ -481,8 +481,8 @@ function pilotPassportCardHtml(session, identity, profile, totals, { mode = "ful
     <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:20px;">
       <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#1a3a8f,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;">&#9992;</div>
       <div style="flex:1;">
-        <div style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-0.3px;">${midname || idName || "Pilot"}</div>
-        ${idName && midname && idName !== midname ? `<div style="font-size:14px;color:#b6b9c6;margin-top:2px;">${idName}</div>` : ""}
+        <div style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-0.3px;">${escapeHtml(midname || idName || "Pilot")}</div>
+        ${idName && midname && idName !== midname ? `<div style="font-size:14px;color:#b6b9c6;margin-top:2px;">${escapeHtml(idName)}</div>` : ""}
         <div style="margin-top:10px;">
           ${verificationBadge}
         </div>
@@ -499,7 +499,7 @@ function pilotPassportCardHtml(session, identity, profile, totals, { mode = "ful
       </div>` : ""}
       ${phaseLabel ? `<div style="background:#0b0f18;border:1px solid #1f2440;border-radius:12px;padding:14px;">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:6px;">Phase</div>
-        <div style="font-size:14px;font-weight:700;color:#fff;margin-top:4px;">${phaseLabel}</div>
+        <div style="font-size:14px;font-weight:700;color:#fff;margin-top:4px;">${escapeHtml(phaseLabel)}</div>
       </div>` : ""}
       <div style="background:#0b0f18;border:1px solid #1f2440;border-radius:12px;padding:14px;">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:6px;">Network</div>
@@ -509,7 +509,7 @@ function pilotPassportCardHtml(session, identity, profile, totals, { mode = "ful
     <div style="background:#0b0f18;border:1px solid #1f2440;border-radius:12px;padding:16px;">
       ${midnameVerified ? `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1f2440;">
         <span style="font-size:13px;color:#b6b9c6;">Pilot Identity</span>
-        <span style="font-size:13px;font-weight:700;color:#fff;">${midname}</span>
+        <span style="font-size:13px;font-weight:700;color:#fff;">${escapeHtml(midname)}</span>
       </div>` : ""}
       <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1f2440;">
         <span style="font-size:13px;color:#b6b9c6;">Verification</span>
@@ -729,7 +729,7 @@ function _showPilotIdentityModal(prefill) {
       <form id="pilot-identity-form">
         <div style="margin-bottom:16px;">
           <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#b6b9c6;margin-bottom:6px;">Full Name</label>
-          <input id="pi-fullname" type="text" placeholder="e.g. Jane Smith" value="\${fullName}" style="width:100%;background:#0b0f18;border:1px solid #222843;border-radius:8px;padding:10px 12px;color:#fff;font-size:15px;box-sizing:border-box;" required />
+          <input id="pi-fullname" type="text" placeholder="e.g. Jane Smith" value="\${escapeHtml(fullName)}" style="width:100%;background:#0b0f18;border:1px solid #222843;border-radius:8px;padding:10px 12px;color:#fff;font-size:15px;box-sizing:border-box;" required />
         </div>
         <div style="margin-bottom:16px;">
           <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#b6b9c6;margin-bottom:6px;">Medical Type</label>
@@ -750,7 +750,7 @@ function _showPilotIdentityModal(prefill) {
           </div>
           <div style="margin-bottom:16px;">
             <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#b6b9c6;margin-bottom:6px;">Medical Expiration Date</label>
-            <input id="pi-med-expires" type="date" value="\${medExpires}" style="width:100%;background:#0b0f18;border:1px solid #222843;border-radius:8px;padding:10px 12px;color:#fff;font-size:14px;box-sizing:border-box;" />
+            <input id="pi-med-expires" type="date" value="\${escapeHtml(medExpires)}" style="width:100%;background:#0b0f18;border:1px solid #222843;border-radius:8px;padding:10px 12px;color:#fff;font-size:14px;box-sizing:border-box;" />
           </div>
         </div>
         <div style="margin-bottom:24px;">
@@ -799,7 +799,7 @@ function _showPilotIdentityModal(prefill) {
       // Reactively update hero + dashboard without page reload
       const hero = document.getElementById('pilot-hero-identity');
       if (hero) {
-        hero.innerHTML = '<span class="pilot-name" style="color:#f1f5f9;">' + fullName + '</span>';
+        hero.innerHTML = '<span class="pilot-name" style="color:#f1f5f9;">' + escapeHtml(fullName) + '</span>';
       }
       if (typeof window.loadDashboard === 'function') window.loadDashboard();
     } catch (err) {
@@ -1380,6 +1380,27 @@ function scoreClass(score) {
   if (score >= 60) return "warn";
   return "bad";
 }
+// Escape values at HTML render sinks. Keep persisted/API data unchanged.
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[ch]));
+}
+
+// JSON embedded in an inline script must not be able to terminate the script.
+function safeJsonForScript(value) {
+  return (JSON.stringify(value) ?? "null").replace(/[<>&\u2028\u2029]/g, (ch) => ({
+    "<": "\\u003C",
+    ">": "\\u003E",
+    "&": "\\u0026",
+    "\u2028": "\\u2028",
+    "\u2029": "\\u2029",
+  }[ch]));
+}
 
 const app = express();
 app.use(express.json());
@@ -1523,11 +1544,11 @@ app.get("/", (_req, res) => {
   const aircraftRows = sortedAircraft
     .map(([ident, s]) => `
       <tr>
-        <td>${ident}</td>
-        <td class="muted">${s.type}</td>
+        <td>${escapeHtml(ident)}</td>
+        <td class="muted">${escapeHtml(s.type)}</td>
         <td>${s.flights}</td>
         <td>${fmt(s.hours)} hrs</td>
-        <td class="muted">${String(s.lastFlight || "").slice(0, 10)}</td>
+        <td class="muted">${escapeHtml(String(s.lastFlight || "").slice(0, 10))}</td>
       </tr>
     `).join("");
 
@@ -1666,11 +1687,11 @@ app.get("/", (_req, res) => {
     <div id="pilot-hero-identity" data-has-profile="${pilotName ? 'true' : 'false'}" style="margin-bottom:6px;">
       ${walletConnected
         ? (pilotName
-          ? `<span class="pilot-name">${pilotName}<button class="pilot-edit-btn" onclick="fetch('/profile').then(r=>r.json()).then(p=>_showPilotIdentityModal(p))">edit</button></span>`
+          ? `<span class="pilot-name">${escapeHtml(pilotName)}<button class="pilot-edit-btn" onclick="fetch('/profile').then(r=>r.json()).then(p=>_showPilotIdentityModal(p))">edit</button></span>`
           : `<button class="pilot-create-cta" onclick="_showPilotIdentityModal()">+ Create Pilot Profile</button>`)
         : `<span class="pilot-name" style="color:#6b7280;letter-spacing:.02em;font-style:italic;">Awaiting Pilot Session</span><span class="pilot-identity-line" style="color:#4b5563;">Connect wallet to initialize your pilot identity, aircraft records, training progression, and verified flight history.</span>`
       }
-      ${walletConnected && (pilotPhaseLabel || medicalLabel) ? `<span class="pilot-identity-line">${[pilotPhaseLabel, medicalLabel ? `<span class="medical-status medical-${medicalStatus}">${medicalLabel}</span>` : null].filter(Boolean).join(' · ')}</span>` : ''}
+      ${walletConnected && (pilotPhaseLabel || medicalLabel) ? `<span class="pilot-identity-line">${[pilotPhaseLabel, medicalLabel ? `<span class="medical-status medical-${medicalStatus}">${escapeHtml(medicalLabel)}</span>` : null].filter(Boolean).join(' · ')}</span>` : ''}
     </div>
     <div class="sub" id="stat-sub"></div>
   </div>
@@ -1687,7 +1708,7 @@ app.get("/", (_req, res) => {
     </div>
     <div class="card">
       <div class="label">Last Flight</div>
-      <div class="val" id="stat-last-flight" style="font-size:20px;margin-top:10px;">${lastFlightDate}</div>
+      <div class="val" id="stat-last-flight" style="font-size:20px;margin-top:10px;">${escapeHtml(lastFlightDate)}</div>
     </div>
     <div class="card">
       <div class="label">Landings</div>
@@ -1808,7 +1829,7 @@ app.get("/", (_req, res) => {
     </div>
     <div class="currency-cards" style="margin-top:12px;">
       ${['Total Time','Dual Received','Solo Time','Solo XC','Night Hours','Sim Instrument','Night Ldgs'].map(label =>
-        `<div class="currency-card" style="opacity:.6;"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#374151;margin-bottom:4px;">${label}</div><div style="font-size:18px;font-weight:700;color:#1f2937;">—</div><div style="font-size:10px;color:#374151;">/ — hrs</div></div>`
+        `<div class="currency-card" style="opacity:.6;"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#374151;margin-bottom:4px;">${escapeHtml(label)}</div><div style="font-size:18px;font-weight:700;color:#1f2937;">—</div><div style="font-size:10px;color:#374151;">/ — hrs</div></div>`
       ).join('')}
     </div>
   </div>
@@ -1893,8 +1914,9 @@ app.get("/", (_req, res) => {
   <div class="toast" id="toast"></div>
 
   <script>
-    const lastUsedAircraft = ${JSON.stringify(lastUsedAircraft)};
-    window.pilotlogAttestationMap = ${JSON.stringify(flightAttestationMap)};
+    const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ch === '&' ? '&amp;' : ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : ch.charCodeAt(0) === 34 ? '&quot;' : '&#39;');
+    const lastUsedAircraft = ${safeJsonForScript(lastUsedAircraft)};
+    window.pilotlogAttestationMap = ${safeJsonForScript(flightAttestationMap)};
 
     // Training chip toggle (only present when wallet connected)
     const _trainingChips = document.getElementById('trainingChips');
@@ -1915,7 +1937,7 @@ app.get("/", (_req, res) => {
         if (!Array.isArray(milestones)) return '';
         const earned = milestones.filter(m => m.status === 'completed');
         if (earned.length === 0) return '';
-        const chips = earned.map(m => \`<span class="earned-badge">\${m.label}</span>\`).join('');
+        const chips = earned.map(m => \`<span class="earned-badge">\${escapeHtml(m.label)}</span>\`).join('');
         return \`<div class="earned-badges-section">
           <div class="earned-badges-label">Earned</div>
           <div class="earned-badges">\${chips}</div>
@@ -2011,24 +2033,24 @@ app.get("/", (_req, res) => {
           const fallback = d.recommendations?.[0] || 'Keep flying — every flight counts.';
           todayEl.innerHTML = \`\${changedBanner}
             <div class="today-card-header">
-              <span class="phase-badge">\${d.phaseLabel}</span>
+              <span class="phase-badge">\${escapeHtml(d.phaseLabel)}</span>
               <span class="urgency-badge none">On Track</span>
             </div>
             <div class="today-headline" style="color:#22c55e;">You are on track. Keep the momentum.</div>
-            <div class="today-reason">\${fallback.slice(0,200)}</div>
+            <div class="today-reason">\${escapeHtml(fallback.slice(0,200))}</div>
             \${buildEarnedBadgesHtml(d.milestones)}\`;
         } else {
           const c = d.todayCard;
           todayEl.innerHTML = \`\${changedBanner}
             <div class="today-card-header">
-              <span class="phase-badge">\${d.phaseLabel}</span>
+              <span class="phase-badge">\${escapeHtml(d.phaseLabel)}</span>
             </div>
-            <div class="today-headline">\${(c.title || '').slice(0,80)}</div>
-            <div class="today-reason">\${(c.body || '').slice(0,200)}</div>
-            \${c.whyItMatters ? \`<div class="today-why" style="font-size:12px;color:#6b7280;line-height:1.5;margin-bottom:12px;padding:10px 12px;background:#0b0f18;border-left:3px solid #1a3a8f;border-radius:0 6px 6px 0;">\${c.whyItMatters.slice(0,240)}</div>\` : ''}
+            <div class="today-headline">\${escapeHtml((c.title || '').slice(0,80))}</div>
+            <div class="today-reason">\${escapeHtml((c.body || '').slice(0,200))}</div>
+            \${c.whyItMatters ? \`<div class="today-why" style="font-size:12px;color:#6b7280;line-height:1.5;margin-bottom:12px;padding:10px 12px;background:#0b0f18;border-left:3px solid #1a3a8f;border-radius:0 6px 6px 0;">\${escapeHtml(c.whyItMatters.slice(0,240))}</div>\` : ''}
             \${buildEarnedBadgesHtml(d.milestones)}
             <div class="today-footer" style="margin-top:4px;">
-              \${d.secondaryCards.map(sc => \`<span class="secondary-chip">\${(sc.title || '').slice(0,52)}</span>\`).join('')}
+              \${d.secondaryCards.map(sc => \`<span class="secondary-chip">\${escapeHtml((sc.title || '').slice(0,52))}</span>\`).join('')}
             </div>\`;
         }
 
@@ -2038,7 +2060,7 @@ app.get("/", (_req, res) => {
           const pct = Math.max(0, Math.min(100, d.progressPct));
           progBarEl.innerHTML = \`
             <div class="progression-phase">
-              <span>\${d.phaseLabel || 'Pilot'}</span>
+              <span>\${escapeHtml(d.phaseLabel || 'Pilot')}</span>
               <span style="color:#b6b9c6;font-weight:600;">\${pct}%</span>
             </div>
             <div class="progression-track">
@@ -2062,7 +2084,7 @@ app.get("/", (_req, res) => {
           readinessScoresEl.innerHTML = displayItems.map(r => {
             const col = SCORE_COLOR[r.status] || '#6b7280';
             return \`<div class="readiness-score-item">
-              <div class="readiness-score-label">\${(r.label || '').replace(' Readiness','')}</div>
+              <div class="readiness-score-label">\${escapeHtml((r.label || '').replace(' Readiness',''))}</div>
               <div class="readiness-score-val" style="color:\${col};">\${r.score}%</div>
               <div class="readiness-score-track"><div class="readiness-score-fill" style="width:\${r.score}%;background:\${col};"></div></div>
             </div>\`;
@@ -2076,7 +2098,7 @@ app.get("/", (_req, res) => {
             advancedEl.innerHTML = advancedItems.map(r => {
               const cls = r.status === 'ready' || r.status === 'completed' ? 'met' : 'unmet';
               const check = cls === 'met' ? '✓ ' : '';
-              return \`<span class="adv-req-chip \${cls}">\${check}\${(r.label || '').replace(' Readiness','')}\${r.unit !== 'event' ? ' ' + r.score + '%' : (cls === 'met' ? '' : ' —')}</span>\`;
+              return \`<span class="adv-req-chip \${cls}">\${check}\${escapeHtml((r.label || '').replace(' Readiness',''))}\${r.unit !== 'event' ? ' ' + r.score + '%' : (cls === 'met' ? '' : ' —')}</span>\`;
             }).join('');
             advancedEl.style.display = 'flex';
           }
@@ -2107,12 +2129,12 @@ app.get("/", (_req, res) => {
           return \`<div class="currency-card">
             <div class="currency-card-header">
               <span class="currency-dot" style="background:\${col};"></span>
-              <span class="currency-type">\${typeLabel}</span>
+              <span class="currency-type">\${escapeHtml(typeLabel)}</span>
             </div>
-            <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:4px;">\${(c.icon ? c.icon + ' ' : '')}\${c.title}</div>
-            <div class="currency-message">\${(c.body || '').slice(0,130)}</div>
+            <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:4px;">\${(c.icon ? escapeHtml(c.icon) + ' ' : '')}\${escapeHtml(c.title)}</div>
+            <div class="currency-message">\${escapeHtml((c.body || '').slice(0,130))}</div>
             \${progressHtml}
-            <div class="currency-action">→ \${(c.action || '').slice(0,80)}</div>
+            <div class="currency-action">→ \${escapeHtml((c.action || '').slice(0,80))}</div>
           </div>\`;
         }).join('');
         container.innerHTML = laneHtml || '<div class="currency-card" style="color:#22c55e;font-size:13px;">All minimums met — you are eligible for the PPL practical test.</div>';
@@ -2125,7 +2147,7 @@ app.get("/", (_req, res) => {
           const tfHtml = d.trainingFocusMilestones.map(m => {
             const done = m.status === 'completed';
             return \`<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:4px 10px;border-radius:8px;border:1px solid \${done ? '#1a3a2a' : '#1a1f30'};color:\${done ? '#22c55e' : '#374151'};background:\${done ? '#0a1f14' : 'transparent'};white-space:nowrap;">
-              \${done ? '✓ ' : ''}\${(m.label || '').replace(' Training','').replace(' Practice','').replace(' Maneuvers','').replace(' Proficiency','').replace(' Procedures','')}
+              \${done ? '✓ ' : ''}\${(escapeHtml(m.label || '')).replace(' Training','').replace(' Practice','').replace(' Maneuvers','').replace(' Proficiency','').replace(' Procedures','')}
             </span>\`;
           }).join('');
           const tfSection = document.createElement('div');
@@ -2144,13 +2166,13 @@ app.get("/", (_req, res) => {
         const heroEl = document.getElementById('pilot-hero-identity');
         if (heroEl) {
           const medBadge = d.medicalLabel
-            ? \`<span class="medical-status medical-\${d.medicalStatus}">\${d.medicalLabel}</span>\`
+            ? \`<span class="medical-status medical-\${escapeHtml(d.medicalStatus)}">\${escapeHtml(d.medicalLabel)}</span>\`
             : '';
           const identityLine = (d.phaseLabel || medBadge)
-            ? \`<span class="pilot-identity-line">\${[d.phaseLabel, medBadge].filter(Boolean).join(' · ')}</span>\`
+            ? \`<span class="pilot-identity-line">\${[escapeHtml(d.phaseLabel), medBadge].filter(Boolean).join(' · ')}</span>\`
             : '';
           if (d.pilotName) {
-            heroEl.innerHTML = \`<span class="pilot-name">\${d.pilotName}<button class="pilot-edit-btn" onclick="fetch('/profile').then(r=>r.json()).then(p=>_showPilotIdentityModal(p))">edit</button></span>\${identityLine}\`;
+            heroEl.innerHTML = \`<span class="pilot-name">\${escapeHtml(d.pilotName)}<button class="pilot-edit-btn" onclick="fetch('/profile').then(r=>r.json()).then(p=>_showPilotIdentityModal(p))">edit</button></span>\${identityLine}\`;
           } else {
             heroEl.innerHTML = \`<button class="pilot-create-cta" onclick="_showPilotIdentityModal()">+ Create Pilot Profile</button>\${identityLine}\`;
           }
@@ -2960,12 +2982,12 @@ app.get("/", (_req, res) => {
         const tbody = document.getElementById('recent-flights-tbody');
         if (tbody) {
           const newRow = \`<tr id="airlog-pending-row">
-            <td>\${body.date}</td>
-            <td>\${body.aircraftId}</td>
-            <td>\${body.from || ''} → \${body.to || ''}</td>
-            <td>\${body.totalTime}</td>
+            <td>\${escapeHtml(body.date)}</td>
+            <td>\${escapeHtml(body.aircraftId)}</td>
+            <td>\${escapeHtml(body.from || "")} → \${escapeHtml(body.to || "")}</td>
+            <td>\${escapeHtml(body.totalTime)}</td>
             <td></td>
-            <td class="muted">\${(body.remarks || '').replaceAll('<','&lt;').replaceAll('>','&gt;')}</td>
+            <td class="muted">\${escapeHtml(body.remarks || "")}</td>
             <td>\${pendingBadge}</td>
           </tr>\`;
           // Remove stale placeholder if present
@@ -3142,10 +3164,10 @@ app.get("/", (_req, res) => {
               const anchorTx = anchorObj?.tx || anchorObj?.txHash || null;
               const isRealAnchorTx = anchorTx && /^[0-9a-f]{64}$/i.test(anchorTx);
               const explorerLink = (status === 'anchored' && isRealAnchorTx)
-                ? \`<br><a href="https://explorer.1am.xyz/tx/\${anchorTx}?network=\${explorerNetwork}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;font-weight:500;text-decoration:none;">View on chain →</a>\`
+                ? \`<br><a href="https://explorer.1am.xyz/tx/\${encodeURIComponent(anchorTx)}?network=\${encodeURIComponent(explorerNetwork)}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;font-weight:500;text-decoration:none;">View on chain →</a>\`
                 : '';
               const statusBadge = status === 'anchored'
-                ? \`<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Saved to chain (\${networkLabel})</span>\${explorerLink}\`
+                ? \`<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Saved to chain (\${escapeHtml(networkLabel)})</span>\${explorerLink}\`
                 : status === 'anchor_failed'
                 ? '<span style="color:#ef4444;font-size:11px;font-weight:600;">&#x2717; Failed</span>'
                 : (status === 'pending_anchor' || status === 'anchored_pending')
@@ -3155,7 +3177,7 @@ app.get("/", (_req, res) => {
                 : '<span style="color:#718096;font-size:11px;">—</span>';
               const attest = window.pilotlogAttestationMap && window.pilotlogAttestationMap[e.id];
               const attestBadge = attest && attest.status === 'verified'
-                ? \`<span style="color:#22c55e;font-size:10px;font-weight:700;display:block;margin-top:2px;">&#9989; Instructor Verified\${attest.attestorMidname ? ' · ' + attest.attestorMidname : ''}</span>\`
+                ? \`<span style="color:#22c55e;font-size:10px;font-weight:700;display:block;margin-top:2px;">&#9989; Instructor Verified\${attest.attestorMidname ? ' · ' + escapeHtml(attest.attestorMidname) : ''}</span>\`
                 : attest && attest.status === 'pending'
                 ? \`<span style="color:#f59e0b;font-size:10px;font-weight:600;display:block;margin-top:2px;">&#9711; Pending Review</span>\`
                 : '';
@@ -3163,12 +3185,12 @@ app.get("/", (_req, res) => {
                 ? \`<span style="font-size:10px;color:#22c55e;font-weight:600;">&#10003; Verified</span>\`
                 : \`<button onclick="requestVerification('\${e.id}')" style="font-size:10px;padding:3px 8px;border:1px solid #374151;background:none;color:#9aa3ff;border-radius:5px;cursor:pointer;white-space:nowrap;">Request Verify</button>\`;
               return \`<tr>
-                <td>\${String(e.date || '').slice(0, 10)}</td>
-                <td>\${e.aircraftIdent || e.aircraftId || ''} <span class="muted">\${e.aircraftType ? \`(\${e.aircraftType})\` : ''}</span></td>
-                <td>\${e.from || ''} → \${e.to || ''}</td>
-                <td>\${e.totalTime ?? e.total ?? ''}</td>
-                <td>\${e.pic ?? ''}</td>
-                <td class="muted">\${(e.remarks || '').replaceAll('<','&lt;').replaceAll('>','&gt;')}</td>
+                <td>\${escapeHtml(String(e.date || '').slice(0, 10))}</td>
+                <td>\${escapeHtml(e.aircraftIdent || e.aircraftId || '')} <span class="muted">\${e.aircraftType ? \`(\${escapeHtml(e.aircraftType)})\` : ''}</span></td>
+                <td>\${escapeHtml(e.from || '')} → \${escapeHtml(e.to || '')}</td>
+                <td>\${escapeHtml(e.totalTime ?? e.total ?? '')}</td>
+                <td>\${escapeHtml(e.pic ?? '')}</td>
+                <td class="muted">\${escapeHtml(e.remarks || "")}</td>
                 <td>\${statusBadge}\${attestBadge}</td>
                 <td>\${verifyBtn}</td>
               </tr>\`;
@@ -3246,10 +3268,10 @@ app.get("/", (_req, res) => {
           const anchorTx = anchorObj?.tx || anchorObj?.txHash || null;
           const isRealAnchorTx = anchorTx && /^[0-9a-f]{64}$/i.test(anchorTx);
           const explorerLink = (status === "anchored" && isRealAnchorTx)
-            ? `<br><a href="https://explorer.1am.xyz/tx/${anchorTx}?network=${explorerNetwork}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;font-weight:500;text-decoration:none;">View on chain →</a>`
+            ? `<br><a href="https://explorer.1am.xyz/tx/${encodeURIComponent(anchorTx)}?network=${encodeURIComponent(explorerNetwork)}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;font-weight:500;text-decoration:none;">View on chain →</a>`
             : "";
           const statusBadge = status === "anchored"
-            ? `<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Saved to chain (${networkLabel})</span>${explorerLink}`
+            ? `<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Saved to chain (${escapeHtml(networkLabel)})</span>${explorerLink}`
             : status === "anchor_failed"
             ? '<span style="color:#ef4444;font-size:11px;font-weight:600;">&#x2717; Failed</span>'
             : (status === "pending_anchor" || status === "anchored_pending")
@@ -3259,12 +3281,12 @@ app.get("/", (_req, res) => {
             : '<span style="color:#718096;font-size:11px;">—</span>';
           return `
           <tr>
-            <td>${String(e.date || "").slice(0, 10)}</td>
-            <td>${e.aircraftIdent || e.aircraftId || ""} <span class="muted">${e.aircraftType ? `(${e.aircraftType})` : ""}</span></td>
-            <td>${e.from || ""} → ${e.to || ""}</td>
-            <td>${e.totalTime ?? e.total ?? ""}</td>
-            <td>${e.pic ?? ""}</td>
-            <td class="muted">${(e.remarks || "").replaceAll("<","&lt;").replaceAll(">","&gt;")}</td>
+            <td>${escapeHtml(String(e.date || "").slice(0, 10))}</td>
+            <td>${escapeHtml(e.aircraftIdent || e.aircraftId || "")} <span class="muted">${e.aircraftType ? `(${escapeHtml(e.aircraftType)})` : ""}</span></td>
+            <td>${escapeHtml(e.from || "")} → ${escapeHtml(e.to || "")}</td>
+            <td>${escapeHtml(e.totalTime ?? e.total ?? "")}</td>
+            <td>${escapeHtml(e.pic ?? "")}</td>
+            <td class="muted">${escapeHtml(e.remarks || "")}</td>
             <td>${statusBadge}</td>
             <td><button onclick="requestVerification('${e.id}')" style="font-size:10px;padding:3px 8px;border:1px solid #374151;background:none;color:#9aa3ff;border-radius:5px;cursor:pointer;white-space:nowrap;">Request Verify</button></td>
           </tr>`;
@@ -4266,31 +4288,31 @@ app.get("/export/sale-packet/html", (_req, res) => {
           if (c.partNumber) parts.push(`P/N: ${c.partNumber}`);
           if (c.serialNumber) parts.push(`S/N: ${c.serialNumber}`);
           if (c.action) parts.push(`Action: ${c.action}`);
-          return parts.join(" · ");
+          return escapeHtml(parts.join(" · "));
         }).join(" &nbsp;|&nbsp; ") + `</div></td></tr>`
       : "";
     const extraDetail = (m.remarks || m.tach != null || m.hobbs != null)
       ? `<tr class="comp-row"><td colspan="6"><div class="comp-detail">` +
-        [m.tach != null ? `Tach: ${m.tach}` : null,
+        escapeHtml([m.tach != null ? `Tach: ${m.tach}` : null,
          m.hobbs != null ? `Hobbs: ${m.hobbs}` : null,
          m.remarks ? `Remarks: ${m.remarks}` : null
-        ].filter(Boolean).join(" &nbsp;·&nbsp; ") +
+        ].filter(Boolean).join(" &nbsp;·&nbsp; ")) +
         `</div></td></tr>`
       : "";
     return `<tr>
-      <td>${date}</td>
-      <td><span class="badge">${cat}</span></td>
-      <td>${m.description || "—"}</td>
-      <td>${m.mechanic || m.performedBy || "—"}</td>
+      <td>${escapeHtml(date)}</td>
+      <td><span class="badge">${escapeHtml(cat)}</span></td>
+      <td>${escapeHtml(m.description || "—")}</td>
+      <td>${escapeHtml(m.mechanic || m.performedBy || "—")}</td>
       <td>${m.totalAirframeHours != null ? fmtNum(m.totalAirframeHours) + " hrs" : "—"}</td>
-      <td class="rts ${m.returnToService ? "rts-yes" : "rts-no"}">${rts}</td>
+      <td class="rts ${m.returnToService ? "rts-yes" : "rts-no"}">${escapeHtml(rts)}</td>
     </tr>${compDetail}${extraDetail}`;
   }).join("\n");
 
   const qualityRows = qualityFactors.map((f) =>
     `<tr>
       <td>${f.pass ? "✓" : "✗"}</td>
-      <td>${f.label}</td>
+      <td>${escapeHtml(f.label)}</td>
       <td>${f.points < 0 ? f.points : (f.pass ? f.points : 0)} ${f.points > 0 ? `/ ${f.points}` : ""}</td>
     </tr>`
   ).join("\n");
@@ -4312,21 +4334,21 @@ app.get("/export/sale-packet/html", (_req, res) => {
               : dueSoon
               ? `<span style="display:inline-block;background:#fef3c7;color:#92400e;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:6px;">DUE SOON</span>`
               : "";
-            nextDueCell = `<span style="color:${overdue ? "#b91c1c" : "#2d3748"};font-weight:${overdue ? "700" : "400"};">${fmt(ad.nextDue)}</span>${statusBadge}`;
+            nextDueCell = `<span style="color:${overdue ? "#b91c1c" : "#2d3748"};font-weight:${overdue ? "700" : "400"};">${escapeHtml(fmt(ad.nextDue))}</span>${statusBadge}`;
           }
           return `<tr>
-            <td>${ad.adNumber || "—"}</td>
-            <td>${ad.description || ad.title || m.description || "—"}</td>
-            <td>${m.date ? String(m.date).slice(0, 10) : "—"}</td>
-            <td>${m.mechanic || m.performedBy || "—"}</td>
+            <td>${escapeHtml(ad.adNumber || "—")}</td>
+            <td>${escapeHtml(ad.description || ad.title || m.description || "—")}</td>
+            <td>${escapeHtml(m.date ? String(m.date).slice(0, 10) : "—")}</td>
+            <td>${escapeHtml(m.mechanic || m.performedBy || "—")}</td>
             <td>${nextDueCell}</td>
           </tr>`;
         }).join("")
       : `<tr>
           <td>—</td>
-          <td>${m.description || "—"}</td>
-          <td>${m.date ? String(m.date).slice(0, 10) : "—"}</td>
-          <td>${m.mechanic || m.performedBy || "—"}</td>
+          <td>${escapeHtml(m.description || "—")}</td>
+          <td>${escapeHtml(m.date ? String(m.date).slice(0, 10) : "—")}</td>
+          <td>${escapeHtml(m.mechanic || m.performedBy || "—")}</td>
           <td>—</td>
         </tr>`;
     return ads;
@@ -4339,10 +4361,10 @@ app.get("/export/sale-packet/html", (_req, res) => {
   const alterationRows = alterationEntries.map((m) => {
     const docs = (m.documents || []).join(", ") || "—";
     return `<tr>
-      <td>${m.date ? String(m.date).slice(0, 10) : "—"}</td>
-      <td>${m.description || "—"}</td>
-      <td>${m.mechanic || m.performedBy || "—"}</td>
-      <td>${docs}</td>
+      <td>${escapeHtml(m.date ? String(m.date).slice(0, 10) : "—")}</td>
+      <td>${escapeHtml(m.description || "—")}</td>
+      <td>${escapeHtml(m.mechanic || m.performedBy || "—")}</td>
+      <td>${escapeHtml(docs)}</td>
     </tr>`;
   }).join("");
 
@@ -4379,14 +4401,14 @@ app.get("/export/sale-packet/html", (_req, res) => {
     { label: "AD compliance records", value: adCount > 0 ? `${adCount} records` : "None", pass: adCount > 0 },
     { label: "Referenced documents", value: docCount > 0 ? `${docCount} files` : "None", pass: docCount > 0 },
     { label: "Pilot profile", value: profile?.pilot?.fullName ? profile.pilot.fullName : "Incomplete", pass: !!(profile?.pilot?.fullName) },
-    { label: "On-chain anchor", value: anchored ? `Yes — ${verification.anchorNetwork || "network"}` : "Not yet anchored", pass: anchored },
+    { label: "On-chain anchor", value: anchored ? `Yes — ${escapeHtml(verification.anchorNetwork || "network")}` : "Not yet anchored", pass: anchored },
   ];
 
   const evidenceRows = evidenceItems.map((ei) =>
     `<tr>
       <td style="color:${ei.pass ? "#22c55e" : "#ef4444"};font-weight:700;width:24px;">${ei.pass ? "✓" : "✗"}</td>
-      <td style="color:#4a5568;">${ei.label}</td>
-      <td style="font-weight:600;color:${ei.pass ? "#2d3748" : "#ef4444"};">${ei.value}</td>
+      <td style="color:#4a5568;">${escapeHtml(ei.label)}</td>
+      <td style="font-weight:600;color:${ei.pass ? "#2d3748" : "#ef4444"};">${escapeHtml(ei.value)}</td>
     </tr>`
   ).join("");
 
@@ -4440,20 +4462,20 @@ app.get("/export/sale-packet/html", (_req, res) => {
   }
 
   const aircraftRows = aircraft.map((a) => `
-    <tr><td>Registration</td><td>${a.ident || "—"}</td></tr>
-    <tr><td>Type</td><td>${a.type || "—"}</td></tr>
-    <tr><td>Serial Number</td><td>${a.serialNumber || "—"}</td></tr>
-    <tr><td>Manufacture Year</td><td>${a.manufactureYear || "—"}</td></tr>
+    <tr><td>Registration</td><td>${escapeHtml(a.ident || "—")}</td></tr>
+    <tr><td>Type</td><td>${escapeHtml(a.type || "—")}</td></tr>
+    <tr><td>Serial Number</td><td>${escapeHtml(a.serialNumber || "—")}</td></tr>
+    <tr><td>Manufacture Year</td><td>${escapeHtml(a.manufactureYear || "—")}</td></tr>
     <tr><td>Total Time in Service</td><td>${a.totalTimeInService != null ? fmtNum(a.totalTimeInService) + " hrs" : "—"}</td></tr>
-    <tr><td>Registration Date</td><td>${fmt(a.registrationDate)}</td></tr>
-    <tr><td>Engine Type</td><td>${a.engineType || "—"}</td></tr>
-    <tr><td>Engine Serial</td><td>${a.engineSerial || "—"}</td></tr>
-    <tr><td>Propeller Type</td><td>${a.propType || "—"}</td></tr>
-    <tr><td>Propeller Serial</td><td>${a.propSerial || "—"}</td></tr>
-    <tr><td>Annual Due</td><td>${fmt(a.annualDue)}</td></tr>
-    <tr><td>Transponder Due</td><td>${fmt(a.transponderDue)}</td></tr>
-    <tr><td>Pitot-Static Due</td><td>${fmt(a.pitotStaticDue)}</td></tr>
-    <tr><td>ELT Battery Due</td><td>${fmt(a.eltBatteryDue)}</td></tr>
+    <tr><td>Registration Date</td><td>${escapeHtml(fmt(a.registrationDate))}</td></tr>
+    <tr><td>Engine Type</td><td>${escapeHtml(a.engineType || "—")}</td></tr>
+    <tr><td>Engine Serial</td><td>${escapeHtml(a.engineSerial || "—")}</td></tr>
+    <tr><td>Propeller Type</td><td>${escapeHtml(a.propType || "—")}</td></tr>
+    <tr><td>Propeller Serial</td><td>${escapeHtml(a.propSerial || "—")}</td></tr>
+    <tr><td>Annual Due</td><td>${escapeHtml(fmt(a.annualDue))}</td></tr>
+    <tr><td>Transponder Due</td><td>${escapeHtml(fmt(a.transponderDue))}</td></tr>
+    <tr><td>Pitot-Static Due</td><td>${escapeHtml(fmt(a.pitotStaticDue))}</td></tr>
+    <tr><td>ELT Battery Due</td><td>${escapeHtml(fmt(a.eltBatteryDue))}</td></tr>
   `).join("\n");
 
   // Compliance calendar: pull due dates from aircraft + recurring AD nextDue from maintenance
@@ -4500,15 +4522,15 @@ app.get("/export/sale-packet/html", (_req, res) => {
     const colorClass = complianceColor(days);
     const status = complianceStatus(days);
     return `<tr>
-      <td>${ci.item}</td>
-      <td>${fmt(ci.due)}</td>
+      <td>${escapeHtml(ci.item)}</td>
+      <td>${escapeHtml(fmt(ci.due))}</td>
       <td>${days !== null ? (days < 0 ? `${Math.abs(days)} days ago` : `${days} days`) : "—"}</td>
-      <td><span class="badge ${colorClass}">${status}</span></td>
+      <td><span class="badge ${colorClass}">${escapeHtml(status)}</span></td>
     </tr>`;
   }).join("\n");
 
   const integrityStatus = anchored
-    ? `<span class="badge badge-green">Anchored — ${verification.anchorNetwork || "network"}</span>`
+    ? `<span class="badge badge-green">Anchored — ${escapeHtml(verification.anchorNetwork || "network")}</span>`
     : `<span class="badge badge-yellow">Not Yet Anchored</span>`;
 
   const hashMatchBadge = hashMatch
@@ -4520,7 +4542,7 @@ app.get("/export/sale-packet/html", (_req, res) => {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AirLog Sale Packet — ${primaryAircraft.ident || "Aircraft"}</title>
+  <title>AirLog Sale Packet — ${escapeHtml(primaryAircraft.ident || "Aircraft")}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -4702,8 +4724,8 @@ app.get("/export/sale-packet/html", (_req, res) => {
       <div style="margin-top:12px;">${integrityStatus}</div>
     </div>
     <div class="header-ident">
-      <div class="ident">${primaryAircraft.ident || "—"}</div>
-      <div class="type">${primaryAircraft.type || "—"}</div>
+      <div class="ident">${escapeHtml(primaryAircraft.ident || "—")}</div>
+      <div class="type">${escapeHtml(primaryAircraft.type || "—")}</div>
       <div class="gendate">Generated ${generatedFormatted}</div>
       <div style="margin-top:10px;">
         <a href="/export/sale-packet/pdf" style="display:inline-block;padding:7px 16px;background:#1a3a6e;color:#fff;border-radius:6px;font-size:12px;font-weight:700;text-decoration:none;letter-spacing:0.03em;" download>⬇ Download PDF</a>
@@ -4716,18 +4738,18 @@ app.get("/export/sale-packet/html", (_req, res) => {
     <div class="section-title" style="background:#fafbff;">Buyer Summary</div>
     <div class="section-body">
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:14px;">
-        <div style="font-size:32px;font-weight:800;color:${trustColor};line-height:1;">${trustLabel}</div>
+        <div style="font-size:32px;font-weight:800;color:${trustColor};line-height:1;">${escapeHtml(trustLabel)}</div>
         <div style="font-size:13px;color:#2d3748;line-height:1.6;max-width:640px;">
-          ${trustExplanation}
+          ${escapeHtml(trustExplanation)}
         </div>
       </div>
       <div style="font-size:13px;color:#4a5568;line-height:1.8;">
-        This record package covers <strong>${primaryAircraft.type || "the aircraft"}</strong>
-        (${primaryAircraft.ident || "—"}), serial number <strong>${primaryAircraft.serialNumber || "—"}</strong>.
+        This record package covers <strong>${escapeHtml(primaryAircraft.type || "the aircraft")}</strong>
+        (${escapeHtml(primaryAircraft.ident || "—")}), serial number <strong>${escapeHtml(primaryAircraft.serialNumber || "—")}</strong>.
         The logbook contains <strong>${entries.length} entr${entries.length === 1 ? "y" : "ies"}</strong>
         ${firstEntryDate && lastEntryDate ? `spanning <strong>${firstEntryDate}</strong> to <strong>${lastEntryDate}</strong>` : ""}.
-        ${buyerSummaryStatus}
-        ${buyerSummaryGaps}
+        ${escapeHtml(buyerSummaryStatus)}
+        ${escapeHtml(buyerSummaryGaps)}
       </div>
     </div>
   </section>
@@ -4740,8 +4762,8 @@ app.get("/export/sale-packet/html", (_req, res) => {
         <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px;">
           <div style="width:14px;height:14px;border-radius:50%;background:${trustColor};flex-shrink:0;"></div>
           <div>
-            <div style="font-size:16px;font-weight:700;color:${trustColor};">${trustLabel} — ${qualityScore}/100</div>
-            <div style="font-size:11px;color:#718096;margin-top:2px;">${trustExplanation}</div>
+            <div style="font-size:16px;font-weight:700;color:${trustColor};">${escapeHtml(trustLabel)} — ${qualityScore}/100</div>
+            <div style="font-size:11px;color:#718096;margin-top:2px;">${escapeHtml(trustExplanation)}</div>
           </div>
         </div>
         <table class="kv-table">
@@ -4780,17 +4802,17 @@ app.get("/export/sale-packet/html", (_req, res) => {
         <div>
           <div style="font-size:11px;font-weight:700;color:#22c55e;letter-spacing:0.05em;margin-bottom:8px;text-transform:uppercase;">✓ Verified</div>
           ${trustBasis.verified.length > 0
-            ? trustBasis.verified.map(v => `<div style="font-size:12px;color:#2d3748;padding:4px 0;border-bottom:1px solid #f0f2f5;">${v}</div>`).join("")
+            ? trustBasis.verified.map(v => `<div style="font-size:12px;color:#2d3748;padding:4px 0;border-bottom:1px solid #f0f2f5;">${escapeHtml(v)}</div>`).join("")
             : `<div style="font-size:12px;color:#a0aec0;">No items verified</div>`}
         </div>
         <div>
           <div style="font-size:11px;font-weight:700;color:#f59e0b;letter-spacing:0.05em;margin-bottom:8px;text-transform:uppercase;">~ Assumed</div>
-          ${trustBasis.assumed.map(a => `<div style="font-size:12px;color:#4a5568;padding:4px 0;border-bottom:1px solid #f0f2f5;">${a}</div>`).join("")}
+          ${trustBasis.assumed.map(a => `<div style="font-size:12px;color:#4a5568;padding:4px 0;border-bottom:1px solid #f0f2f5;">${escapeHtml(a)}</div>`).join("")}
         </div>
         <div>
           <div style="font-size:11px;font-weight:700;color:#ef4444;letter-spacing:0.05em;margin-bottom:8px;text-transform:uppercase;">✗ Missing / Unverifiable</div>
           ${trustBasis.missing.length > 0
-            ? trustBasis.missing.map(m => `<div style="font-size:12px;color:#ef4444;padding:4px 0;border-bottom:1px solid #f0f2f5;">${m}</div>`).join("")
+            ? trustBasis.missing.map(m => `<div style="font-size:12px;color:#ef4444;padding:4px 0;border-bottom:1px solid #f0f2f5;">${escapeHtml(m)}</div>`).join("")
             : `<div style="font-size:12px;color:#22c55e;">No known gaps</div>`}
         </div>
       </div>
@@ -4805,10 +4827,10 @@ app.get("/export/sale-packet/html", (_req, res) => {
         ? `<div class="gap-none"><span style="font-size:16px;">✓</span> No gaps detected — records appear complete</div>`
         : gaps.map((g) => `
         <div class="gap-item">
-          <div class="gap-dot gap-dot-${g.severity}"></div>
+          <div class="gap-dot gap-dot-${escapeHtml(g.severity)}"></div>
           <div>
-            <div class="gap-text">${g.description}</div>
-            <div class="gap-type">${g.type.replace(/_/g, " ")}${g.severity === "high" ? " · high severity" : " · medium severity"}</div>
+            <div class="gap-text">${escapeHtml(g.description)}</div>
+            <div class="gap-type">${escapeHtml(g.type.replace(/_/g, " "))}${g.severity === "high" ? " · high severity" : " · medium severity"}</div>
           </div>
         </div>`).join("")}
     </div>
@@ -4819,8 +4841,8 @@ app.get("/export/sale-packet/html", (_req, res) => {
     <div class="section-title">Logbook Summary</div>
     <div class="section-body">
       <div style="display:flex;gap:24px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #e2e8f0;flex-wrap:wrap;">
-        <div><span style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#718096;font-weight:600;">First Entry</span><div style="font-size:14px;font-weight:700;color:#1a1a2e;margin-top:3px;">${firstEntryDate || "—"}</div></div>
-        <div><span style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#718096;font-weight:600;">Last Entry</span><div style="font-size:14px;font-weight:700;color:#1a1a2e;margin-top:3px;">${lastEntryDate || "—"}</div></div>
+        <div><span style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#718096;font-weight:600;">First Entry</span><div style="font-size:14px;font-weight:700;color:#1a1a2e;margin-top:3px;">${escapeHtml(firstEntryDate || "—")}</div></div>
+        <div><span style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#718096;font-weight:600;">Last Entry</span><div style="font-size:14px;font-weight:700;color:#1a1a2e;margin-top:3px;">${escapeHtml(lastEntryDate || "—")}</div></div>
         <div><span style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#718096;font-weight:600;">Total Entries</span><div style="font-size:14px;font-weight:700;color:#1a1a2e;margin-top:3px;">${entries.length}</div></div>
       </div>
       <div class="grid-3">
@@ -4866,11 +4888,11 @@ app.get("/export/sale-packet/html", (_req, res) => {
       <div class="section-title">Pilot / Owner Summary</div>
       <div class="section-body">
         <table class="kv-table">
-          <tr><td>Full Name</td><td>${profile?.pilot?.fullName || "—"}</td></tr>
-          <tr><td>Medical</td><td>${profile?.medical?.kind || "None"}${profile?.medical?.class ? " Class " + profile.medical.class : ""}</td></tr>
-          <tr><td>Medical Expires</td><td>${fmt(profile?.medical?.expires)}</td></tr>
-          <tr><td>Flight Review</td><td>${fmt(profile?.proficiency?.flightReviewDate)}</td></tr>
-          <tr><td>IPC Date</td><td>${fmt(profile?.proficiency?.ipcDate)}</td></tr>
+          <tr><td>Full Name</td><td>${escapeHtml(profile?.pilot?.fullName || "—")}</td></tr>
+          <tr><td>Medical</td><td>${escapeHtml(profile?.medical?.kind || "None")}${profile?.medical?.class ? " Class " + profile.medical.class : ""}</td></tr>
+          <tr><td>Medical Expires</td><td>${escapeHtml(fmt(profile?.medical?.expires))}</td></tr>
+          <tr><td>Flight Review</td><td>${escapeHtml(fmt(profile?.proficiency?.flightReviewDate))}</td></tr>
+          <tr><td>IPC Date</td><td>${escapeHtml(fmt(profile?.proficiency?.ipcDate))}</td></tr>
           <tr><td>Endorsements</td><td>${profile?.endorsements?.length || 0}</td></tr>
         </table>
       </div>
@@ -4932,32 +4954,32 @@ app.get("/export/sale-packet/html", (_req, res) => {
       <div class="grid-3">
         <div class="stat-card">
           <div class="stat-label">Engine</div>
-          <div style="font-size:13px;font-weight:600;color:#1a1a2e;margin-top:6px;">${pa.engineType || "—"}</div>
-          <div style="font-size:11px;color:#718096;margin-top:2px;">S/N: ${pa.engineSerial || "—"}</div>
+          <div style="font-size:13px;font-weight:600;color:#1a1a2e;margin-top:6px;">${escapeHtml(pa.engineType || "—")}</div>
+          <div style="font-size:11px;color:#718096;margin-top:2px;">S/N: ${escapeHtml(pa.engineSerial || "—")}</div>
           <div style="font-size:11px;color:#718096;margin-top:2px;">SMOH: ${pa.engineTimeSMOH != null ? fmtNum(pa.engineTimeSMOH) + " hrs" : "Not recorded"}</div>
           ${(() => { const r = lastServiceRecord("engine"); return r ? `
-          <div style="font-size:11px;color:#718096;margin-top:2px;">Last service: ${r.date}</div>
-          ${r.condition ? `<div style="font-size:11px;color:#718096;margin-top:2px;">Condition: <span style="color:${r.condition === "serviceable" ? "#22c55e" : "#ef4444"};font-weight:600;">${r.condition}</span></div>` : ""}
-          ${r.mechanic ? `<div style="font-size:11px;color:#718096;margin-top:2px;">Signed off: ${r.mechanic}</div>` : ""}
+          <div style="font-size:11px;color:#718096;margin-top:2px;">Last service: ${escapeHtml(r.date)}</div>
+          ${r.condition ? `<div style="font-size:11px;color:#718096;margin-top:2px;">Condition: <span style="color:${r.condition === "serviceable" ? "#22c55e" : "#ef4444"};font-weight:600;">${escapeHtml(r.condition)}</span></div>` : ""}
+          ${r.mechanic ? `<div style="font-size:11px;color:#718096;margin-top:2px;">Signed off: ${escapeHtml(r.mechanic)}</div>` : ""}
           ` : '<div style="font-size:11px;color:#a0aec0;margin-top:2px;">No service records</div>'; })()}
         </div>
         <div class="stat-card">
           <div class="stat-label">Propeller</div>
-          <div style="font-size:13px;font-weight:600;color:#1a1a2e;margin-top:6px;">${pa.propType || "—"}</div>
-          <div style="font-size:11px;color:#718096;margin-top:2px;">S/N: ${pa.propSerial || "—"}</div>
+          <div style="font-size:13px;font-weight:600;color:#1a1a2e;margin-top:6px;">${escapeHtml(pa.propType || "—")}</div>
+          <div style="font-size:11px;color:#718096;margin-top:2px;">S/N: ${escapeHtml(pa.propSerial || "—")}</div>
           ${(() => { const r = lastServiceRecord("prop"); return r ? `
-          <div style="font-size:11px;color:#718096;margin-top:2px;">Last service: ${r.date}</div>
-          ${r.condition ? `<div style="font-size:11px;color:#718096;margin-top:2px;">Condition: <span style="color:${r.condition === "serviceable" ? "#22c55e" : "#ef4444"};font-weight:600;">${r.condition}</span></div>` : ""}
-          ${r.mechanic ? `<div style="font-size:11px;color:#718096;margin-top:2px;">Signed off: ${r.mechanic}</div>` : ""}
+          <div style="font-size:11px;color:#718096;margin-top:2px;">Last service: ${escapeHtml(r.date)}</div>
+          ${r.condition ? `<div style="font-size:11px;color:#718096;margin-top:2px;">Condition: <span style="color:${r.condition === "serviceable" ? "#22c55e" : "#ef4444"};font-weight:600;">${escapeHtml(r.condition)}</span></div>` : ""}
+          ${r.mechanic ? `<div style="font-size:11px;color:#718096;margin-top:2px;">Signed off: ${escapeHtml(r.mechanic)}</div>` : ""}
           ` : '<div style="font-size:11px;color:#a0aec0;margin-top:2px;">No service records</div>'; })()}
         </div>
         <div class="stat-card">
           <div class="stat-label">Avionics</div>
           ${(pa.avionics || []).map((av) => {
             const r = lastServiceRecord(av.toLowerCase().split(" ").slice(0, 2).join(" "));
-            return `<div style="font-size:12px;color:#2d3748;margin-top:6px;font-weight:600;">${av}</div>
-            ${r ? `<div style="font-size:11px;color:#718096;">Last tested: ${r.date}</div>
-            ${r.condition ? `<div style="font-size:11px;color:#718096;">Condition: <span style="color:${r.condition === "serviceable" ? "#22c55e" : "#ef4444"};font-weight:600;">${r.condition}</span></div>` : ""}` : ""}`;
+            return `<div style="font-size:12px;color:#2d3748;margin-top:6px;font-weight:600;">${escapeHtml(av)}</div>
+            ${r ? `<div style="font-size:11px;color:#718096;">Last tested: ${escapeHtml(r.date)}</div>
+            ${r.condition ? `<div style="font-size:11px;color:#718096;">Condition: <span style="color:${r.condition === "serviceable" ? "#22c55e" : "#ef4444"};font-weight:600;">${escapeHtml(r.condition)}</span></div>` : ""}` : ""}`;
           }).join("") || '<div style="font-size:12px;color:#a0aec0;margin-top:6px;">Not recorded</div>'}
         </div>
       </div>
@@ -5002,14 +5024,14 @@ app.get("/export/sale-packet/html", (_req, res) => {
             <span style="font-weight:600;font-size:12px;">Hash Match</span>
             ${hashMatchBadge}
           </div>` : ""}
-          ${verification?.anchorTime ? `<div style="font-size:11px;color:#718096;margin-bottom:6px;">Anchored: ${String(verification.anchorTime).slice(0,10)}</div>` : ""}
-          ${verification?.anchorNetwork ? `<div style="font-size:11px;color:#718096;margin-bottom:6px;">Network: ${verification.anchorNetwork}</div>` : ""}
+          ${verification?.anchorTime ? `<div style="font-size:11px;color:#718096;margin-bottom:6px;">Anchored: ${escapeHtml(String(verification.anchorTime).slice(0,10))}</div>` : ""}
+          ${verification?.anchorNetwork ? `<div style="font-size:11px;color:#718096;margin-bottom:6px;">Network: ${escapeHtml(verification.anchorNetwork)}</div>` : ""}
           <div style="font-size:11px;color:#718096;margin-top:12px;line-height:1.6;border-left:3px solid #e2e8f0;padding-left:10px;">
             This record set hashes to the value below. Any change to the underlying records — even a single character — will produce a different hash. You can use this to confirm you are reviewing unmodified records.
           </div>
           <div style="font-size:11px;color:#718096;margin-top:8px;font-weight:600;">Current Record Hash</div>
-          <div class="hash-display">${currentHash}</div>
-          ${anchorHash && anchorHash !== currentHash ? `<div style="font-size:11px;color:#718096;margin-top:8px;font-weight:600;">Anchored Hash</div><div class="hash-display">${anchorHash}</div>` : ""}
+          <div class="hash-display">${escapeHtml(currentHash)}</div>
+          ${anchorHash && anchorHash !== currentHash ? `<div style="font-size:11px;color:#718096;margin-top:8px;font-weight:600;">Anchored Hash</div><div class="hash-display">${escapeHtml(anchorHash)}</div>` : ""}
         </div>
       </div>
     </section>
@@ -5045,6 +5067,9 @@ app.get("/export/sale-packet/html", (_req, res) => {
 });
 
 app.get("/export/sale-packet/pdf", async (_req, res) => {
+  if (process.env.PILOTLOG_ENABLE_PDF !== "true") {
+    return res.status(404).json({ error: "PDF export disabled" });
+  }
   let browser;
   try {
     const { default: puppeteer } = await import("puppeteer");
@@ -5062,7 +5087,7 @@ app.get("/export/sale-packet/pdf", async (_req, res) => {
     const reg = (aircraft[0]?.registration || "aircraft").replace(/[^A-Z0-9]/gi, "");
     const date = new Date().toISOString().slice(0, 10);
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="AirLog-SalePacket-${reg}-${date}.pdf"`);
+    res.setHeader("Content-Disposition", `attachment; filename="AirLog-SalePacket-${reg}-${escapeHtml(date)}.pdf"`);
     res.send(pdf);
   } catch (err) {
     if (browser) await browser.close().catch(() => {});
@@ -5409,8 +5434,8 @@ app.get("/verify/airworthy/html", (_req, res) => {
     <div class="check-row">
       <div class="check-icon" style="background:${statusBg(c.status)};color:${statusColor(c.status)};">${statusIcon(c.status)}</div>
       <div class="check-body">
-        <div class="check-label">${c.label}</div>
-        <div class="check-detail">${c.detail}</div>
+        <div class="check-label">${escapeHtml(c.label)}</div>
+        <div class="check-detail">${escapeHtml(c.detail)}</div>
       </div>
     </div>`).join("\n");
 
@@ -5583,17 +5608,17 @@ app.get("/export/trust-report/html", (_req, res) => {
 
   const riskFlagRows = riskFlags.length > 0
     ? riskFlags.map(f => `<tr>
-        <td><span style="padding:2px 8px;border-radius:4px;font-size:12px;${riskBadgeStyle(f.severity)}">${f.severity.toUpperCase()}</span></td>
-        <td style="font-family:monospace;font-size:12px;color:#94a3b8;">${f.code}</td>
-        <td>${f.detail}</td>
+        <td><span style="padding:2px 8px;border-radius:4px;font-size:12px;${riskBadgeStyle(f.severity)}">${escapeHtml(f.severity.toUpperCase())}</span></td>
+        <td style="font-family:monospace;font-size:12px;color:#94a3b8;">${escapeHtml(f.code)}</td>
+        <td>${escapeHtml(f.detail)}</td>
       </tr>`).join("\n")
     : `<tr><td colspan="3" style="color:#22c55e;text-align:center;">No risk flags — records look clean.</td></tr>`;
 
   const compRows = complianceCalendar.map(c => `<tr>
-    <td>${c.label}</td>
-    <td>${c.dueDate || "—"}</td>
+    <td>${escapeHtml(c.label)}</td>
+    <td>${escapeHtml(c.dueDate || "—")}</td>
     <td>${c.daysUntilDue !== null ? c.daysUntilDue + " days" : "—"}</td>
-    <td><span style="color:${compColor(c.color)};font-weight:600;">${c.status.replace(/_/g," ").toUpperCase()}</span></td>
+    <td><span style="color:${compColor(c.color)};font-weight:600;">${escapeHtml(c.status.replace(/_/g," ").toUpperCase())}</span></td>
   </tr>`).join("\n");
 
   const chronoRows = maintenanceChronology.map(m => {
@@ -5605,12 +5630,12 @@ app.get("/export/trust-report/html", (_req, res) => {
       ? `<span style="color:#22c55e;">✓ RTS</span>`
       : `<span style="color:#ef4444;">✗ No RTS</span>`;
     return `<tr>
-      <td>${m.date} ${gapBadge}</td>
-      <td><span class="badge">${cat}</span></td>
-      <td>${m.description || "—"}</td>
-      <td>${m.mechanic || m.performedBy || "—"}</td>
+      <td>${escapeHtml(m.date)} ${gapBadge}</td>
+      <td><span class="badge">${escapeHtml(cat)}</span></td>
+      <td>${escapeHtml(m.description || "—")}</td>
+      <td>${escapeHtml(m.mechanic || m.performedBy || "—")}</td>
       <td>${m.totalAirframeHours != null ? Number(m.totalAirframeHours).toFixed(1) + " hrs" : "—"}</td>
-      <td>${rts}</td>
+      <td>${escapeHtml(rts)}</td>
     </tr>`;
   }).join("\n");
 
@@ -5621,16 +5646,16 @@ app.get("/export/trust-report/html", (_req, res) => {
     : `<span style="color:#f59e0b;">⚠ Records not anchored — integrity cannot be independently verified</span>`;
 
   const provenanceRows = provenance ? `
-    <tr><td>Registration</td><td>${provenance.ident || "—"}</td></tr>
-    <tr><td>Type</td><td>${provenance.type || "—"}</td></tr>
-    <tr><td>Serial Number</td><td>${provenance.serialNumber || "—"}</td></tr>
-    <tr><td>Manufacture Year</td><td>${provenance.manufactureYear || "—"}</td></tr>
+    <tr><td>Registration</td><td>${escapeHtml(provenance.ident || "—")}</td></tr>
+    <tr><td>Type</td><td>${escapeHtml(provenance.type || "—")}</td></tr>
+    <tr><td>Serial Number</td><td>${escapeHtml(provenance.serialNumber || "—")}</td></tr>
+    <tr><td>Manufacture Year</td><td>${escapeHtml(provenance.manufactureYear || "—")}</td></tr>
     <tr><td>Total Time in Service</td><td>${provenance.totalTimeInService != null ? Number(provenance.totalTimeInService).toFixed(1) + " hrs" : "—"}</td></tr>
-    <tr><td>Registration Date</td><td>${provenance.registrationDate ? String(provenance.registrationDate).slice(0,10) : "—"}</td></tr>
-    <tr><td>Engine Type</td><td>${provenance.engineType || "—"}</td></tr>
-    <tr><td>Engine Serial</td><td>${provenance.engineSerial || "—"}</td></tr>
-    <tr><td>Propeller Type</td><td>${provenance.propType || "—"}</td></tr>
-    <tr><td>Propeller Serial</td><td>${provenance.propSerial || "—"}</td></tr>
+    <tr><td>Registration Date</td><td>${escapeHtml(provenance.registrationDate ? String(provenance.registrationDate).slice(0,10) : "—")}</td></tr>
+    <tr><td>Engine Type</td><td>${escapeHtml(provenance.engineType || "—")}</td></tr>
+    <tr><td>Engine Serial</td><td>${escapeHtml(provenance.engineSerial || "—")}</td></tr>
+    <tr><td>Propeller Type</td><td>${escapeHtml(provenance.propType || "—")}</td></tr>
+    <tr><td>Propeller Serial</td><td>${escapeHtml(provenance.propSerial || "—")}</td></tr>
   ` : `<tr><td colspan="2">No aircraft data</td></tr>`;
 
   const html = `<!DOCTYPE html>
@@ -5638,7 +5663,7 @@ app.get("/export/trust-report/html", (_req, res) => {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AirLog Trust Report — ${provenance?.ident || "Aircraft"}</title>
+<title>AirLog Trust Report — ${escapeHtml(provenance?.ident || "Aircraft")}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:#0f1117;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:32px 24px;line-height:1.6}
@@ -5670,7 +5695,7 @@ app.get("/export/trust-report/html", (_req, res) => {
     </div>
     <div>
       <h1>AirLog Trust Report</h1>
-      <div class="subtitle">Aircraft: ${provenance?.ident || "—"} &nbsp;·&nbsp; Generated ${generatedFormatted}</div>
+      <div class="subtitle">Aircraft: ${escapeHtml(provenance?.ident || "—")} &nbsp;·&nbsp; Generated ${generatedFormatted}</div>
       <div class="risk-banner">Overall Risk: ${riskLevel.toUpperCase()} &nbsp;·&nbsp; ${riskFlags.length} flag${riskFlags.length !== 1 ? "s" : ""} found</div>
     </div>
   </div>
@@ -5684,7 +5709,7 @@ app.get("/export/trust-report/html", (_req, res) => {
     <h2>Integrity Verification</h2>
     <div class="integrity-box">
       ${hashLine}
-      <code>Anchor Hash: ${integrityVerification.anchorHash || "—"}<br>Current Hash: ${integrityVerification.currentHash || "—"}<br>Network: ${integrityVerification.anchorNetwork || "—"} &nbsp;·&nbsp; Anchored: ${integrityVerification.anchorTime ? String(integrityVerification.anchorTime).slice(0,10) : "—"}</code>
+      <code>Anchor Hash: ${escapeHtml(integrityVerification.anchorHash || "—")}<br>Current Hash: ${escapeHtml(integrityVerification.currentHash || "—")}<br>Network: ${escapeHtml(integrityVerification.anchorNetwork || "—")} &nbsp;·&nbsp; Anchored: ${integrityVerification.anchorTime ? String(integrityVerification.anchorTime).slice(0,10) : "—"}</code>
     </div>
   </div>
 
@@ -5844,8 +5869,8 @@ app.get("/report", (_req, res) => {
 
   const complianceRows = complianceChecks.map((c) =>
     `<tr>
-      <td>${c.label}</td>
-      <td>${c.detail}</td>
+      <td>${escapeHtml(c.label)}</td>
+      <td>${escapeHtml(c.detail)}</td>
       <td><span class="badge ${c.cls}">${c.status}</span></td>
     </tr>`
   ).join("\n");
@@ -5855,10 +5880,10 @@ app.get("/report", (_req, res) => {
   const maintenanceRows = sortedMaint.map((m) => {
     const cat = (m.category || "").replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
     return `<tr>
-      <td>${fmt(m.date)}</td>
-      <td><span class="badge badge-gray">${cat || "—"}</span></td>
-      <td>${m.description || "—"}</td>
-      <td>${m.mechanic || m.performedBy || "—"}</td>
+      <td>${escapeHtml(fmt(m.date))}</td>
+      <td><span class="badge badge-gray">${escapeHtml(cat || "—")}</span></td>
+      <td>${escapeHtml(m.description || "—")}</td>
+      <td>${escapeHtml(m.mechanic || m.performedBy || "—")}</td>
       <td>${m.totalAirframeHours != null ? fmtNum(m.totalAirframeHours) + " hrs" : "—"}</td>
       <td class="${m.returnToService ? "rts-yes" : "rts-no"}">${m.returnToService ? "✓" : "—"}</td>
     </tr>`;
@@ -5887,7 +5912,7 @@ app.get("/report", (_req, res) => {
 
   function listItems(arr, cls) {
     if (!arr.length) return `<li style="color:#6b7280;">None</li>`;
-    return arr.map((s) => `<li class="${cls}">${s}</li>`).join("\n");
+    return arr.map((s) => `<li class="${cls}">${escapeHtml(s)}</li>`).join("\n");
   }
 
   // Missing items / gaps
@@ -5897,7 +5922,7 @@ app.get("/report", (_req, res) => {
         const color = g.severity === "high" ? "#ef4444" : g.severity === "medium" ? "#f59e0b" : "#6b7280";
         return `<tr>
           <td style="color:${color};font-weight:700;text-transform:uppercase;font-size:11px;">${g.severity || "low"}</td>
-          <td>${g.description || "—"}</td>
+          <td>${escapeHtml(g.description || "—")}</td>
         </tr>`;
       }).join("\n");
 
@@ -5906,7 +5931,7 @@ app.get("/report", (_req, res) => {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Aircraft History & Pre-Buy Summary — ${primaryAircraft.ident || "Aircraft"}</title>
+  <title>Aircraft History & Pre-Buy Summary — ${escapeHtml(primaryAircraft.ident || "Aircraft")}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 13px; color: #1a1a2e; background: #f5f7fa; line-height: 1.5; }
@@ -5973,8 +5998,8 @@ app.get("/report", (_req, res) => {
       <div class="header-sub">Aircraft History &amp; Pre-Buy Summary</div>
     </div>
     <div class="header-ident">
-      <div class="ident">${primaryAircraft.ident || "—"}</div>
-      <div class="type">${primaryAircraft.type || "—"}</div>
+      <div class="ident">${escapeHtml(primaryAircraft.ident || "—")}</div>
+      <div class="type">${escapeHtml(primaryAircraft.type || "—")}</div>
       <div class="gendate">Generated ${generatedFormatted}</div>
     </div>
   </div>
@@ -5983,8 +6008,8 @@ app.get("/report", (_req, res) => {
   <section>
     <div class="section-title">Compliance Status</div>
     <div class="verdict">
-      <div class="verdict-label"><span class="badge ${verdictClass}" style="font-size:14px;padding:6px 12px;text-transform:none;">${verdictLabel}</span></div>
-      <div class="verdict-sub">${verdictSubcopy}<br><em>Record-based screening only; confirm condition with a qualified A&amp;P pre-buy inspection.</em></div>
+      <div class="verdict-label"><span class="badge ${verdictClass}" style="font-size:14px;padding:6px 12px;text-transform:none;">${escapeHtml(verdictLabel)}</span></div>
+      <div class="verdict-sub">${escapeHtml(verdictSubcopy)}<br><em>Record-based screening only; confirm condition with a qualified A&amp;P pre-buy inspection.</em></div>
     </div>
     <div class="buyer-impact">
       <div class="buyer-impact-title">Buyer Impact</div>
@@ -6006,20 +6031,20 @@ app.get("/report", (_req, res) => {
     <div class="two-col">
       <table class="kv">
         <tbody>
-          <tr><td>Registration</td><td>${primaryAircraft.ident || "—"}</td></tr>
+          <tr><td>Registration</td><td>${escapeHtml(primaryAircraft.ident || "—")}</td></tr>
           <tr><td>Make / Model</td><td>${[primaryAircraft.make, primaryAircraft.model].filter(Boolean).join(" ") || primaryAircraft.type || "—"}</td></tr>
-          <tr><td>Year</td><td>${primaryAircraft.manufactureYear || primaryAircraft.year || "—"}</td></tr>
-          <tr><td>Serial Number</td><td>${primaryAircraft.serialNumber || "—"}</td></tr>
+          <tr><td>Year</td><td>${escapeHtml(primaryAircraft.manufactureYear || primaryAircraft.year || "—")}</td></tr>
+          <tr><td>Serial Number</td><td>${escapeHtml(primaryAircraft.serialNumber || "—")}</td></tr>
           <tr><td>Total Time in Service</td><td>${primaryAircraft.totalTimeInService != null ? fmtNum(primaryAircraft.totalTimeInService) + " hrs" : "—"}</td></tr>
         </tbody>
       </table>
       <table class="kv">
         <tbody>
-          <tr><td>Engine Type</td><td>${primaryAircraft.engineType || "—"}</td></tr>
-          <tr><td>Engine Serial</td><td>${primaryAircraft.engineSerial || "—"}</td></tr>
-          <tr><td>Engine SMOH</td><td>${primaryAircraft.engineTimeSMOH != null ? fmtNum(primaryAircraft.engineTimeSMOH) + " hrs" : "—"}</td></tr>
-          <tr><td>Propeller Type</td><td>${primaryAircraft.propType || "—"}</td></tr>
-          <tr><td>Propeller Serial</td><td>${primaryAircraft.propSerial || "—"}</td></tr>
+          <tr><td>Engine Type</td><td>${escapeHtml(primaryAircraft.engineType || "—")}</td></tr>
+          <tr><td>Engine Serial</td><td>${escapeHtml(primaryAircraft.engineSerial || "—")}</td></tr>
+          <tr><td>Engine SMOH</td><td>${escapeHtml(primaryAircraft.engineTimeSMOH != null ? fmtNum(primaryAircraft.engineTimeSMOH) + " hrs" : "—")}</td></tr>
+          <tr><td>Propeller Type</td><td>${escapeHtml(primaryAircraft.propType || "—")}</td></tr>
+          <tr><td>Propeller Serial</td><td>${escapeHtml(primaryAircraft.propSerial || "—")}</td></tr>
         </tbody>
       </table>
     </div>
@@ -6029,7 +6054,7 @@ app.get("/report", (_req, res) => {
           <tr><td>Flight Log Entries</td><td>${entries.length}</td></tr>
           <tr><td>Total Flight Hours</td><td>${fmtNum(totals.total)} hrs</td></tr>
           <tr><td>PIC Hours</td><td>${fmtNum(totals.pic)} hrs</td></tr>
-          <tr><td>Pilot on File</td><td>${profile?.pilot?.fullName || "—"}</td></tr>
+          <tr><td>Pilot on File</td><td>${escapeHtml(profile?.pilot?.fullName || "—")}</td></tr>
         </tbody>
       </table>
     </div>
@@ -6091,7 +6116,7 @@ app.get("/report", (_req, res) => {
         </div>
         <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
           <a href="/verify/hash/${hash}" style="display:inline-block;padding:8px 16px;background:#1e3a5f;color:#93c5fd;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;">Verify Report</a>
-          ${anchored && liveVerification?.anchorTx ? `<a href="/verify/${liveVerification.anchorTx}" target="_blank" style="display:inline-block;padding:8px 16px;background:#312e81;color:#a5b4fc;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;">Verify on Blockchain ↗</a>` : ""}
+          ${anchored && liveVerification?.anchorTx ? `<a href="/verify/${escapeHtml(liveVerification.anchorTx)}" target="_blank" style="display:inline-block;padding:8px 16px;background:#312e81;color:#a5b4fc;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;">Verify on Blockchain ↗</a>` : ""}
         </div>
         <p style="margin-top:8px;font-size:11px;color:#64748b;">Verify internally or confirm independently on the Midnight network.</p>
         <details style="margin-top:12px;">
@@ -6100,7 +6125,7 @@ app.get("/report", (_req, res) => {
             <div><span class="label">Report Hash</span></div>
             <div><span class="value">${hash || "—"}</span></div>
             ${anchored && liveVerification?.anchorTx ? `<div style="margin-top:8px;"><span class="label">Anchor ID</span></div>
-            <div><span class="value">${liveVerification.anchorTx}</span></div>` : ""}
+            <div><span class="value">${escapeHtml(liveVerification.anchorTx)}</span></div>` : ""}
             ${anchored && liveVerification?.anchorTime ? `<div style="margin-top:8px;"><span class="label">Anchored At</span></div>
             <div><span class="value">${String(liveVerification.anchorTime).slice(0, 19).replace("T", " ")} UTC</span></div>` : ""}
             ${hashMatch ? `<div style="margin-top:8px;"><span class="label">Integrity</span></div>
@@ -6284,16 +6309,17 @@ app.get("/pilot-report", (_req, res) => {
 
   function badge(color, label) {
     const map = { green: "badge-green", red: "badge-red", yellow: "badge-yellow", gray: "badge-gray" };
-    return `<span class="badge ${map[color] || "badge-gray"}">${label}</span>`;
+    return `<span class="badge ${map[color] || "badge-gray"}">${escapeHtml(label)}</span>`;
   }
 
   function row(label, value, extra) {
-    return `<tr><td>${label}</td><td>${value || "—"}${extra ? ` <span style="color:#6b7280;font-size:11px;">${extra}</span>` : ""}</td></tr>`;
+    const renderedValue = typeof value === "string" && value.startsWith("<span") ? value : escapeHtml(value || "—");
+    return `<tr><td>${escapeHtml(label)}</td><td>${renderedValue}${extra ? ` <span style="color:#6b7280;font-size:11px;">${escapeHtml(extra)}</span>` : ""}</td></tr>`;
   }
 
   // Certificate / ratings block
   const certListHtml = id.certificates.length
-    ? id.certificates.map(c => `<li>${c}</li>`).join("")
+    ? id.certificates.map(c => `<li>${escapeHtml(c)}</li>`).join("")
     : "<li style='color:#6b7280;'>None on file</li>";
 
   // Medical block
@@ -6326,7 +6352,7 @@ app.get("/pilot-report", (_req, res) => {
     const detail = c.approaches !== undefined
       ? `${c.approaches} approaches, ${c.holds} holds (${c.window})`
       : `${c.count}/${c.required} landings (${c.window})`;
-    return `<tr><td>${c.label}</td><td>${detail}</td><td>${badge(c.status.color, c.status.label)}</td></tr>`;
+    return `<tr><td>${escapeHtml(c.label)}</td><td>${escapeHtml(detail)}</td><td>${badge(c.status.color, c.status.label)}</td></tr>`;
   }).join("");
 
   // Activity rows
@@ -6351,11 +6377,11 @@ app.get("/pilot-report", (_req, res) => {
           const netLabel = net === "preview" ? "Preview" : net === "preprod" ? "PreProd" : net;
           const anchorTxId = anchor.tx || anchor.txHash || null;
           const explorerLink = anchorTxId
-            ? ` <a href="https://explorer.1am.xyz/tx/${anchorTxId}?network=${net}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;text-decoration:none;">View →</a>`
+            ? ` <a href="https://explorer.1am.xyz/tx/${escapeHtml(anchorTxId)}?network=${escapeHtml(net)}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;text-decoration:none;">View →</a>`
             : "";
-          chainCell = `<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Saved to chain (${netLabel})</span>${explorerLink}`;
+          chainCell = `<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Saved to chain (${escapeHtml(netLabel)})</span>${explorerLink}`;
         }
-        return `<tr><td>${f.date || "—"}</td><td>${f.route || "—"}</td><td>${f.aircraft || "—"}</td><td>${f.hours} hrs</td><td>${f.remarks || "—"}</td><td>${chainCell}</td></tr>`;
+        return `<tr><td>${escapeHtml(f.date || "—")}</td><td>${escapeHtml(f.route || "—")}</td><td>${escapeHtml(f.aircraft || "—")}</td><td>${f.hours} hrs</td><td>${escapeHtml(f.remarks || "—")}</td><td>${chainCell}</td></tr>`;
       }).join("")
     : `<tr><td colspan="6" style="color:#6b7280;">No flights logged yet.</td></tr>`;
 
@@ -6367,7 +6393,7 @@ app.get("/pilot-report", (_req, res) => {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pilot Report — ${id.name || "Pilot"}</title>
+  <title>Pilot Report — ${escapeHtml(id.name || "Pilot")}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 13px; color: #1a1a2e; background: #f5f7fa; line-height: 1.5; }
@@ -6415,7 +6441,7 @@ app.get("/pilot-report", (_req, res) => {
       <div class="header-sub">Pilot Report</div>
     </div>
     <div class="header-ident">
-      <div class="name">${id.name || "Pilot"}</div>
+      <div class="name">${escapeHtml(id.name || "Pilot")}</div>
       <div class="gendate">Generated ${generatedFormatted}</div>
     </div>
   </div>
@@ -6439,7 +6465,7 @@ app.get("/pilot-report", (_req, res) => {
           ${row("Phone", id.phone)}
           ${row("Pilot Phase", id.pilotPhase)}
           ${identityPR.midnameVerified && identityPR.midname
-            ? row("Pilot Identity (Midname)", `<span style="font-weight:700;">${identityPR.midname}</span>`)
+            ? row("Pilot Identity (Midname)", `<span style="font-weight:700;">${escapeHtml(identityPR.midname)}</span>`)
             : ""}
           ${identityPR.midnameVerified
             ? row("Verification", `<span style="color:#166534;font-weight:700;">&#10003; Verified on Midnight</span>${identityPR.verifiedAt ? ` <span style="color:#6b7280;font-size:11px;">· ${String(identityPR.verifiedAt).slice(0,10)}</span>` : ""}`)
@@ -6517,15 +6543,15 @@ app.get("/pilot-report", (_req, res) => {
         </div>
         <div class="integrity-item">
           <div class="integrity-label">Record Hash</div>
-          <div class="integrity-val">${integrity.anchorHash || "—"}</div>
+          <div class="integrity-val">${escapeHtml(integrity.anchorHash || "—")}</div>
         </div>
         <div class="integrity-item">
           <div class="integrity-label">Anchored</div>
-          <div class="integrity-val">${integrity.anchorTime || "—"}</div>
+          <div class="integrity-val">${escapeHtml(integrity.anchorTime || "—")}</div>
         </div>
         <div class="integrity-item">
           <div class="integrity-label">Network</div>
-          <div class="integrity-val">${integrity.anchorNetwork || "—"}</div>
+          <div class="integrity-val">${escapeHtml(integrity.anchorNetwork || "—")}</div>
         </div>
       </div>
     </div>
@@ -6955,32 +6981,32 @@ app.get("/identity/card", (_req, res) => {
       <span class="identity-label">Wallet</span>
       <span class="identity-value" style="color:${walletConnected ? '#22c55e' : '#ef4444'};">
         <span class="status-dot" style="background:${walletConnected ? '#22c55e' : '#ef4444'};"></span>
-        ${walletConnected ? walletDisplay : "Not connected"}
+        ${escapeHtml(walletConnected ? walletDisplay : "Not connected")}
       </span>
     </div>
     <div class="identity-row">
       <span class="identity-label">Midname</span>
       <span class="identity-value" style="color:${midnameStatusColor};">
         <span class="status-dot" style="background:${midnameStatusColor};"></span>
-        ${midnameDisplay} <span style="font-size:11px;color:#6b7280;font-weight:400;">${midnameStatus}</span>
-        ${verifiedAt ? `<span style="font-size:11px;color:#6b7280;font-weight:400;margin-left:8px;">· ${verifiedAt}</span>` : ""}
+        ${escapeHtml(midnameDisplay)} <span style="font-size:11px;color:#6b7280;font-weight:400;">${escapeHtml(midnameStatus)}</span>
+        ${verifiedAt ? `<span style="font-size:11px;color:#6b7280;font-weight:400;margin-left:8px;">· ${escapeHtml(verifiedAt)}</span>` : ""}
       </span>
     </div>
     ${idName ? `<div class="identity-row">
       <span class="identity-label">Name</span>
-      <span class="identity-value">${idName}</span>
+      <span class="identity-value">${escapeHtml(idName)}</span>
     </div>` : ""}
     ${idTwitter ? `<div class="identity-row">
       <span class="identity-label">Twitter</span>
-      <span class="identity-value" style="color:#9aa3ff;">${idTwitter}</span>
+      <span class="identity-value" style="color:#9aa3ff;">${escapeHtml(idTwitter)}</span>
     </div>` : ""}
     ${idBio ? `<div class="identity-row">
       <span class="identity-label">Bio</span>
-      <span class="identity-value" style="font-weight:400;color:#b6b9c6;">${idBio}</span>
+      <span class="identity-value" style="font-weight:400;color:#b6b9c6;">${escapeHtml(idBio)}</span>
     </div>` : ""}
     ${idResolvedType ? `<div class="identity-row">
       <span class="identity-label">Address Type</span>
-      <span class="identity-value" style="color:#6b7280;">${idResolvedType}</span>
+      <span class="identity-value" style="color:#6b7280;">${escapeHtml(idResolvedType)}</span>
     </div>` : ""}
     <div class="identity-row">
       <span class="identity-label">Privacy</span>
@@ -7018,7 +7044,7 @@ app.get("/identity/card", (_req, res) => {
     </div>` : ""}
     <div class="verify-form">
       <label>Midname</label>
-      <input type="text" id="midname-input" placeholder="e.g. pilot.night" value="${identity.midname || ''}" />
+      <input type="text" id="midname-input" placeholder="e.g. pilot.night" value="${escapeHtml(identity.midname || '')}" />
       <br/>
       <button class="btn" onclick="verifyMidname()">Verify &amp; Save</button>
       ${identity.midnameVerified ? `<button class="btn btn-danger" onclick="clearMidname()" style="margin-left:10px;">Clear Midname</button>` : ""}
@@ -7210,16 +7236,16 @@ app.get("/passport", (_req, res) => {
   const passportCard = pilotPassportCardHtml(session, identity, profile, totals, { mode: "full", aircraftCount });
 
   const certListHtml = certs.length
-    ? certs.map(c => `<li style="padding:7px 0;border-bottom:1px solid #1f2440;font-size:14px;color:#e2e8f0;">${c.type}${c.number ? ` <span style="color:#6b7280;font-size:12px;">#${c.number}</span>` : ""}${c.issued ? ` <span style="color:#6b7280;font-size:12px;">· ${c.issued}</span>` : ""}</li>`).join("")
+    ? certs.map(c => `<li style="padding:7px 0;border-bottom:1px solid #1f2440;font-size:14px;color:#e2e8f0;">${escapeHtml(c.type)}${c.number ? ` <span style="color:#6b7280;font-size:12px;">#${escapeHtml(c.number)}</span>` : ""}${c.issued ? ` <span style="color:#6b7280;font-size:12px;">· ${escapeHtml(c.issued)}</span>` : ""}</li>`).join("")
     : `<li style="padding:7px 0;font-size:13px;color:#374151;">None on file — add via profile</li>`;
 
   const ratingListHtml = ratings.length
-    ? ratings.map(r => `<li style="padding:7px 0;border-bottom:1px solid #1f2440;font-size:14px;color:#e2e8f0;">${r.type}${r.issued ? ` <span style="color:#6b7280;font-size:12px;">· ${r.issued}</span>` : ""}</li>`).join("")
+    ? ratings.map(r => `<li style="padding:7px 0;border-bottom:1px solid #1f2440;font-size:14px;color:#e2e8f0;">${escapeHtml(r.type)}${r.issued ? ` <span style="color:#6b7280;font-size:12px;">· ${r.issued}</span>` : ""}</li>`).join("")
     : `<li style="padding:7px 0;font-size:13px;color:#374151;">None on file</li>`;
 
   function placeholderSection(label) {
     return `<div style="background:#0b0f18;border:1px solid #1f2440;border-radius:12px;padding:16px;margin-bottom:12px;opacity:0.5;">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:8px;">${label}</div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:8px;">${escapeHtml(label)}</div>
       <div style="font-size:13px;color:#374151;font-style:italic;">Coming soon</div>
     </div>`;
   }
@@ -7299,9 +7325,9 @@ app.get("/passport", (_req, res) => {
           const typeLabel = { instruction_verified: "Instructor Verified", flight_verified: "Flight Confirmed", endorsement_verified: "Endorsement Signed Off", aircraft_checkout: "Aircraft Checkout", maintenance_verified: "Maintenance Signed Off" }[a.type] || a.type;
           return `<div style="background:#0b0f18;border:1px solid #2d2209;border-radius:10px;padding:14px 16px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
             <div style="flex:1;min-width:0;">
-              <div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:3px;">${typeLabel}</div>
-              <div style="font-size:12px;color:#b6b9c6;margin-bottom:2px;">${flightLabel}</div>
-              ${a.attestorMidname ? `<div style="font-size:11px;color:#6b7280;">Requested from <strong>${a.attestorMidname}</strong></div>` : `<div style="font-size:11px;color:#6b7280;">Awaiting reviewer</div>`}
+              <div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:3px;">${escapeHtml(typeLabel)}</div>
+              <div style="font-size:12px;color:#b6b9c6;margin-bottom:2px;">${escapeHtml(flightLabel)}</div>
+              ${a.attestorMidname ? `<div style="font-size:11px;color:#6b7280;">Requested from <strong>${escapeHtml(a.attestorMidname)}</strong></div>` : `<div style="font-size:11px;color:#6b7280;">Awaiting reviewer</div>`}
             </div>
             <div style="display:flex;align-items:center;gap:6px;background:#1a1203;border:1px solid #f59e0b33;border-radius:20px;padding:3px 10px;flex-shrink:0;">
               <span style="width:6px;height:6px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>
@@ -7379,16 +7405,16 @@ app.get("/review", (_req, res) => {
         const fl = flightSummary(a.flightId);
         const typeLabel = { instruction_verified: "Instructor Verified", flight_verified: "Flight Confirmed", endorsement_verified: "Endorsement Signed Off", aircraft_checkout: "Aircraft Checkout", maintenance_verified: "Maintenance Signed Off" }[a.type] || a.type;
         const requested = String(a.createdAt || "").slice(0, 10);
-        return `<div id="card-${a.id}" style="background:#0f1628;border:1px solid #222843;border-radius:14px;padding:22px 24px;margin-bottom:18px;">
+        return `<div id="card-${escapeHtml(a.id)}" style="background:#0f1628;border:1px solid #222843;border-radius:14px;padding:22px 24px;margin-bottom:18px;">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
             <div style="flex:1;min-width:0;">
-              <div style="font-size:16px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">${typeLabel}</div>
+              <div style="font-size:16px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">${escapeHtml(typeLabel)}</div>
               <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;">
-                <span style="font-size:12px;color:#9aa3ff;font-weight:600;">&#9992; ${fl.route}</span>
-                <span style="font-size:12px;color:#b6b9c6;">${fl.aircraft}</span>
-                <span style="font-size:12px;color:#6b7280;">${fl.date}</span>
+                <span style="font-size:12px;color:#9aa3ff;font-weight:600;">&#9992; ${escapeHtml(fl.route)}</span>
+                <span style="font-size:12px;color:#b6b9c6;">${escapeHtml(fl.aircraft)}</span>
+                <span style="font-size:12px;color:#6b7280;">${escapeHtml(fl.date)}</span>
               </div>
-              ${a.attestorMidname ? `<div style="font-size:12px;color:#b6b9c6;margin-bottom:6px;">Requested from: <strong style="color:#9aa3ff;">${a.attestorMidname}</strong></div>` : ""}
+              ${a.attestorMidname ? `<div style="font-size:12px;color:#b6b9c6;margin-bottom:6px;">Requested from: <strong style="color:#9aa3ff;">${escapeHtml(a.attestorMidname)}</strong></div>` : ""}
               <div style="font-size:11px;color:#4a5568;">Requested ${requested}</div>
             </div>
             <div style="display:flex;align-items:center;gap:6px;background:#1a1203;border:1px solid #f59e0b33;border-radius:20px;padding:4px 12px;flex-shrink:0;align-self:flex-start;">
@@ -7399,13 +7425,13 @@ app.get("/review", (_req, res) => {
           <div style="margin-top:16px;padding-top:16px;border-top:1px solid #1a1f33;">
             <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;margin-bottom:10px;">Reviewing as</div>
             <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-              <select id="reviewer-${a.id}" style="background:#0b0f18;border:1px solid #222843;color:#e2e8f0;border-radius:7px;padding:7px 12px;font-size:13px;min-width:180px;">
-                ${MOCK_REVIEWERS.map(m => `<option value="${m}"${a.attestorMidname === m ? " selected" : ""}>${m}</option>`).join("")}
+              <select id="reviewer-${escapeHtml(a.id)}" style="background:#0b0f18;border:1px solid #222843;color:#e2e8f0;border-radius:7px;padding:7px 12px;font-size:13px;min-width:180px;">
+                ${MOCK_REVIEWERS.map(m => `<option value="${escapeHtml(m)}"${a.attestorMidname === m ? " selected" : ""}>${escapeHtml(m)}</option>`).join("")}
               </select>
-              <button onclick="approveAttestation('${a.id}')" style="background:#14532d;border:1px solid #16a34a55;color:#4ade80;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;">
+              <button onclick="approveAttestation('${escapeHtml(a.id)}')" style="background:#14532d;border:1px solid #16a34a55;color:#4ade80;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;">
                 &#10003; Approve
               </button>
-              <button onclick="rejectAttestation('${a.id}')" style="background:#450a0a;border:1px solid #dc262655;color:#f87171;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;">
+              <button onclick="rejectAttestation('${escapeHtml(a.id)}')" style="background:#450a0a;border:1px solid #dc262655;color:#f87171;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;">
                 &#10007; Reject
               </button>
             </div>
@@ -7639,10 +7665,10 @@ app.get("/progression", (_req, res) => {
   function renderMilestoneItem(m) {
     return `
     <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid #1e293b;">
-      <span style="font-size:22px;margin-top:2px;">${m.icon}</span>
+      <span style="font-size:22px;margin-top:2px;">${escapeHtml(m.icon)}</span>
       <div style="flex:1;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-          <span style="color:#e2e8f0;font-size:14px;font-weight:600;">${m.label}</span>
+          <span style="color:#e2e8f0;font-size:14px;font-weight:600;">${escapeHtml(m.label)}</span>
           ${milestoneStatusBadge(m.status)}
         </div>
         <div style="color:#64748b;font-size:12px;">${m.detail || ''}</div>
@@ -7660,13 +7686,13 @@ app.get("/progression", (_req, res) => {
   const readinessHtml = Object.values(prog.readiness).map(r => `
     <div style="margin-bottom:16px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <span style="color:#cbd5e1;font-size:13px;font-weight:600;">${r.label}</span>
+        <span style="color:#cbd5e1;font-size:13px;font-weight:600;">${escapeHtml(r.label)}</span>
         <span style="color:${statusColor(r.status)};font-size:12px;font-weight:700;">${r.score}%</span>
       </div>
       <div style="background:#1e293b;border-radius:4px;height:6px;overflow:hidden;">
         <div style="background:${statusColor(r.status)};width:${r.score}%;height:6px;border-radius:4px;transition:width 0.3s;"></div>
       </div>
-      <div style="color:#475569;font-size:11px;margin-top:4px;">${r.detail}</div>
+      <div style="color:#475569;font-size:11px;margin-top:4px;">${escapeHtml(r.detail)}</div>
     </div>
   `).join('');
 
@@ -7675,19 +7701,19 @@ app.get("/progression", (_req, res) => {
     : prog.guidanceCards.map(c => `
       <div style="background:#0f172a;border:1px solid #1e293b;border-left:3px solid ${priorityColor(c.priority)};border-radius:8px;padding:14px 16px;margin-bottom:10px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-          <span style="font-size:18px;">${c.icon}</span>
-          <span style="color:#e2e8f0;font-size:14px;font-weight:700;">${c.title}</span>
-          <span style="margin-left:auto;background:${priorityColor(c.priority)}22;color:${priorityColor(c.priority)};padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700;text-transform:uppercase;">${c.priority}</span>
+          <span style="font-size:18px;">${escapeHtml(c.icon)}</span>
+          <span style="color:#e2e8f0;font-size:14px;font-weight:700;">${escapeHtml(c.title)}</span>
+          <span style="margin-left:auto;background:${priorityColor(c.priority)}22;color:${priorityColor(c.priority)};padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700;text-transform:uppercase;">${escapeHtml(c.priority)}</span>
         </div>
-        <div style="color:#94a3b8;font-size:13px;margin-bottom:6px;">${c.body}</div>
-        <div style="color:#60a5fa;font-size:12px;">→ ${c.action}</div>
+        <div style="color:#94a3b8;font-size:13px;margin-bottom:6px;">${escapeHtml(c.body)}</div>
+        <div style="color:#60a5fa;font-size:12px;">→ ${escapeHtml(c.action)}</div>
       </div>
     `).join('');
 
   const recsHtml = prog.recommendations.map(r => `
     <div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid #1e293b;">
       <span style="color:#818cf8;font-size:16px;flex-shrink:0;">✦</span>
-      <span style="color:#cbd5e1;font-size:13px;line-height:1.5;">${r}</span>
+      <span style="color:#cbd5e1;font-size:13px;line-height:1.5;">${escapeHtml(r)}</span>
     </div>
   `).join('');
 
@@ -7704,8 +7730,8 @@ app.get("/progression", (_req, res) => {
     ['Total Flights', prog.stats.totalFlights],
   ].map(([k, v]) => `
     <div style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:12px 14px;text-align:center;">
-      <div style="color:#e2e8f0;font-size:18px;font-weight:700;">${v}</div>
-      <div style="color:#64748b;font-size:11px;margin-top:2px;">${k}</div>
+      <div style="color:#e2e8f0;font-size:18px;font-weight:700;">${escapeHtml(v)}</div>
+      <div style="color:#64748b;font-size:11px;margin-top:2px;">${escapeHtml(k)}</div>
     </div>
   `).join('');
 
@@ -7751,7 +7777,7 @@ app.get("/progression", (_req, res) => {
       <div style="display:flex;align-items:flex-start;flex:1;">
         <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
           <div style="width:${dotSize};height:${dotSize};border-radius:50%;background:${dotColor};border:2px solid ${dotBorder};box-shadow:${dotShadow};flex-shrink:0;"></div>
-          <div style="font-size:9px;font-weight:${labelWeight};color:${labelColor};text-align:center;white-space:nowrap;text-transform:uppercase;letter-spacing:0.05em;">${phase.short}</div>
+          <div style="font-size:9px;font-weight:${labelWeight};color:${labelColor};text-align:center;white-space:nowrap;text-transform:uppercase;letter-spacing:0.05em;">${escapeHtml(phase.short)}</div>
           ${isActive ? `<div style="font-size:8px;color:#6366f1;text-align:center;white-space:nowrap;">← you are here</div>` : ''}
         </div>
         ${connectorHtml}
@@ -7764,7 +7790,7 @@ app.get("/progression", (_req, res) => {
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Pilot Progression — ${pilotName}</title>
+<title>Pilot Progression — ${escapeHtml(pilotName)}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #020817; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
@@ -7793,9 +7819,9 @@ app.get("/progression", (_req, res) => {
   <div style="margin-bottom:28px;">
     <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
       <div>
-        <h1 style="font-size:26px;font-weight:800;color:#f1f5f9;letter-spacing:-0.02em;">${pilotName}</h1>
-        <div style="color:#818cf8;font-size:14px;font-weight:600;margin-top:2px;">${prog.label}</div>
-        <div style="color:#64748b;font-size:12px;margin-top:2px;">${prog.description}</div>
+        <h1 style="font-size:26px;font-weight:800;color:#f1f5f9;letter-spacing:-0.02em;">${escapeHtml(pilotName)}</h1>
+        <div style="color:#818cf8;font-size:14px;font-weight:600;margin-top:2px;">${escapeHtml(prog.label)}</div>
+        <div style="color:#64748b;font-size:12px;margin-top:2px;">${escapeHtml(prog.description)}</div>
       </div>
       <div style="margin-left:auto;text-align:right;">
         <div style="color:#e2e8f0;font-size:28px;font-weight:800;">${prog.progressPercent}%</div>
@@ -7815,7 +7841,7 @@ app.get("/progression", (_req, res) => {
     <div style="display:flex;align-items:flex-start;gap:0;overflow-x:auto;padding:8px 0 16px;">
       ${timelineHtml}
     </div>
-    <div style="color:#475569;font-size:11px;margin-top:4px;">${prog.description}</div>
+    <div style="color:#475569;font-size:11px;margin-top:4px;">${escapeHtml(prog.description)}</div>
   </div>
 
   <!-- Stats Grid -->
@@ -7869,7 +7895,7 @@ app.get("/progression", (_req, res) => {
   </div>
 
   <div style="margin-top:16px;color:#334155;font-size:11px;text-align:center;">
-    Generated ${new Date(asOf).toLocaleString()} · FAA Part 61 ASEL Requirements Engine · ${prog.certificate || 'PPL-ASEL'}
+    Generated ${new Date(asOf).toLocaleString()} · FAA Part 61 ASEL Requirements Engine · ${escapeHtml(prog.certificate || 'PPL-ASEL')}
   </div>
 </div>
 </body>
