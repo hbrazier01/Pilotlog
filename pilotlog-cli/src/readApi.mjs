@@ -4235,6 +4235,7 @@ app.get("/export/sale-packet/html", (_req, res) => {
   const totals = computeTotals(entries);
   const generatedDate = new Date().toISOString();
   const generatedFormatted = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  const pdfEnabled = process.env.PILOTLOG_ENABLE_PDF === "true";
 
   const primaryAircraft = aircraft[0] || {};
   const anchored = verification?.anchored || false;
@@ -4730,9 +4731,9 @@ app.get("/export/sale-packet/html", (_req, res) => {
       <div class="ident">${escapeHtml(primaryAircraft.ident || "—")}</div>
       <div class="type">${escapeHtml(primaryAircraft.type || "—")}</div>
       <div class="gendate">Generated ${generatedFormatted}</div>
-      <div style="margin-top:10px;">
+      ${pdfEnabled ? `<div style="margin-top:10px;">
         <a href="/export/sale-packet/pdf" style="display:inline-block;padding:7px 16px;background:#1a3a6e;color:#fff;border-radius:6px;font-size:12px;font-weight:700;text-decoration:none;letter-spacing:0.03em;" download>⬇ Download PDF</a>
-      </div>
+      </div>` : ""}
     </div>
   </div>
 
@@ -5416,6 +5417,7 @@ app.get("/verify/airworthy/html", (_req, res) => {
   const unknownCount = checks.filter(c => c.status === "unknown").length;
 
   const generatedFormatted = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  const pdfEnabled = process.env.PILOTLOG_ENABLE_PDF === "true";
 
   function statusIcon(s) {
     if (s === "pass") return "✓";
@@ -5489,7 +5491,7 @@ app.get("/verify/airworthy/html", (_req, res) => {
     &nbsp;&nbsp;·&nbsp;&nbsp;
     <a href="/export/sale-packet/html">View Full Sale Packet</a>
     &nbsp;&nbsp;·&nbsp;&nbsp;
-    <a href="/export/sale-packet/pdf" download>⬇ Download PDF</a>
+    ${pdfEnabled ? `<a href="/export/sale-packet/pdf" download>⬇ Download PDF</a>` : ""}
   </div>
   <div class="header">
     <h1>Airworthiness Check</h1>
