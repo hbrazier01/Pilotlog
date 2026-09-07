@@ -2973,11 +2973,14 @@ app.get("/", (_req, res) => {
 
         // AIR-228/AIR-230: Immediately prepend local entry row so table updates without waiting for server.
         // If txHash is real (not fallback), show "Saved to chain" badge with View link.
-        const isRealHash = txHash && !txHash.startsWith('submitted-');
-        const explorerUrl = isRealHash ? \`https://explorer.1am.xyz/tx/\${txHash}?network=preprod\` : null;
+        const isRealHash = typeof txHash === 'string' && /^[0-9a-f]{64}$/i.test(txHash);
+        const explorerUrl = isRealHash ? "https://explorer.1am.xyz/tx/" + encodeURIComponent(txHash) + "?network=" + encodeURIComponent("preprod") : null;
+        const invalidTxHash = txHash && !String(txHash).startsWith("submitted-")
+          ? " (" + escapeHtml(txHash) + ")"
+          : "";
         const pendingBadge = isRealHash
           ? \`<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Saved to chain (PreProd)</span><br><a href="\${explorerUrl}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;font-weight:500;text-decoration:none;">View on chain →</a>\`
-          : '<span style="color:#a78bfa;font-size:11px;font-weight:600;">&#x29D6; Submitted</span>';
+          : '<span style="color:#a78bfa;font-size:11px;font-weight:600;">&#x29D6; Submitted' + invalidTxHash + '</span>';
         console.log('[ui-sync] inserting pending row, isRealHash:', isRealHash);
         const tbody = document.getElementById('recent-flights-tbody');
         if (tbody) {
@@ -3089,7 +3092,7 @@ app.get("/", (_req, res) => {
               // Update any pending row in the table
               const pendingRow = document.getElementById('airlog-pending-row');
               if (pendingRow) {
-                const explorerUrl = \`https://explorer.1am.xyz/tx/\${realTxHash}?network=preprod\`;
+                const explorerUrl = "https://explorer.1am.xyz/tx/" + encodeURIComponent(realTxHash) + "?network=" + encodeURIComponent("preprod");
                 const lastCell = pendingRow.querySelector('td:last-child');
                 if (lastCell) {
                   lastCell.innerHTML = \`<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Saved to chain (PreProd)</span><br><a href="\${explorerUrl}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;font-weight:500;text-decoration:none;">View on chain →</a>\`;
@@ -3162,7 +3165,7 @@ app.get("/", (_req, res) => {
               const explorerNetwork = anchorObj?.network || 'preprod';
               const networkLabel = explorerNetwork === 'preview' ? 'Preview' : explorerNetwork === 'preprod' ? 'PreProd' : explorerNetwork;
               const anchorTx = anchorObj?.tx || anchorObj?.txHash || null;
-              const isRealAnchorTx = anchorTx && /^[0-9a-f]{64}$/i.test(anchorTx);
+              const isRealAnchorTx = typeof anchorTx === 'string' && /^[0-9a-f]{64}$/i.test(anchorTx);
               const explorerLink = (status === 'anchored' && isRealAnchorTx)
                 ? \`<br><a href="https://explorer.1am.xyz/tx/\${encodeURIComponent(anchorTx)}?network=\${encodeURIComponent(explorerNetwork)}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;font-weight:500;text-decoration:none;">View on chain →</a>\`
                 : '';
@@ -3266,7 +3269,7 @@ app.get("/", (_req, res) => {
           const explorerNetwork = anchorObj?.network || "preprod";
           const networkLabel = explorerNetwork === "preview" ? "Preview" : explorerNetwork === "preprod" ? "PreProd" : explorerNetwork;
           const anchorTx = anchorObj?.tx || anchorObj?.txHash || null;
-          const isRealAnchorTx = anchorTx && /^[0-9a-f]{64}$/i.test(anchorTx);
+          const isRealAnchorTx = typeof anchorTx === 'string' && /^[0-9a-f]{64}$/i.test(anchorTx);
           const explorerLink = (status === "anchored" && isRealAnchorTx)
             ? `<br><a href="https://explorer.1am.xyz/tx/${encodeURIComponent(anchorTx)}?network=${encodeURIComponent(explorerNetwork)}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;font-weight:500;text-decoration:none;">View on chain →</a>`
             : "";
@@ -6376,10 +6379,11 @@ app.get("/pilot-report", (_req, res) => {
           const net = anchor.network || "preprod";
           const netLabel = net === "preview" ? "Preview" : net === "preprod" ? "PreProd" : net;
           const anchorTxId = anchor.tx || anchor.txHash || null;
-          const explorerLink = anchorTxId
-            ? ` <a href="https://explorer.1am.xyz/tx/${escapeHtml(anchorTxId)}?network=${escapeHtml(net)}" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;text-decoration:none;">View →</a>`
-            : "";
-          chainCell = `<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Saved to chain (${escapeHtml(netLabel)})</span>${explorerLink}`;
+          const isRealAnchorTx = typeof anchorTxId === "string" && /^[0-9a-f]{64}$/i.test(anchorTxId);
+          const explorerLink = isRealAnchorTx
+            ? ' <a href="https://explorer.1am.xyz/tx/' + encodeURIComponent(anchorTxId) + '?network=' + encodeURIComponent(net) + '" target="_blank" rel="noopener" style="color:#7c3aed;font-size:10px;text-decoration:none;">View →</a>'
+            : anchorTxId ? " " + escapeHtml(anchorTxId) : "";
+          chainCell = '<span style="color:#22c55e;font-size:11px;font-weight:600;">&#x2713; Saved to chain (' + escapeHtml(netLabel) + ')</span>' + explorerLink;
         }
         return `<tr><td>${escapeHtml(f.date || "—")}</td><td>${escapeHtml(f.route || "—")}</td><td>${escapeHtml(f.aircraft || "—")}</td><td>${f.hours} hrs</td><td>${escapeHtml(f.remarks || "—")}</td><td>${chainCell}</td></tr>`;
       }).join("")
