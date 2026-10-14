@@ -21,17 +21,19 @@
  * Part 141, instrument, commercial, or accelerated programs in the future.
  */
 
+import { buildEndorsementChecklist } from '../checkride/endorsements.mjs';
+
 // ─── Default Part 61 ASEL Thresholds ─────────────────────────────────────────
 
 export const DEFAULT_PPL_THRESHOLDS = {
   totalTime:         40,   // §61.109(a) — total flight time
-  dualReceived:      20,   // §61.109(a)(1) — dual instruction
-  soloTime:          10,   // §61.109(a)(2) — solo flight time
-  dualXC:             3,   // §61.109(a)(1)(i) — dual cross-country
-  soloXC:             5,   // §61.109(a)(2)(ii) — solo cross-country
-  nightHours:         3,   // §61.109(a)(1)(ii) — night flight time
-  nightLandings:     10,   // §61.109(a)(1)(ii)(A) — night full-stop landings
-  simulatedInstrument: 3,  // §61.109(a)(1)(iii) — instrument flight training
+  dualReceived:      20,   // §61.109(a) — dual instruction
+  soloTime:          10,   // §61.109(a)(5) — solo flight time
+  dualXC:             3,   // §61.109(a)(1) — dual cross-country
+  soloXC:             5,   // §61.109(a)(5)(i) — solo cross-country
+  nightHours:         3,   // §61.109(a)(2) — night flight time
+  nightLandings:     10,   // §61.109(a)(2)(ii) — night full-stop landings
+  simulatedInstrument: 3,  // §61.109(a)(3) — instrument flight training
   recentTrainingMonths: 2, // §61.109(a) — training within preceding 2 calendar months
 };
 
@@ -157,42 +159,42 @@ export function evaluateRequirements(stats, thresholds) {
     dualReceived: req(
       'dualReceived',
       'Dual Instruction Received',
-      '14 CFR §61.109(a)(1)',
+      '14 CFR §61.109(a)',
       t.dualReceived,
       stats.dualReceived
     ),
     soloTime: req(
       'soloTime',
       'Solo Flight Time',
-      '14 CFR §61.109(a)(2)',
+      '14 CFR §61.109(a)(5)',
       t.soloTime,
       stats.soloTime
     ),
     dualXC: req(
       'dualXC',
       'Dual Cross-Country',
-      '14 CFR §61.109(a)(1)(i)',
+      '14 CFR §61.109(a)(1)',
       t.dualXC,
       stats.dualXC
     ),
     soloXC: req(
       'soloXC',
       'Solo Cross-Country',
-      '14 CFR §61.109(a)(2)(ii)',
+      '14 CFR §61.109(a)(5)(i)',
       t.soloXC,
       stats.soloXC
     ),
     nightHours: req(
       'nightHours',
       'Night Flight Time',
-      '14 CFR §61.109(a)(1)(ii)',
+      '14 CFR §61.109(a)(2)',
       t.nightHours,
       stats.nightHours
     ),
     nightLandings: req(
       'nightLandings',
       'Night Full-Stop Landings',
-      '14 CFR §61.109(a)(1)(ii)(A)',
+      '14 CFR §61.109(a)(2)(ii)',
       t.nightLandings,
       stats.nightLandings,
       'landings'
@@ -200,7 +202,7 @@ export function evaluateRequirements(stats, thresholds) {
     simulatedInstrument: req(
       'simulatedInstrument',
       'Simulated Instrument Training',
-      '14 CFR §61.109(a)(1)(iii)',
+      '14 CFR §61.109(a)(3)',
       t.simulatedInstrument,
       stats.simulatedInstrument
     ),
@@ -274,45 +276,26 @@ export function buildCompleted(requirements) {
     .map(r => `${r.label} — ${r.actual}${r.unit === 'landings' ? ' landings' : 'h'} ✓`);
 }
 
-// ─── Endorsement placeholder structure ───────────────────────────────────────
+// ─── Endorsements ─────────────────────────────────────────────────────────────
 //
-// Not yet implemented. Placeholder architecture for future extension.
-// When implemented, these will gate phase advancement and checkride eligibility.
+// Derived from the Checkride Tracker store (data/checkride.json → endorsements),
+// keyed as in lib/checkride/endorsements.mjs. Pass via options.endorsements.
 
-export function buildEndorsementPlaceholders(stats) {
+export function buildEndorsementPlaceholders(_stats, stored = {}) {
+  const list = buildEndorsementChecklist(stored);
+  const get = (k) => list.find(e => e.key === k);
+  const pick = (key, label, regulation, ...sourceKeys) => {
+    const src = sourceKeys.map(get);
+    const obtained = src.every(e => e && e.obtained);
+    const last = src.filter(Boolean).map(e => e.date).filter(Boolean).sort().pop() || null;
+    return { key, label, regulation, required: true, obtained, date: obtained ? last : null,
+      cfiName: obtained ? (src[src.length - 1]?.cfiName || '') : '', placeholder: false };
+  };
   return {
-    preSoloKnowledgeTest: {
-      key: 'preSoloKnowledgeTest',
-      label: 'Pre-Solo Knowledge Test',
-      regulation: '14 CFR §61.87(b)',
-      required: true,
-      obtained: false,       // TODO: derive from profile.endorsements
-      placeholder: true,
-    },
-    preSoloEndorsement: {
-      key: 'preSoloEndorsement',
-      label: 'Pre-Solo Flight Endorsement',
-      regulation: '14 CFR §61.87(c)–(n)',
-      required: true,
-      obtained: false,       // TODO: derive from profile.endorsements
-      placeholder: true,
-    },
-    soloXCEndorsement: {
-      key: 'soloXCEndorsement',
-      label: 'Solo Cross-Country Endorsement',
-      regulation: '14 CFR §61.93(c)',
-      required: true,
-      obtained: false,       // TODO: derive from profile.endorsements
-      placeholder: true,
-    },
-    checkridEndorsement: {
-      key: 'checkrideEndorsement',
-      label: 'Checkride (Practical Test) Endorsement',
-      regulation: '14 CFR §61.39 / §61.107',
-      required: true,
-      obtained: false,       // TODO: derive from profile.endorsements
-      placeholder: true,
-    },
+    preSoloKnowledgeTest: pick('preSoloKnowledgeTest', 'Pre-Solo Knowledge Test', '14 CFR §61.87(b)', 'preSoloKnowledge'),
+    preSoloEndorsement:   pick('preSoloEndorsement', 'Pre-Solo Flight Endorsement', '14 CFR §61.87(c), (n)', 'preSoloFlightTraining', 'soloFlight'),
+    soloXCEndorsement:    pick('soloXCEndorsement', 'Solo Cross-Country Endorsement', '14 CFR §61.93(c)', 'soloXCTraining'),
+    checkridEndorsement:  pick('checkrideEndorsement', 'Checkride (Practical Test) Endorsement', '14 CFR §61.39(a)(6) / §61.103(f)', 'practicalTest'),
   };
 }
 
@@ -328,7 +311,7 @@ export function buildEndorsementPlaceholders(stats) {
  *
  * @returns {PplRequirementsResult}
  */
-export function computePplRequirements(entries, { asOf, thresholds } = {}) {
+export function computePplRequirements(entries, { asOf, thresholds, endorsements: storedEndorsements } = {}) {
   const effectiveAsOf = asOf || new Date().toISOString();
   const effectiveThresholds = { ...DEFAULT_PPL_THRESHOLDS, ...thresholds };
 
@@ -338,7 +321,7 @@ export function computePplRequirements(entries, { asOf, thresholds } = {}) {
   const progressPercent = computeProgressPercent(requirements);
   const deficiencies = buildDeficiencies(requirements);
   const completed    = buildCompleted(requirements);
-  const endorsements = buildEndorsementPlaceholders(stats);
+  const endorsements = buildEndorsementPlaceholders(stats, storedEndorsements);
 
   return {
     asOf: effectiveAsOf,
@@ -442,21 +425,21 @@ function buildViewMilestones(stats, phase) {
       icon:   '🌐',
       label:  'Solo Cross-Country',
       status: stats.soloXC >= 5 ? 'completed' : stats.soloXC > 0 ? 'in_progress' : 'not_started',
-      detail: `${stats.soloXC}h of 5h required solo XC (§61.109(a)(2)(ii))`,
+      detail: `${stats.soloXC}h of 5h required solo XC (§61.109(a)(5)(i))`,
     },
     {
       key:    'night_training',
       icon:   '🌙',
       label:  'Night Training',
       status: stats.nightHours >= 3 ? 'completed' : stats.nightHours > 0 ? 'in_progress' : 'not_started',
-      detail: `${stats.nightHours}h of 3h required night time (§61.109(a)(1)(ii))`,
+      detail: `${stats.nightHours}h of 3h required night time (§61.109(a)(2))`,
     },
     {
       key:    'instrument_training',
       icon:   '🎛️',
       label:  'Instrument Training',
       status: stats.simulatedInstrument >= 3 ? 'completed' : stats.simulatedInstrument > 0 ? 'in_progress' : 'not_started',
-      detail: `${stats.simulatedInstrument}h of 3h required simulated instrument (§61.109(a)(1)(iii))`,
+      detail: `${stats.simulatedInstrument}h of 3h required simulated instrument (§61.109(a)(3))`,
     },
     {
       key:    'checkride_eligible',
@@ -555,7 +538,7 @@ const REQUIREMENT_CARD_CONFIG = {
     type: 'faa_requirement',
     icon: '🎓',
     title: 'Dual Instruction',
-    whyItMatters: '20 hours of dual instruction is required (§61.109(a)(1)). Your instructor teaches the techniques and aeronautical decision-making that the examiner will directly evaluate.',
+    whyItMatters: '20 hours of dual instruction is required (§61.109(a)). Your instructor teaches the techniques and aeronautical decision-making that the examiner will directly evaluate.',
     action: 'Book your next dual lesson',
     actionHref: '/',
     priority: 'medium',
@@ -565,7 +548,7 @@ const REQUIREMENT_CARD_CONFIG = {
     type: 'faa_requirement',
     icon: '🛩️',
     title: 'Solo Time Not Started',
-    whyItMatters: '10 hours of solo flight time is required (§61.109(a)(2)). Solo time builds independent judgment and the confidence that separates pilots from passengers.',
+    whyItMatters: '10 hours of solo flight time is required (§61.109(a)(5)). Solo time builds independent judgment and the confidence that separates pilots from passengers.',
     action: 'Work with your instructor toward your solo endorsement',
     actionHref: '/',
     priority: 'medium',
@@ -575,7 +558,7 @@ const REQUIREMENT_CARD_CONFIG = {
     type: 'faa_requirement',
     icon: '📍',
     title: 'Dual Cross-Country',
-    whyItMatters: '3 hours of dual cross-country is required (§61.109(a)(1)(i)). This develops the flight planning, navigation, and weather evaluation skills tested on the checkride.',
+    whyItMatters: '3 hours of dual cross-country is required (§61.109(a)(1)). This develops the flight planning, navigation, and weather evaluation skills tested on the checkride.',
     action: 'Schedule a cross-country flight with your instructor',
     actionHref: '/',
     priority: 'medium',
@@ -585,7 +568,7 @@ const REQUIREMENT_CARD_CONFIG = {
     type: 'faa_requirement',
     icon: '🗺️',
     title: 'Cross-Country Not Started',
-    whyItMatters: '5 hours solo XC is required including one ≥150 NM trip with full-stop landings at 3 points (§61.109(a)(2)(ii)). This is your proof of independent navigation capability.',
+    whyItMatters: '5 hours solo XC is required including one ≥150 NM trip with full-stop landings at 3 points (§61.109(a)(5)(i)–(ii)). This is your proof of independent navigation capability.',
     action: 'Obtain your solo XC endorsement from your instructor and plan your first XC route',
     actionHref: '/',
     priority: 'medium',
@@ -595,7 +578,7 @@ const REQUIREMENT_CARD_CONFIG = {
     type: 'faa_requirement',
     icon: '🌙',
     title: 'Night Training Not Started',
-    whyItMatters: '3 hours of night flight including 10 takeoffs and landings is required (§61.109(a)(1)(ii)). Night flying develops spatial awareness and expands your certificate privileges to night operations.',
+    whyItMatters: '3 hours of night flight including 10 takeoffs and landings is required (§61.109(a)(2)). Night flying develops spatial awareness and expands your certificate privileges to night operations.',
     action: 'Schedule a night training session with your instructor',
     actionHref: '/',
     priority: 'medium',
@@ -605,7 +588,7 @@ const REQUIREMENT_CARD_CONFIG = {
     type: 'faa_requirement',
     icon: '🌙',
     title: 'Night Landings',
-    whyItMatters: '10 full-stop night landings are required (§61.109(a)(1)(ii)(A)). These build the depth perception and approach technique needed for safe night passenger operations.',
+    whyItMatters: '10 full-stop night landings are required (§61.109(a)(2)(ii)). These build the depth perception and approach technique needed for safe night passenger operations.',
     action: 'Practice night landings with your instructor during your next night flight',
     actionHref: '/',
     priority: 'medium',
@@ -615,7 +598,7 @@ const REQUIREMENT_CARD_CONFIG = {
     type: 'faa_requirement',
     icon: '🎛️',
     title: 'Instrument Training Not Started',
-    whyItMatters: '3 hours of simulated instrument training is required (§61.109(a)(1)(iii)). Hood time teaches you to trust instruments and survive inadvertent entry into IMC.',
+    whyItMatters: '3 hours of simulated instrument training is required (§61.109(a)(3)). Hood time teaches you to trust instruments and survive inadvertent entry into IMC.',
     action: 'Request hood time in your next dual lesson — any instructor can provide this',
     actionHref: '/',
     priority: 'medium',

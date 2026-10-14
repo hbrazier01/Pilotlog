@@ -29,17 +29,17 @@
 
 export const PPL_THRESHOLDS = {
   totalTime:              40,  // §61.109(a) total flight time
-  dualReceived:           20,  // §61.109(a)(1) dual instruction
-  soloTime:               10,  // §61.109(a)(2) solo flight time
-  dualXC:                  3,  // §61.109(a)(1)(i) dual cross-country
-  nightHours:              3,  // §61.109(a)(1)(ii) night flight time
-  nightLandings:          10,  // §61.109(a)(1)(ii)(A) night full-stop landings
-  nightXCHours:            1,  // §61.109(a)(1)(ii)(B) one night XC ≥100 NM (proxy: any night XC > 0)
-  simulatedInstrument:     3,  // §61.109(a)(1)(iii) simulated instrument
-  dualPrepMonths:          3,  // §61.109(a)(1)(iv) 3h dual in preceding 2 calendar months
-  soloXC:                  5,  // §61.109(a)(2)(ii) solo cross-country
-  longSoloXC:              1,  // §61.109(a)(2)(ii) one long solo XC ≥150 NM w/ full-stop at ≥3 points
-  soloControlledAirport:   3,  // §61.109(a)(2)(i) 3 solo T/Os and landings at controlled airport
+  dualReceived:           20,  // §61.109(a) dual instruction
+  soloTime:               10,  // §61.109(a)(5) solo flight time
+  dualXC:                  3,  // §61.109(a)(1) dual cross-country
+  nightHours:              3,  // §61.109(a)(2) night flight time
+  nightLandings:          10,  // §61.109(a)(2)(ii) night full-stop landings
+  nightXCHours:            1,  // §61.109(a)(2)(i) one night XC ≥100 NM (proxy: any night XC > 0)
+  simulatedInstrument:     3,  // §61.109(a)(3) simulated instrument
+  dualPrepMonths:          3,  // §61.109(a)(4) 3h dual in preceding 2 calendar months
+  soloXC:                  5,  // §61.109(a)(5)(i) solo cross-country
+  longSoloXC:              1,  // §61.109(a)(5)(ii) one long solo XC ≥150 NM w/ full-stop at ≥3 points
+  soloControlledAirport:   3,  // §61.109(a)(5)(iii) 3 solo T/Os and landings at controlled airport
   recentTrainingMonths:    2,  // prep window in calendar months
 };
 
@@ -307,53 +307,53 @@ export function evaluateRequirements(stats, thresholds) {
       t.totalTime, stats.totalTime
     ),
     dualReceived: req(
-      'dualReceived', 'Dual Instruction Received', '14 CFR §61.109(a)(1)',
+      'dualReceived', 'Dual Instruction Received', '14 CFR §61.109(a)',
       t.dualReceived, stats.dualReceived
     ),
     soloTime: req(
-      'soloTime', 'Solo Flight Time', '14 CFR §61.109(a)(2)',
+      'soloTime', 'Solo Flight Time', '14 CFR §61.109(a)(5)',
       t.soloTime, stats.soloTime
     ),
     dualXC: req(
-      'dualXC', 'Dual Cross-Country', '14 CFR §61.109(a)(1)(i)',
+      'dualXC', 'Dual Cross-Country', '14 CFR §61.109(a)(1)',
       t.dualXC, stats.dualXC
     ),
     nightHours: req(
-      'nightHours', 'Night Flight Time', '14 CFR §61.109(a)(1)(ii)',
+      'nightHours', 'Night Flight Time', '14 CFR §61.109(a)(2)',
       t.nightHours, stats.nightHours
     ),
     nightLandings: req(
-      'nightLandings', 'Night Full-Stop Landings', '14 CFR §61.109(a)(1)(ii)(A)',
+      'nightLandings', 'Night Full-Stop Landings', '14 CFR §61.109(a)(2)(ii)',
       t.nightLandings, stats.nightLandings, 'landings'
     ),
     nightXCHours: reqFlag(
-      'nightXCHours', 'Night Cross-Country (≥100 NM)', '14 CFR §61.109(a)(1)(ii)(B)',
+      'nightXCHours', 'Night Cross-Country (≥100 NM)', '14 CFR §61.109(a)(2)(i)',
       stats.nightXCHours >= t.nightXCHours,
       stats.nightXCHours > 0 ? `${stats.nightXCHours}h night XC logged` : 'None logged',
       'One night XC flight of at least 100 NM total distance required. Log with night > 0 and xc > 0.'
     ),
     simulatedInstrument: req(
-      'simulatedInstrument', 'Simulated Instrument Training', '14 CFR §61.109(a)(1)(iii)',
+      'simulatedInstrument', 'Simulated Instrument Training', '14 CFR §61.109(a)(3)',
       t.simulatedInstrument, stats.simulatedInstrument
     ),
     dualPrepMonths: req(
-      'dualPrepMonths', 'Dual Prep (2 Calendar Months)', '14 CFR §61.109(a)(1)(iv)',
+      'dualPrepMonths', 'Dual Prep (2 Calendar Months)', '14 CFR §61.109(a)(4)',
       t.dualPrepMonths, stats.dualPrepHours,
       'hours',
       'Required: 3h dual instruction within 2 calendar months preceding practical test.'
     ),
     soloXC: req(
-      'soloXC', 'Solo Cross-Country', '14 CFR §61.109(a)(2)(ii)',
+      'soloXC', 'Solo Cross-Country', '14 CFR §61.109(a)(5)(i)',
       t.soloXC, stats.soloXC
     ),
     longSoloXC: reqFlag(
-      'longSoloXC', 'Long Solo XC (≥150 NM, 3 airports)', '14 CFR §61.109(a)(2)(ii)',
+      'longSoloXC', 'Long Solo XC (≥150 NM, 3 airports)', '14 CFR §61.109(a)(5)(ii)',
       stats.hasLongSoloXC,
       stats.hasLongSoloXC ? 'Long solo XC logged' : 'Not yet completed',
       'One solo XC of ≥150 NM with full-stop landings at 3 different airports. Mark entry with longXC: true or add "long XC" to remarks.'
     ),
     soloControlledAirport: req(
-      'soloControlledAirport', 'Solo T/Os & Landings (Controlled Airport)', '14 CFR §61.109(a)(2)(i)',
+      'soloControlledAirport', 'Solo T/Os & Landings (Controlled Airport)', '14 CFR §61.109(a)(5)(iii)',
       t.soloControlledAirport, stats.soloControlledAirport, 'landings',
       'Required: 3 solo T/Os and full-stop landings at a towered airport. Log solo entries with remarks "towered" or "class c/b".'
     ),
@@ -616,7 +616,7 @@ export function computeMilestones(stats, requirements, profile, phase) {
     ),
     ms('long_solo_xc',       '🛫',  'Long Solo XC (≥150 NM)',
       stats.hasLongSoloXC ? 'completed' : stats.soloXC > 0 ? 'in_progress' : 'upcoming',
-      stats.hasLongSoloXC ? 'Long solo cross-country complete (§61.109(a)(2)(ii))'
+      stats.hasLongSoloXC ? 'Long solo cross-country complete (§61.109(a)(5)(ii))'
         : stats.soloXC > 0 ? `${stats.soloXC}h solo XC — plan the long XC flight`
         : 'Complete after solo with XC endorsement'
     ),
@@ -711,7 +711,7 @@ function phaseSummaryCard(stats, phase, requirements) {
       icon: '⭐',
       title: 'Solo Phase',
       body: `First solo complete — ${stats.soloTime}h solo time logged. Continue building solo proficiency and pattern confidence.`,
-      whyItMatters: 'You need 10 total solo hours (§61.109(a)(2)). This phase builds the independent judgment that separates student pilots from pilots.',
+      whyItMatters: 'You need 10 total solo hours (§61.109(a)(5)). This phase builds the independent judgment that separates student pilots from pilots.',
       action: 'Schedule dedicated solo pattern work to build confidence and consistency',
     },
     cross_country_phase: {
@@ -725,7 +725,7 @@ function phaseSummaryCard(stats, phase, requirements) {
       icon: '🌙',
       title: 'Night Training',
       body: `${stats.nightHours}h of 3h required night time. ${stats.nightLandings} of 10 required night landings.`,
-      whyItMatters: 'Night requirements (§61.109(a)(1)(ii)) include 3h night, 10 full-stop night landings, and one night XC ≥100 NM. These expand your certificate privileges.',
+      whyItMatters: 'Night requirements (§61.109(a)(2)) include 3h night, 10 full-stop night landings, and one night XC ≥100 NM. These expand your certificate privileges.',
       action: 'Schedule dedicated night training sessions with your instructor',
     },
     checkride_preparation: {
@@ -781,57 +781,57 @@ const REQ_CARD_CONFIG = {
   },
   dualReceived: {
     icon: '🎓', title: 'Dual Instruction',
-    whyItMatters: '20 hours of dual instruction required (§61.109(a)(1)). Your instructor teaches the techniques your examiner will directly evaluate.',
+    whyItMatters: '20 hours of dual instruction required (§61.109(a)). Your instructor teaches the techniques your examiner will directly evaluate.',
     action: 'Book your next dual lesson',
   },
   soloTime: {
     icon: '🛩️', title: 'Solo Time',
-    whyItMatters: '10 hours solo required (§61.109(a)(2)). Solo time builds the independent judgment that defines pilot-in-command.',
+    whyItMatters: '10 hours solo required (§61.109(a)(5)). Solo time builds the independent judgment that defines pilot-in-command.',
     action: 'Work with your instructor toward your solo endorsement',
   },
   dualXC: {
     icon: '📍', title: 'Dual Cross-Country',
-    whyItMatters: '3 hours dual XC required (§61.109(a)(1)(i)). This develops flight planning and navigation skills tested on the checkride.',
+    whyItMatters: '3 hours dual XC required (§61.109(a)(1)). This develops flight planning and navigation skills tested on the checkride.',
     action: 'Schedule a cross-country flight with your instructor',
   },
   nightHours: {
     icon: '🌙', title: 'Night Flight Time',
-    whyItMatters: '3 hours night flight required (§61.109(a)(1)(ii)). Night flying develops spatial awareness and expands your certificate privileges.',
+    whyItMatters: '3 hours night flight required (§61.109(a)(2)). Night flying develops spatial awareness and expands your certificate privileges.',
     action: 'Schedule a night training session with your instructor',
   },
   nightLandings: {
     icon: '🌙', title: 'Night Full-Stop Landings',
-    whyItMatters: '10 full-stop night landings required (§61.109(a)(1)(ii)(A)). Night landings build the depth perception and approach technique for safe night operations.',
+    whyItMatters: '10 full-stop night landings required (§61.109(a)(2)(ii)). Night landings build the depth perception and approach technique for safe night operations.',
     action: 'Practice night landings during your next night flight',
   },
   nightXCHours: {
     icon: '🌙', title: 'Night Cross-Country',
-    whyItMatters: 'One night XC of ≥100 NM required (§61.109(a)(1)(ii)(B)). Log night entries with XC time to satisfy this requirement.',
+    whyItMatters: 'One night XC of ≥100 NM required (§61.109(a)(2)(i)). Log night entries with XC time to satisfy this requirement.',
     action: 'Plan a night cross-country flight ≥100 NM with your instructor',
   },
   simulatedInstrument: {
     icon: '🎛️', title: 'Simulated Instrument Training',
-    whyItMatters: '3 hours simulated instrument required (§61.109(a)(1)(iii)). Hood time teaches you to trust instruments and survive inadvertent IMC.',
+    whyItMatters: '3 hours simulated instrument required (§61.109(a)(3)). Hood time teaches you to trust instruments and survive inadvertent IMC.',
     action: 'Request hood time in your next dual lesson',
   },
   dualPrepMonths: {
     icon: '📅', title: 'Dual Prep (2 Calendar Months)',
-    whyItMatters: '3 hours dual instruction within 2 calendar months of your practical test required (§61.109(a)(1)(iv)). This ensures your skills are current before the examiner.',
+    whyItMatters: '3 hours dual instruction within 2 calendar months of your practical test required (§61.109(a)(4)). This ensures your skills are current before the examiner.',
     action: 'Schedule 3h of dual instruction within 60 days before your checkride',
   },
   soloXC: {
     icon: '🗺️', title: 'Solo Cross-Country',
-    whyItMatters: '5 hours solo XC required including one long XC of ≥150 NM (§61.109(a)(2)(ii)). This is your proof of independent navigation capability.',
+    whyItMatters: '5 hours solo XC required including one long XC of ≥150 NM (§61.109(a)(5)(i)–(ii)). This is your proof of independent navigation capability.',
     action: 'Obtain your solo XC endorsement and plan your first solo XC route',
   },
   longSoloXC: {
     icon: '🛫', title: 'Long Solo XC (≥150 NM)',
-    whyItMatters: 'One solo XC of ≥150 NM with full-stop landings at ≥3 different points required (§61.109(a)(2)(ii)). This validates your cross-country navigation skills.',
+    whyItMatters: 'One solo XC of ≥150 NM with full-stop landings at ≥3 different points required (§61.109(a)(5)(ii)). This validates your cross-country navigation skills.',
     action: 'Plan and fly a solo XC of ≥150 NM. Mark the entry with remarks "long XC" to track it.',
   },
   soloControlledAirport: {
     icon: '🏙️', title: 'Solo at Controlled Airport',
-    whyItMatters: '3 solo T/Os and full-stop landings at a towered airport required (§61.109(a)(2)(i)). Operating at a controlled airport tests radio communication and ATC compliance.',
+    whyItMatters: '3 solo T/Os and full-stop landings at a towered airport required (§61.109(a)(5)(iii)). Operating at a controlled airport tests radio communication and ATC compliance.',
     action: 'Plan a solo flight to a towered airport. Add "towered" or "class c" to the entry remarks.',
   },
 };
