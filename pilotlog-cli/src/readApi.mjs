@@ -26,6 +26,7 @@ import { anchorRecord, verifyRecord, grantAccess, revokeAccess } from "../../src
 import { computeReadiness, PILOT_PHASES } from "./lib/readiness.mjs";
 import { computeProgression } from "./lib/progression-engine.mjs";
 import { computePplRequirements, computePplPart61Progress, computePplEngine } from "./lib/faa/pplEngine.mjs";
+import { registerCheckrideRoutes } from "./checkrideRoutes.mjs";
 
 const PORT = Number(process.env.PORT || 8788);
 const DATA_DIR = process.env.PILOTLOG_HOME || process.env.PILOTLOG_DIR || path.resolve(process.cwd(), "data");
@@ -1405,6 +1406,8 @@ function safeJsonForScript(value) {
 const app = express();
 app.use(express.json());
 
+registerCheckrideRoutes(app, { dataDir: DATA_DIR, readEntries, escapeHtml, safeJsonForScript });
+
 app.get("/health", (_req, res) => {
   res.status(200).send("OK");
 });
@@ -1678,7 +1681,7 @@ app.get("/", (_req, res) => {
     <div class="brand">PilotLog</div>
     <div class="nav">
       ${walletNavHtml(walletSession, identity)}
-      ${walletConnected ? `<a href="/pilot-report">Pilot Report →</a>` : ''}
+      ${walletConnected ? `<a href="/checkride">Checkride Tracker</a> <a href="/pilot-report">Pilot Report →</a>` : ''}
     </div>
   </div>
 
@@ -7816,6 +7819,7 @@ app.get("/progression", (_req, res) => {
 <div class="page">
   <nav>
     <a href="/">Dashboard</a>
+    <a href="/checkride">Checkride Tracker</a>
     <a href="/pilot-report">Pilot Report</a>
   </nav>
 
