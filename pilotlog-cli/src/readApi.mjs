@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { createHash, randomBytes } from "node:crypto";
-import { migrate, getPool, pgReadEntries, pgSaveEntry, pgUpdateEntryTxHash, pgReadProfile, pgSaveProfile, pgReadIdentity, pgSaveIdentity, pgReadAircraft, pgSaveAircraft } from "./db.mjs";
+import { migrate, getPool, pgReadEntries, pgSaveEntry, pgUpdateEntryTxHash, pgReadProfile, pgSaveProfile, pgReadIdentity, pgSaveIdentity, pgReadAircraft, pgSaveAircraft, pgReadCheckride, pgSaveCheckride } from "./db.mjs";
 
 // ─── Postgres in-memory wallet cache ─────────────────────────────────────────
 // Loaded from Postgres on wallet connect; cleared on wallet disconnect.
@@ -16,6 +16,7 @@ const pgCache = {
   profile: null,
   identity: null,
   aircraft: null,  // null = not loaded; [] = loaded (empty)
+  checkride: null, // Checkride Tracker store (null = not loaded)
 };
 import { buildIntegrityResult } from "../../src/services/build-integrity-result.mjs";
 import { anchorOnMidnight } from "../../src/services/airlog-anchor-midnight.mjs";
@@ -1406,7 +1407,20 @@ function safeJsonForScript(value) {
 const app = express();
 app.use(express.json());
 
-registerCheckrideRoutes(app, { dataDir: DATA_DIR, readEntries, escapeHtml, safeJsonForScript });
+registerCheckrideRoutes(app, {
+  dataDir: DATA_DIR, readEntries, escapeHtml, safeJsonForScript,
+  // pg mode: wallet-scoped cache backed by pilot_profiles.checkride_json (same pattern as identity)
+  pg: {
+    enabled: () => !!getPool(),
+    read: () => (pgCache.walletAddress ? pgCache.checkride : null),
+    write: (store) => {
+      const wa = pgCache.walletAddress;
+      if (!wa) throw new Error("connect your wallet first");
+      pgCache.checkride = store;
+      pgSaveCheckride(wa, store).catch(err => console.error("[db] saveCheckride error:", err.message));
+    },
+  },
+});
 
 app.get("/health", (_req, res) => {
   res.status(200).send("OK");
@@ -6242,19 +6256,22 @@ app.post("/wallet/connect", async (req, res) => {
     pgCache.profile = null;
     pgCache.identity = null;
     pgCache.aircraft = null;
+    pgCache.checkride = null;
     try {
       // AIR-314: pass coinPublicKey as legacy address so flights saved under the old
       // mn_shield-cpk identity are recovered during this reconnect hydration.
-      const [pgEntries, pgProfile, pgIdentity, pgAircraft] = await Promise.all([
+      const [pgEntries, pgProfile, pgIdentity, pgAircraft, pgCheckride] = await Promise.all([
         pgReadEntries(address, coinPublicKey || null),
         pgReadProfile(address),
         pgReadIdentity(address),
         pgReadAircraft(address),
+        pgReadCheckride(address),
       ]);
       if (pgEntries !== null) pgCache.entries = pgEntries;
       if (pgProfile !== null) pgCache.profile = pgProfile;
       if (pgIdentity !== null) pgCache.identity = pgIdentity;
       if (pgAircraft !== null) pgCache.aircraft = pgAircraft;
+      if (pgCheckride !== null) pgCache.checkride = pgCheckride;
       console.log(`[db] loaded wallet ${address}: ${(pgEntries || []).length} flights, profile=${!!pgProfile}, identity=${!!pgIdentity}, aircraft=${(pgAircraft || []).length}`);
     } catch (err) {
       console.error("[db] wallet connect load error:", err.message);
@@ -6272,6 +6289,7 @@ app.post("/wallet/disconnect", (_req, res) => {
   pgCache.profile = null;
   pgCache.identity = null;
   pgCache.aircraft = null;
+  pgCache.checkride = null;
   res.json({ ok: true });
 });
 

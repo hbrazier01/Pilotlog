@@ -81,6 +81,8 @@ export async function migrate() {
       UNIQUE (wallet_address, ident)
     );
 
+    ALTER TABLE pilot_profiles ADD COLUMN IF NOT EXISTS checkride_json JSONB;
+
     CREATE TABLE IF NOT EXISTS milestones (
       id               UUID  PRIMARY KEY DEFAULT gen_random_uuid(),
       wallet_address   TEXT  NOT NULL,
@@ -267,6 +269,32 @@ export async function pgSaveAircraft(aircraft, walletAddress) {
      ON CONFLICT (wallet_address, ident) DO UPDATE
        SET type = EXCLUDED.type`,
     [walletAddress, aircraft.ident || "", aircraft.type || ""]
+  );
+  return true;
+}
+
+/** Load Checkride Tracker JSON for a wallet. Returns null if not found / no pg. */
+export async function pgReadCheckride(walletAddress) {
+  const p = getPool();
+  if (!p || !walletAddress) return null;
+  const { rows } = await p.query(
+    "SELECT checkride_json FROM pilot_profiles WHERE wallet_address = $1",
+    [walletAddress]
+  );
+  return rows.length ? rows[0].checkride_json : null;
+}
+
+/** Upsert Checkride Tracker JSON scoped to walletAddress. */
+export async function pgSaveCheckride(walletAddress, checkride) {
+  const p = getPool();
+  if (!p) return false;
+  await p.query(
+    `INSERT INTO pilot_profiles (wallet_address, checkride_json)
+     VALUES ($1, $2)
+     ON CONFLICT (wallet_address) DO UPDATE
+       SET checkride_json = EXCLUDED.checkride_json,
+           updated_at     = NOW()`,
+    [walletAddress, JSON.stringify(checkride)]
   );
   return true;
 }

@@ -6,6 +6,7 @@ import { evaluate61109a } from './requirements.mjs';
 import { buildEndorsementChecklist } from './endorsements.mjs';
 import { buildAcsChecklist } from './acs.mjs';
 import { computeCosts, DEFAULT_RATES } from './costs.mjs';
+import { whatsLeft } from './summary.mjs';
 
 export const EMPTY_STORE = () => ({ version: 1, rates: { ...DEFAULT_RATES }, testDate: null, endorsements: {}, acs: {}, flights: {} });
 
@@ -20,10 +21,11 @@ export function computeCheckride(entries, store, { asOf } = {}) {
   const endorsements = buildEndorsementChecklist(s.endorsements);
   const acs = buildAcsChecklist(s.acs);
   const costs = computeCosts(merged, readiness.requirements, s.rates);
-  return { readiness, endorsements, acs, costs, testDate: s.testDate, flightDetails: s.flights };
+  return { readiness, endorsements, acs, costs, whatsLeft: whatsLeft(readiness.requirements, endorsements), testDate: s.testDate, flightDetails: s.flights };
 }
 
 export * from './requirements.mjs';
 export * from './endorsements.mjs';
 export * from './acs.mjs';
 export * from './costs.mjs';
+export * from './summary.mjs';

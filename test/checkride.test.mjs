@@ -129,3 +129,42 @@ test('sanitizeFlightDetails rejects junk', () => {
   assert.throws(() => sanitizeFlightDetails({ xcDistanceNm: '-1' }));
   assert.throws(() => sanitizeFlightDetails({ phase: 'party' }));
 });
+
+import { whatsLeft, joinList } from '../pilotlog-cli/src/lib/checkride/summary.mjs';
+import { createCheckrideStore } from '../pilotlog-cli/src/checkrideRoutes.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+test("whatsLeft: plain-language line from deficits + endorsements", () => {
+  const reqs = {
+    soloXC: { met: false, deficit: 3.2 },
+    nightFullStops: { met: false, deficit: 3 },
+    totalTime: { met: true, deficit: 0 },
+  };
+  const ends = [{ obtained: false }, { obtained: true }, { obtained: false }];
+  assert.equal(whatsLeft(reqs, ends), 'You need 3.2 more hrs solo XC, 3 night landings, and 2 endorsements.');
+  assert.equal(whatsLeft({ soloTowerOps: { met: false, deficit: 1 } }, []), 'You need 1 solo towered landing.');
+  assert.match(whatsLeft({}, []), /schedule your checkride/);
+  assert.equal(joinList(['a', 'b']), 'a and b');
+});
+
+test('computeCheckride exposes whatsLeft', () => {
+  const out = computeCheckride([], {}, { asOf: '2026-10-13' });
+  assert.match(out.whatsLeft, /^You need 40 more hrs total time/);
+  assert.match(out.whatsLeft, /9 endorsements\.$/);
+});
+
+test('store: uses pg adapter when enabled, file otherwise', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-'));
+  const fileStore = createCheckrideStore(dir);
+  const s = fileStore.read(); s.testDate = '2027-02-26'; fileStore.write(s);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'checkride.json'), 'utf8')).testDate, '2027-02-26');
+
+  let saved = null;
+  const pgStore = createCheckrideStore(dir, { enabled: () => true, read: () => saved, write: (v) => { saved = v; } });
+  assert.equal(pgStore.read().testDate, null, 'pg mode ignores the JSON file');
+  const p = pgStore.read(); p.rates.aircraftRate = 240; pgStore.write(p);
+  assert.equal(saved.rates.aircraftRate, 240);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'checkride.json'), 'utf8')).rates.aircraftRate, 229, 'file untouched in pg mode');
+});
