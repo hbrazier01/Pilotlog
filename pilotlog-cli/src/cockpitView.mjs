@@ -331,10 +331,10 @@ nav a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 0 0 
 .btn:hover{box-shadow:0 0 18px rgba(34,211,238,.25)}
 
 /* center synth — stretch to match side columns */
-.col-center{display:flex;flex-direction:column;min-height:0}
-.hero{padding:0;overflow:hidden;position:relative;flex:1;min-height:560px;display:flex;flex-direction:column}
-.hero-stage{position:relative;flex:1;min-height:560px;background:#12081c}
-.synth{width:100%;height:100%;min-height:560px;display:block}
+.col-center{display:flex;flex-direction:column;min-height:0;height:100%}
+.hero{padding:0;overflow:hidden;position:relative;flex:1;min-height:520px;max-height:720px;display:flex;flex-direction:column}
+.hero-stage{position:relative;flex:1;min-height:480px;aspect-ratio:1/1;max-height:680px;background:#12081c}
+.synth{width:100%;height:100%;min-height:520px;display:block}
 .synth3d{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:2;opacity:0;transition:opacity .6s ease}
 .synth3d.on{opacity:1}
 .synth-fallback{position:relative;z-index:1}
@@ -439,7 +439,7 @@ nav a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 0 0 
   .grid{grid-template-columns:1fr}
   .page{padding:12px 10px 40px}
   .tiles{grid-template-columns:1fr 1fr}
-  .hero,.hero-stage,.synth{min-height:320px}
+  .hero,.hero-stage,.synth{min-height:280px;max-height:none;aspect-ratio:6/5}
   .nav-r .clock{display:none}
   .g-pct{font-size:40px}
 }
