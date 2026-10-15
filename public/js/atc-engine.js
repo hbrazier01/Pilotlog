@@ -189,6 +189,10 @@ export function heardCallsign(toks, cs) {
 export function heardTaxiway(toks, ref) {
   const r = String(ref || '').toUpperCase();
   // speech has no commas, so "alpha alpha three" arrives glued as "AA3": accept ref anywhere inside a glued token
+  const L = r.replace(/\d+$/, '').toLowerCase(), D = r.slice(L.length);
+  const lead = new Set(['via', 'at', 'and', 'then', 'left', 'right', 'on', 'cross']);
+  // typed single letters ("via a 3") stay lowercase words — accept them after a route keyword
+  if (toks.some((t, i) => t === L && lead.has(String(toks[i - 1])) && (!D || String(toks[i + 1] || '').startsWith(D)))) return true;
   return toks.some((t) => {
     if (t !== t.toUpperCase() || !/[A-Z]/.test(t)) return false;
     for (let i = t.indexOf(r); i >= 0; i = t.indexOf(r, i + 1)) {

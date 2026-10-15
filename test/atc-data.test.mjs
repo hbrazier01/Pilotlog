@@ -84,5 +84,6 @@ test('grader accepts common wording variants', () => {
   assert.ok(!gradeReadback('runway 17L via alpha 3PL', gt).passed); // hold short still required
   const pe = scenarioScript(buildContext({ settings, weather: w, scenario: 'pattern_entry' }))[0];
   assert.ok(gradeCall('Centennial tower, Diamond Star one two three papa lima, ten miles south, 7500, we have information ' + 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[0], pe).results.find((r) => r.id === 'position').ok);
+  assert.ok(gradeReadback('runway 17L taxi via a, hold short 17L, three papa lima', gt).passed);
   assert.ok(heardTaxiway(['A3PL'], 'A3') && !heardTaxiway(['A31'], 'A3'));
 });
