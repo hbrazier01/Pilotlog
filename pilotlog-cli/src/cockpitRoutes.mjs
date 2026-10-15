@@ -24,13 +24,7 @@ import { demoData } from './lib/checkride/insights.mjs';
 import { getKapaWeather } from './lib/weather/fetch.mjs';
 import { parseTileParams, terrariumUrl } from './lib/weather/terrain.mjs';
 import { createCheckrideStore } from './checkrideRoutes.mjs';
-
-const SAMPLE_USER = {
-  name: 'JORDAN P.',
-  role: 'PRIVATE PILOT STUDENT',
-  initials: 'JP',
-  sample: true,
-};
+import { cockpitUser, DEMO_USER } from './lib/cockpit/profile.mjs';
 
 export function registerCockpitRoutes(app, { dataDir, readEntries, escapeHtml, pg = null }) {
   const store = createCheckrideStore(dataDir, pg);
@@ -58,13 +52,13 @@ export function registerCockpitRoutes(app, { dataDir, readEntries, escapeHtml, p
       const cr = computeCheckride(d.entries, d.store);
       const weather = await getKapaWeather({ demo: true });
       const briefing = instructorBriefing(cr);
-      return { demo: true, entries: d.entries, cr, weather, briefing, user: SAMPLE_USER };
+      return { demo: true, entries: d.entries, cr, weather, briefing, user: DEMO_USER };
     }
     const entries = cockpitEntries();
     const cr = state(undefined, entries);
     const weather = await getKapaWeather({ demo: false });
     const briefing = instructorBriefing(cr);
-    return { demo: false, entries, cr, weather, briefing, user: SAMPLE_USER };
+    return { demo: false, entries, cr, weather, briefing, user: cockpitUser({ demo: false, dataDir }) };
   }
 
   app.get('/api/weather/kapa', async (req, res) => {

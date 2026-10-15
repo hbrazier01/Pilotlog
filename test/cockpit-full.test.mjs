@@ -22,6 +22,14 @@ import {
   writeCockpitEntries,
 } from '../pilotlog-cli/src/lib/cockpit/entries.mjs';
 import { COCKPIT_NAV } from '../pilotlog-cli/src/lib/cockpit/chrome.mjs';
+import {
+  formatPilotChip,
+  userFromProfile,
+  cockpitUser,
+  DEMO_USER,
+  FALLBACK_USER,
+} from '../pilotlog-cli/src/lib/cockpit/profile.mjs';
+import { renderNav } from '../pilotlog-cli/src/lib/cockpit/chrome.mjs';
 
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -167,3 +175,41 @@ test('real entries path: computeCheckride uses file entries for readiness', () =
   assert.doesNotMatch(html, /class="demo">SAMPLE/);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('formatPilotChip: Holland Brazier → HOLLAND B. / HB', () => {
+  const c = formatPilotChip('Holland Brazier');
+  assert.equal(c.name, 'HOLLAND B.');
+  assert.equal(c.initials, 'HB');
+  assert.equal(c.fullName, 'Holland Brazier');
+});
+
+test('userFromProfile uses real name; empty falls back to Pilot', () => {
+  const u = userFromProfile({ pilot: { fullName: 'Holland Brazier' } });
+  assert.equal(u.name, 'HOLLAND B.');
+  assert.equal(u.initials, 'HB');
+  assert.equal(u.role, 'PRIVATE PILOT STUDENT');
+  assert.equal(u.sample, false);
+  const empty = userFromProfile(null);
+  assert.equal(empty.name, FALLBACK_USER.name);
+  assert.equal(empty.initials, 'P');
+  assert.equal(empty.sample, false);
+});
+
+test('cockpitUser: demo keeps Jordan P.; live uses profile', () => {
+  assert.equal(cockpitUser({ demo: true }).name, DEMO_USER.name);
+  assert.equal(cockpitUser({ demo: true }).initials, 'JP');
+  const live = cockpitUser({ demo: false, profile: { pilot: { fullName: 'Holland Brazier' } } });
+  assert.equal(live.name, 'HOLLAND B.');
+  assert.equal(live.initials, 'HB');
+  const htmlDemo = renderNav(esc, { active: 'dashboard', demo: true, user: DEMO_USER });
+  assert.match(htmlDemo, /JORDAN P\./);
+  assert.match(htmlDemo, /JP/);
+  assert.match(htmlDemo, /SAMPLE/);
+  const htmlLive = renderNav(esc, { active: 'dashboard', demo: false, user: live });
+  assert.match(htmlLive, /HOLLAND B\./);
+  assert.match(htmlLive, />HB</);
+  assert.match(htmlLive, /LIVE/);
+  assert.doesNotMatch(htmlLive, /JORDAN/);
+  assert.doesNotMatch(htmlLive, /class="demo">SAMPLE/);
+});
+

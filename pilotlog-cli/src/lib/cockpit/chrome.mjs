@@ -57,7 +57,9 @@ export function renderNav(esc, { active, demo = false, user = null } = {}) {
     const href = n.href === '/cockpit' ? `/cockpit${q}` : `${n.href}${q}`;
     return `<a class="${n.id === active ? 'on' : ''}" href="${esc(href)}">${esc(n.label)}</a>`;
   }).join('');
-  const u = user || { name: 'JORDAN P.', role: 'PRIVATE PILOT STUDENT', initials: 'JP', sample: true };
+  const u = user || (demo
+    ? { name: 'JORDAN P.', role: 'PRIVATE PILOT STUDENT', initials: 'JP', sample: true }
+    : { name: 'PILOT', role: 'PRIVATE PILOT STUDENT', initials: 'P', sample: false });
   return `<nav class="top">
   <span class="brand">PILOTLOG</span>
   ${links}
