@@ -3,10 +3,11 @@
  * Terrarium elevation (proxied /api/terrain) rendered with a custom shader:
  * elevation color ramp + hillshade + contour lines + dusk atmosphere.
  * Track: thin glowing ribbon with progress trail, altitude curtain + drop lines.
- * Aircraft: low-poly DA40 (low wing, T-tail, canopy) with nav lights.
+ * Aircraft: low-poly procedural model per the student's aircraft type (Settings), with nav lights.
  * Camera: orbit (frames whole flight) or chase (eased follow).
  */
 import * as THREE from '/js/three.module.min.js';
+import { buildAircraft } from '/js/aircraft-models.js';
 
 let ORIGIN = { lat: 39.5701, lon: -104.8484, elev: 1791 };
 const DEG = Math.PI / 180;
@@ -199,62 +200,6 @@ function makeSky() {
   const m = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24), mat);
   m.frustumCulled = false; m.renderOrder = -10;
   return m;
-}
-
-/** Low-poly DA40: tapered low wing w/ dihedral, T-tail, bubble canopy, nav lights. */
-function makeDa40() {
-  const g = new THREE.Group();
-  const body = new THREE.MeshStandardMaterial({ color: 0xe8edf5, roughness: 0.45, metalness: 0.15, emissive: 0x0a2a36, emissiveIntensity: 0.6 });
-  const accent = new THREE.MeshStandardMaterial({ color: 0x22d3ee, roughness: 0.4, emissive: 0x22d3ee, emissiveIntensity: 0.9 });
-  const glass = new THREE.MeshStandardMaterial({ color: 0x0b1a2a, roughness: 0.1, metalness: 0.6, emissive: 0x0e3a4a, emissiveIntensity: 0.6 });
-  const add = (geo, mat, p, r = [0, 0, 0], s = [1, 1, 1]) => {
-    const m = new THREE.Mesh(geo, mat); m.position.set(...p); m.rotation.set(...r); m.scale.set(...s); g.add(m); return m;
-  };
-  // fuselage via lathe (nose +X)
-  const prof = [[0, -4.1], [0.16, -4.0], [0.28, -3.0], [0.42, -1.5], [0.6, 0.0], [0.62, 1.0], [0.5, 1.9], [0.25, 2.35], [0, 2.45]]
-    .map(([r, x]) => new THREE.Vector2(r, x));
-  add(new THREE.LatheGeometry(prof, 14), body, [0, 0, 0], [0, 0, -Math.PI / 2], [1, 1, 0.82]);
-  // canopy
-  add(new THREE.SphereGeometry(0.62, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), glass, [0.35, 0.32, 0], [0, 0, 0], [2.0, 0.85, 0.95]);
-  // wing (tapered, slight sweep) as extruded planform
-  const wingHalf = (side) => {
-    const sh = new THREE.Shape();
-    sh.moveTo(0.95, 0); sh.lineTo(0.55, 5.9 * side); sh.lineTo(-0.05, 5.9 * side); sh.lineTo(-0.75, 0); sh.closePath();
-    const geo = new THREE.ExtrudeGeometry(sh, { depth: 0.09, bevelEnabled: false });
-    const m = add(geo, body, [0.1, -0.38, 0], [Math.PI / 2, 0, 0]);
-    m.rotation.x = Math.PI / 2 - side * 0.07; // dihedral
-    return m;
-  };
-  wingHalf(1); wingHalf(-1);
-  // wing-tip accent strips
-  add(new THREE.BoxGeometry(0.6, 0.05, 0.12), accent, [0.25, -0.0, 5.85]);
-  add(new THREE.BoxGeometry(0.6, 0.05, 0.12), accent, [0.25, -0.0, -5.85]);
-  // vertical fin (swept) + T stabilizer
-  const fin = new THREE.Shape();
-  fin.moveTo(-2.6, 0); fin.lineTo(-4.0, 1.65); fin.lineTo(-3.4, 1.65); fin.lineTo(-1.6, 0); fin.closePath();
-  add(new THREE.ExtrudeGeometry(fin, { depth: 0.08, bevelEnabled: false }), body, [0, 0.15, -0.04]);
-  add(new THREE.BoxGeometry(0.75, 0.06, 3.3), body, [-3.75, 1.8, 0]);
-  add(new THREE.BoxGeometry(0.75, 0.065, 0.1), accent, [-3.75, 1.8, 1.62]);
-  add(new THREE.BoxGeometry(0.75, 0.065, 0.1), accent, [-3.75, 1.8, -1.62]);
-  // cyan fuselage stripe
-  add(new THREE.BoxGeometry(5.2, 0.06, 1.06), accent, [-0.6, -0.05, 0], [0, 0, 0], [1, 1, 1]).material = accent;
-  // prop disc
-  add(new THREE.CircleGeometry(1.0, 24), new THREE.MeshBasicMaterial({ color: 0xbff6ff, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false }),
-    [2.5, 0, 0], [0, Math.PI / 2, 0]);
-  // nav lights (red left/port = -Z when nose +X? port is left: with nose +X and up +Y, left is -Z)
-  const navs = [];
-  const light = (color, p, size) => {
-    const s = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), new THREE.MeshBasicMaterial({ color }));
-    s.position.set(...p); g.add(s);
-    const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-    halo.scale.setScalar(size); halo.position.set(...p); g.add(halo); navs.push(halo);
-    return halo;
-  };
-  light(0xff3344, [0.3, 0.0, -6.0], 1.3);
-  light(0x33ff88, [0.3, 0.0, 6.0], 1.3);
-  const strobe = light(0xffffff, [-4.1, 1.85, 0], 2.6);
-  g.userData.strobe = strobe;
-  return g;
 }
 
 let _glow;
@@ -504,8 +449,9 @@ export function mountReplay3d(canvas, track) {
       scene.add(pin); pins.push(pin);
     }
 
-    aircraft = makeDa40();
-    const acScale = mobile ? 52 : 46;
+    const qType = new URLSearchParams(location.search).get('aircraft');
+    aircraft = buildAircraft(qType || track.aircraftType || 'other');
+    const acScale = mobile ? 120 : 115; // orbit: big + glowing so it reads at full-flight zoom
     aircraft.scale.setScalar(acScale);
     scene.add(aircraft);
     const acGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: 0x22d3ee, transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending }));
@@ -548,7 +494,7 @@ export function mountReplay3d(canvas, track) {
 
     // camera rig state
     const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
-    let camInit = false, orbitT = 0, prevHdg = null, bank = 0;
+    let orbitD = 0, camInit = false, orbitT = 0, prevHdg = null, bank = 0;
     const up = new THREE.Vector3(0, 1, 0);
     // Orbit: look from the east toward the sunset/mountains (sun is west)
     const baseAz = Math.atan2(-SUN_DIR.z, -SUN_DIR.x); // direction opposite sun on XZ
@@ -562,22 +508,23 @@ export function mountReplay3d(canvas, track) {
       const f = d.clone().negate();
       const r = new THREE.Vector3().crossVectors(f, up).normalize();
       const uu = new THREE.Vector3().crossVectors(r, f).normalize();
-      const tanY = Math.tan((camera.fov * DEG) / 2) * (mobile ? 0.72 : 0.92), tanX = tanY * aspect;
-      let D = 800;
+      const tanY = Math.tan((camera.fov * DEG) / 2) * (mobile ? 0.8 : 0.98), tanX = tanY * aspect;
+      let D = 600;
       for (const c of corners) {
         const v = c.clone().sub(look);
         const vf = v.dot(f);
         D = Math.max(D, Math.abs(v.dot(r)) / tanX - vf, Math.abs(v.dot(uu)) / tanY - vf);
       }
       // nudge framing so terrain/horizon fill the upper third like a cinematic establishing shot
-      look.addScaledVector(uu, D * 0.04);
+      look.addScaledVector(uu, -D * 0.015); // keep track clear of the bottom scrubber overlay
+      orbitD = D;
       return { pos: look.clone().addScaledVector(d, D), look };
     }
     function chaseTarget(acPos, tan) {
       const flat = new THREE.Vector3(tan.x, 0, tan.z).normalize();
       const right = new THREE.Vector3().crossVectors(flat, up).normalize();
-      const pos = acPos.clone().addScaledVector(flat, -230).addScaledVector(right, 55).addScaledVector(up, 75);
-      const look = acPos.clone().addScaledVector(flat, 260).addScaledVector(up, -25);
+      const pos = acPos.clone().addScaledVector(flat, -120).addScaledVector(right, 78).addScaledVector(up, 20);
+      const look = acPos.clone().addScaledVector(flat, 30).addScaledVector(up, -2);
       return { pos, look };
     }
 
@@ -604,8 +551,9 @@ export function mountReplay3d(canvas, track) {
       prog.value = param;
 
       const chase = view === 'chase';
-      const sc = THREE.MathUtils.lerp(aircraft.scale.x, chase ? 6 : acScale, snap ? 1 : Math.min(1, dt * 3));
-      aircraft.scale.setScalar(sc); acGlow.scale.setScalar(sc * 16);
+      const orbitSc = Math.max(acScale, orbitD * (mobile ? 0.024 : 0.022)); // ~12% of frame width
+      const sc = THREE.MathUtils.lerp(aircraft.scale.x, chase ? 6 : orbitSc, snap ? 1 : Math.min(1, dt * 3));
+      aircraft.scale.setScalar(sc); acGlow.scale.setScalar(sc * (chase ? 5 : 6)); acGlow.material.opacity = chase ? 0.08 : 0.4;
       glowTube.visible = coreTube.visible = !chase; chaseTube.visible = chase;
       for (const pin of pins) pin.userData.halo.visible = !chase;
       const tgt = view === 'chase' ? chaseTarget(pos, tan) : orbitTarget(pos);

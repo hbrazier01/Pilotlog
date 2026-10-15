@@ -80,7 +80,7 @@ export function stationLabels(station, esc = (x) => String(x ?? '')) {
   };
 }
 
-/** Stylized synthetic-vision hero: Front Range silhouette + DA40 + magenta gates. */
+/** Stylized synthetic-vision hero: Front Range silhouette + trainer aircraft + magenta gates. */
 function synthVision(gates, st = stationLabels(null)) {
   const n = gates.gates.length;
   const W = 720,
@@ -166,8 +166,8 @@ function synthVision(gates, st = stationLabels(null)) {
       <path d="${d}" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="2" stroke-dasharray="6 8"/>
       <path d="${doneD}" fill="none" stroke="#f472d0" stroke-width="3.5" stroke-linecap="round" filter="url(#mgGlow)" class="path-done"/>
       ${gateNodes}
-      <!-- DA40 silhouette (simplified diamond-ish low-wing) -->
-      <g transform="translate(${ax} ${ay}) rotate(${ang})" class="da40" filter="url(#mgGlow)">
+      <!-- generic trainer silhouette (SVG fallback) -->
+      <g transform="translate(${ax} ${ay}) rotate(${ang})" class="acft" filter="url(#mgGlow)">
         <path fill="none" stroke="#22d3ee" stroke-width="1.4" opacity=".9"
           d="M0 -6 L55 0 L0 6 L-8 18 L-14 18 L-6 4 L-28 6 L-34 14 L-40 14 L-36 0 L-40 -14 L-34 -14 L-28 -6 L-6 -4 L-14 -18 L-8 -18 Z"/>
         <path fill="rgba(34,211,238,.12)" stroke="#67e8f9" stroke-width="1"
@@ -417,7 +417,7 @@ nav a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 0 0 
 .gate.done .gate-lab,.gate.next .gate-lab{fill:#f5b8e6}
 .gate.next .gate-ring{animation:pulse 2s infinite}
 @keyframes pulse{50%{stroke-opacity:.35}}
-.da40{animation:float 4s ease-in-out infinite}
+.acft{animation:float 4s ease-in-out infinite}
 @keyframes float{50%{translate:0 -4px}}
 
 /* right column */
@@ -627,6 +627,7 @@ ${renderNav(esc, { active: 'dashboard', demo, user, timeZone: settings?.timeZone
 </div>
 <script type="module">
 const ORIGIN = ${JSON.stringify(st.origin)};
+const AIRCRAFT_TYPE = ${JSON.stringify(settings?.aircraftType || '')};
 const GATE_STATE = ${JSON.stringify({ gates: gates.gates, current: gates.current }).replace(/</g, '\\u003c')};
 const BRIEF_TEXT = ${JSON.stringify(brief).replace(/</g, '\\u003c')};
 
@@ -680,7 +681,7 @@ document.getElementById('briefRefresh')?.addEventListener('click',()=>location.r
     const gl=canvasTest.getContext('webgl')||canvasTest.getContext('experimental-webgl');
     if(!gl) throw new Error('no webgl');
     const { mountSynth3d }=await import('/js/cockpit-synth3d.js');
-    const handle=mountSynth3d(canvas, GATE_STATE, ORIGIN);
+    const handle=mountSynth3d(canvas, GATE_STATE, ORIGIN, AIRCRAFT_TYPE);
     await handle.ready;
     canvas.classList.add('on');
     hero.classList.add('webgl-on');

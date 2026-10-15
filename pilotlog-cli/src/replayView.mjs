@@ -95,6 +95,7 @@ export function renderReplayPage(esc, {
     events,
     sample: !!t.sample,
     label: t.label,
+    aircraftType: settings?.aircraftType || '',
   }).replace(/</g, '\\u003c');
 
   const css = `

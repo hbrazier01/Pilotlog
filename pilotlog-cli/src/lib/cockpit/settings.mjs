@@ -6,6 +6,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DEFAULT_LIMITS } from '../replay/todaysCall.mjs';
+import { AIRCRAFT_TYPES, AIRCRAFT_TYPE_IDS } from '../../../../public/js/aircraft-types.js';
+
+export { AIRCRAFT_TYPES };
 
 export const SCHEDULING_PROVIDERS = [
   { id: 'none', label: 'None', hint: '' },
@@ -22,6 +25,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   homeAirport: '',
   instructorName: '',
   aircraftLabel: '',
+  aircraftType: '',
   timeZone: '',
   limits: { ...DEFAULT_LIMITS },
 });
@@ -32,6 +36,7 @@ export const DEMO_SETTINGS = Object.freeze({
   homeAirport: 'KAPA',
   instructorName: 'Alex (sample CFI)',
   aircraftLabel: 'DA40',
+  aircraftType: 'da40',
   timeZone: 'America/Denver',
   limits: { ...DEFAULT_LIMITS },
   sample: true,
@@ -80,6 +85,11 @@ export function sanitizeSettings(input = {}, base = DEFAULT_SETTINGS) {
   }
   if (input.instructorName !== undefined) out.instructorName = str(input.instructorName, 40);
   if (input.aircraftLabel !== undefined) out.aircraftLabel = str(input.aircraftLabel, 40);
+  if (input.aircraftType !== undefined) {
+    const t = str(input.aircraftType, 10).toLowerCase();
+    if (t && !AIRCRAFT_TYPE_IDS.includes(t)) throw new Error('unknown aircraft type');
+    out.aircraftType = t;
+  }
   if (input.timeZone !== undefined) {
     const tz = str(input.timeZone, 64);
     if (!isValidTimeZone(tz)) throw new Error('unknown time zone');

@@ -1,10 +1,11 @@
 /**
  * PilotLog cockpit 3D synthetic vision — Terrarium elevation + three.js.
- * Concept: cyan wireframe DA40, thin dashed magenta path, tall rectangular
+ * Concept: cyan wireframe trainer (type from Settings), thin dashed magenta path, tall rectangular
  * gates, Front Range at sunrise with snow ridges + plains HUD grid.
  * Falls back by rejecting; caller keeps SVG visible.
  */
 import * as THREE from '/js/three.module.min.js';
+import { buildAircraft } from '/js/aircraft-models.js';
 
 /** Scene origin (home airport or track start). Default: sample area. */
 let ORIGIN = { lat: 39.5701, lon: -104.8484, elev: 1791 };
@@ -51,72 +52,6 @@ function glowLineMat(color, opacity = 0.95) {
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
-}
-
-/** Sleek low-wing DA40: tapered wings, T-tail, canopy — cyan translucent + wire glow. */
-function makeDa40() {
-  const g = new THREE.Group();
-  const CYAN = 0x22d3ee;
-  const fill = new THREE.MeshBasicMaterial({
-    color: CYAN,
-    transparent: true,
-    opacity: 0.28,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
-  const edgeMat = new THREE.LineBasicMaterial({
-    color: CYAN,
-    transparent: true,
-    opacity: 1,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
-
-  function part(geo, pos, rot = [0, 0, 0], scale = [1, 1, 1]) {
-    const m = new THREE.Mesh(geo, fill.clone());
-    m.position.set(...pos);
-    m.rotation.set(...rot);
-    m.scale.set(...scale);
-    g.add(m);
-    const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 15), edgeMat.clone());
-    e.position.copy(m.position);
-    e.rotation.copy(m.rotation);
-    e.scale.copy(m.scale);
-    g.add(e);
-  }
-
-  // Fuselage body (nose toward +X)
-  part(new THREE.CylinderGeometry(0.22, 0.32, 2.4, 12), [0.1, 0.08, 0], [0, 0, Math.PI / 2]);
-  part(new THREE.ConeGeometry(0.22, 0.85, 12), [1.55, 0.08, 0], [0, 0, -Math.PI / 2]);
-  part(new THREE.CylinderGeometry(0.12, 0.22, 1.1, 10), [-1.4, 0.12, 0], [0, 0, Math.PI / 2]);
-  // Canopy bubble
-  part(new THREE.SphereGeometry(0.4, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), [0.45, 0.35, 0]);
-  // Long low wing
-  part(new THREE.BoxGeometry(0.9, 0.045, 5.6), [0.2, -0.06, 0]);
-  part(new THREE.BoxGeometry(0.4, 0.03, 0.85), [0.05, -0.05, 2.55]);
-  part(new THREE.BoxGeometry(0.4, 0.03, 0.85), [0.05, -0.05, -2.55]);
-  // T-tail
-  part(new THREE.BoxGeometry(0.55, 0.9, 0.055), [-1.85, 0.58, 0]);
-  part(new THREE.BoxGeometry(0.42, 0.04, 1.55), [-1.85, 1.02, 0]);
-  // Subtle prop disc (thin cyan ring, low opacity — not a big white circle)
-  const prop = new THREE.Mesh(
-    new THREE.RingGeometry(0.22, 0.38, 28),
-    new THREE.MeshBasicMaterial({
-      color: CYAN,
-      transparent: true,
-      opacity: 0.14,
-      side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    })
-  );
-  prop.position.set(1.95, 0.08, 0);
-  prop.rotation.y = Math.PI / 2;
-  g.add(prop);
-  const light = new THREE.PointLight(0x22d3ee, 2.4, 900, 2);
-  light.position.set(0, 0.4, 0);
-  g.add(light);
-  return g;
 }
 
 function makeGate(label, lit) {
@@ -378,7 +313,7 @@ function makeDashedPath(curve) {
  * @param {HTMLCanvasElement} canvas
  * @param {{ gates: {key,label,done}[], current: number }} gateState
  */
-export function mountSynth3d(canvas, gateState, origin = null) {
+export function mountSynth3d(canvas, gateState, origin = null, aircraftType = 'other') {
   if (origin && Number.isFinite(origin.lat) && Number.isFinite(origin.lon)) ORIGIN = { lat: origin.lat, lon: origin.lon, elev: Number(origin.elev) || 0 };
   let disposed = false;
   let raf = 0;
@@ -519,7 +454,8 @@ export function mountSynth3d(canvas, gateState, origin = null) {
     }
 
     // Aircraft — full airframe, ~1/3 hero width, centered lower-middle
-    aircraft = makeDa40();
+    aircraft = buildAircraft(new URLSearchParams(location.search).get('aircraft') || aircraftType, { style: 'wire' });
+    { const l = new THREE.PointLight(0x22d3ee, 2.4, 900, 2); l.position.set(0, 0.4, 0); aircraft.add(l); }
     const planeU = 0.05;
     const pos = curve.getPoint(planeU);
     const tangent = curve.getTangent(planeU).normalize();
@@ -527,7 +463,7 @@ export function mountSynth3d(canvas, gateState, origin = null) {
     aircraft.lookAt(pos.clone().add(tangent));
     aircraft.rotateY(-Math.PI / 2);
     // Slightly smaller so full wingspan stays inside frame on desktop + mobile
-    aircraft.scale.setScalar(mobile ? 52 : 68);
+    aircraft.scale.setScalar(mobile ? 25 : 32); // models are ~12 m span (old hero model was ~5.6)
     scene.add(aircraft);
 
     camera = new THREE.PerspectiveCamera(mobile ? 40 : 36, 1, 2, 140000);
