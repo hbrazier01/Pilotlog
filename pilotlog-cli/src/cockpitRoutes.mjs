@@ -25,6 +25,14 @@ import { getKapaWeather } from './lib/weather/fetch.mjs';
 import { parseTileParams, terrariumUrl } from './lib/weather/terrain.mjs';
 import { createCheckrideStore } from './checkrideRoutes.mjs';
 import { cockpitUser, DEMO_USER } from './lib/cockpit/profile.mjs';
+import { renderReplayPage } from './replayView.mjs';
+import { buildSampleKapaTrack } from './lib/replay/sampleTrack.mjs';
+import { buildMissionMap } from './lib/replay/missionMap.mjs';
+import { todaysCall } from './lib/replay/todaysCall.mjs';
+import { acsSkillStrip } from './lib/replay/acsStrip.mjs';
+import { getTrack, saveTrackForEntry, readTracks } from './lib/replay/tracks.mjs';
+import { parseTrack } from './lib/replay/parse.mjs';
+import { detectEvents } from './lib/replay/events.mjs';
 
 export function registerCockpitRoutes(app, { dataDir, readEntries, escapeHtml, pg = null }) {
   const store = createCheckrideStore(dataDir, pg);
@@ -182,4 +190,83 @@ export function registerCockpitRoutes(app, { dataDir, readEntries, escapeHtml, p
   app.get('/cockpit/training', htmlPage((esc, ctx) => renderTrainingPage(esc, ctx)));
   app.get('/cockpit/acs', htmlPage((esc, ctx) => renderAcsPage(esc, ctx)));
   app.get('/cockpit/resources', htmlPage((esc, ctx) => renderResourcesPage(esc, ctx)));
+
+  app.get('/cockpit/replay', async (req, res) => {
+    try {
+      const ctx = await loadContext(req);
+      const track = ctx.demo
+        ? buildSampleKapaTrack()
+        : (req.query.entry && getTrack(dataDir, String(req.query.entry))) || buildSampleKapaTrack();
+      // Non-demo without a stored track still shows SAMPLE track clearly labeled
+      if (!ctx.demo && track?.sample) {
+        /* keep sample flag */
+      }
+      const mission = buildMissionMap(ctx.entries, { testDate: ctx.cr?.testDate, cr: ctx.cr });
+      const wxForCall = ctx.demo
+        ? {
+            ...ctx.weather,
+            goNoGo: { decision: 'GO', reasons: ['SAMPLE: VFR mins met'], advisory: ctx.weather?.goNoGo?.advisory },
+            metar: {
+              ...(ctx.weather?.metar || {}),
+              windDir: 70,
+              windSpeed: 12,
+              visibilitySm: 10,
+              ceilingFt: 7500,
+            },
+            bestCrosswind: { runway: '17L', crosswindKt: 10 },
+          }
+        : ctx.weather;
+      const call = todaysCall(wxForCall, ctx.cr);
+      const strip = acsSkillStrip(ctx.cr?.acs);
+      res.type('html').send(
+        renderReplayPage(escapeHtml, {
+          demo: ctx.demo || !!track.sample,
+          user: ctx.user,
+          track,
+          mission,
+          call,
+          acsStrip: strip,
+          cr: ctx.cr,
+        })
+      );
+    } catch (err) {
+      console.error('[replay]', err);
+      res.status(500).type('html').send(`<!doctype html><title>Replay error</title><pre>${escapeHtml(String(err.message || err))}</pre>`);
+    }
+  });
+
+  app.get('/api/cockpit/tracks/sample', (_req, res) => {
+    res.json(buildSampleKapaTrack());
+  });
+
+  app.get('/api/cockpit/tracks/:entryId', (req, res) => {
+    const track = getTrack(dataDir, req.params.entryId);
+    if (!track) return res.status(404).json({ error: 'no track' });
+    res.json(track);
+  });
+
+  app.post('/api/cockpit/tracks/:entryId', (req, res) => {
+    try {
+      const body = req.body || {};
+      const text = body.text || body.gpx || body.csv || '';
+      const filename = body.filename || body.name || '';
+      if (!text) return res.status(400).json({ error: 'missing track text' });
+      const track = saveTrackForEntry(dataDir, req.params.entryId, text, filename);
+      res.status(201).json({ id: track.id, entryId: track.entryId, stats: track.stats, events: track.events, format: track.format });
+    } catch (err) {
+      res.status(400).json({ error: String(err.message || err) });
+    }
+  });
+
+  app.post('/api/cockpit/tracks/parse', (req, res) => {
+    try {
+      const text = req.body?.text || '';
+      const filename = req.body?.filename || '';
+      const parsed = parseTrack(text, filename);
+      const events = detectEvents(parsed.points);
+      res.json({ format: parsed.format, pointCount: parsed.points.length, events, points: parsed.points.slice(0, 5) });
+    } catch (err) {
+      res.status(400).json({ error: String(err.message || err) });
+    }
+  });
 }

@@ -2,6 +2,7 @@
 
 export const COCKPIT_NAV = [
   { href: '/cockpit', id: 'dashboard', label: 'Dashboard' },
+  { href: '/cockpit/replay', id: 'replay', label: 'Replay' },
   { href: '/cockpit/flight-plan', id: 'flight-plan', label: 'Flight Plan' },
   { href: '/cockpit/logbook', id: 'logbook', label: 'Logbook' },
   { href: '/cockpit/training', id: 'training', label: 'Training' },
