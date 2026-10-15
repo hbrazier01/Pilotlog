@@ -11,7 +11,7 @@ const DAY = 86400000;
 export function cockpitGates(cr, entries = []) {
   const q = cr.readiness.requirements || {};
   const en = Object.fromEntries((cr.endorsements || []).map(e => [e.key, e]));
-  const anySolo = entries.some(e => Number(e.solo) > 0) || !!en.soloFlight?.obtained;
+  const anySolo = entries.some(e => Number(e.solo) > 0);
   const anyXc = entries.some(e => Number(e.xc) > 0) || !!(q.soloXC?.met || q.dualXC?.met);
   const anyNight = entries.some(e => Number(e.night) > 0) || !!(q.nightTraining?.met);
   const gates = [
@@ -51,28 +51,40 @@ export function acsTiles(acs) {
   });
 }
 
-/** Horizontal milestone timeline with cumulative hours at each gate. */
+/** Horizontal milestone timeline with cumulative hours at each gate.
+ * Milestones are ordered Solo → XC → Night: XC is first cross-country on/after
+ * first solo (falls back to any XC only if none after solo). Hours = total time
+ * at that flight (never exceeding overall total). Solo requires actual solo time.
+ */
 export function logbookTimeline(cr, entries = [], projDate = null) {
   const sorted = [...entries].filter(e => e.date).sort((a, b) => a.date.localeCompare(b.date));
-  const cumAt = (pred) => {
+  const cumAt = (pred, afterDate = null) => {
     let hrs = 0, date = null;
     for (const e of sorted) {
       hrs += Number(e.totalTime) || 0;
-      if (pred(e)) { date = e.date; break; }
+      if (afterDate && e.date < afterDate) continue;
+      if (pred(e)) { date = e.date; return { hours: Math.round(hrs * 10) / 10, date }; }
     }
-    return { hours: Math.round(hrs * 10) / 10, date };
+    return { hours: null, date: null };
   };
   const solo = cumAt(e => Number(e.solo) > 0);
-  const xc = cumAt(e => Number(e.xc) > 0);
-  const night = cumAt(e => Number(e.night) > 0);
+  // Prefer XC on/after first solo so timeline dates stay monotonic
+  let xc = solo.date ? cumAt(e => Number(e.xc) > 0, solo.date) : { hours: null, date: null };
+  if (!xc.date) xc = cumAt(e => Number(e.xc) > 0);
+  const nightAfter = xc.date || solo.date;
+  let night = nightAfter ? cumAt(e => Number(e.night) > 0, nightAfter) : cumAt(e => Number(e.night) > 0);
+
   const totalHrs = sorted.reduce((s, e) => s + (Number(e.totalTime) || 0), 0);
   const dualHrs = sorted.reduce((s, e) => s + (Number(e.dual) || 0), 0);
   const picHrs = sorted.reduce((s, e) => s + (Number(e.solo) || Number(e.pic) || 0), 0);
+  const totalR = Math.round(totalHrs * 10) / 10;
+
+  const clampHrs = (h) => (h == null ? null : Math.min(h, totalR));
 
   const nodes = [
-    { key: 'solo', label: 'SOLO', hours: solo.date ? solo.hours : null, date: solo.date, done: !!solo.date },
-    { key: 'xc', label: 'XC', hours: xc.date ? xc.hours : null, date: xc.date, done: !!xc.date },
-    { key: 'night', label: 'NIGHT', hours: night.date ? night.hours : null, date: night.date, done: !!night.date },
+    { key: 'solo', label: 'SOLO', hours: solo.date ? clampHrs(solo.hours) : null, date: solo.date, done: !!solo.date },
+    { key: 'xc', label: 'XC', hours: xc.date ? clampHrs(xc.hours) : null, date: xc.date, done: !!xc.date },
+    { key: 'night', label: 'NIGHT', hours: night.date ? clampHrs(night.hours) : null, date: night.date, done: !!night.date },
     {
       key: 'checkride',
       label: 'CHECKRIDE READY',
@@ -85,7 +97,7 @@ export function logbookTimeline(cr, entries = [], projDate = null) {
   return {
     nodes,
     totals: {
-      total: Math.round(totalHrs * 10) / 10,
+      total: totalR,
       dual: Math.round(dualHrs * 10) / 10,
       pic: Math.round(picHrs * 10) / 10,
     },

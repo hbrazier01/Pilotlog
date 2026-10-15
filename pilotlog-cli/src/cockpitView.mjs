@@ -1,6 +1,6 @@
 /**
  * Cockpit Dashboard — bold glass-cockpit layout matching the "unlimited" concept.
- * SVG + CSS only for the synthetic-vision hero (no three.js). Live weather via /api/weather/kapa.
+ * Center hero: three.js + Terrarium terrain with SVG fallback. Live weather via /api/weather/kapa.
  */
 import { readinessScore, projectCheckride, nextLesson, briefText } from './lib/checkride/insights.mjs';
 import { cockpitGates, acsTiles, logbookTimeline, progressBars } from './lib/checkride/cockpit.mjs';
@@ -330,9 +330,35 @@ nav a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 0 0 
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:8px;background:linear-gradient(180deg,#14324a,#0c2234);color:var(--cy);border:1px solid rgba(34,211,238,.45);border-radius:10px;padding:10px 12px;font:600 12px inherit;cursor:pointer;letter-spacing:.04em}
 .btn:hover{box-shadow:0 0 18px rgba(34,211,238,.25)}
 
-/* center synth */
-.hero{padding:0;overflow:hidden;position:relative;min-height:380px}
-.synth{width:100%;height:100%;min-height:380px;display:block}
+/* center synth — stretch to match side columns */
+.col-center{display:flex;flex-direction:column;min-height:0}
+.hero{padding:0;overflow:hidden;position:relative;flex:1;min-height:560px;display:flex;flex-direction:column}
+.hero-stage{position:relative;flex:1;min-height:560px;background:#12081c}
+.synth{width:100%;height:100%;min-height:560px;display:block}
+.synth3d{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:2;opacity:0;transition:opacity .6s ease}
+.synth3d.on{opacity:1}
+.synth-fallback{position:relative;z-index:1}
+.hero.webgl-on .synth-fallback{opacity:0;pointer-events:none}
+.hero-hud{position:absolute;inset:0;z-index:3;pointer-events:none;font-family:var(--mono)}
+.hero-hud .chip{position:absolute;background:rgba(3,6,15,.55);border:1px solid rgba(34,211,238,.25);border-radius:8px;padding:8px 10px;font-size:10px;color:#a8b4cc;letter-spacing:.04em;backdrop-filter:blur(6px)}
+.hero-hud .chip b{color:var(--cy);display:block;font-size:11px;margin-bottom:2px}
+.hero-hud .chip-tl{top:14px;left:14px}.hero-hud .chip-tr{top:14px;right:14px;text-align:right}
+.hero-hud .chip-bl{bottom:14px;left:14px}.hero-hud .chip-bc{bottom:14px;left:50%;transform:translateX(-50%);border-color:rgba(244,114,208,.35);color:#f5b8e6}
+.hero-loading{position:absolute;inset:0;z-index:4;display:grid;place-items:center;background:rgba(3,6,15,.35);font:600 11px var(--mono);letter-spacing:.18em;color:var(--cy);pointer-events:none;transition:opacity .4s}
+.hero-loading.hide{opacity:0}
+.voice-row{display:flex;align-items:center;gap:10px;margin-top:10px}
+.voice-btn{flex:none;width:38px;height:38px;border-radius:50%;border:1px solid rgba(34,211,238,.45);background:linear-gradient(180deg,#14324a,#0c2234);color:var(--cy);cursor:pointer;display:grid;place-items:center}
+.voice-btn:hover{box-shadow:0 0 14px rgba(34,211,238,.3)}
+.voice-btn.talk{color:var(--mg);border-color:rgba(244,114,208,.55);box-shadow:0 0 16px rgba(244,114,208,.35)}
+.voice-btn[hidden]{display:none!important}
+.wave{display:flex;align-items:center;gap:3px;height:28px;opacity:.35}
+.wave.on{opacity:1}
+.wave i{display:block;width:3px;height:8px;border-radius:2px;background:var(--cy);animation:none}
+.wave.on i{animation:wav 0.8s ease-in-out infinite alternate}
+.wave.on i:nth-child(2){animation-delay:.1s}.wave.on i:nth-child(3){animation-delay:.2s}
+.wave.on i:nth-child(4){animation-delay:.15s}.wave.on i:nth-child(5){animation-delay:.05s}
+.wave.on i:nth-child(6){animation-delay:.25s}.wave.on i:nth-child(7){animation-delay:.12s}
+@keyframes wav{from{height:6px;opacity:.5}to{height:22px;opacity:1}}
 .path-done{stroke-dasharray:800;stroke-dashoffset:800;animation:draw 1.8s ease .3s forwards}
 @keyframes draw{to{stroke-dashoffset:0}}
 .gate .gate-ring{fill:none;stroke:rgba(255,255,255,.2);stroke-width:2}
@@ -413,7 +439,7 @@ nav a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 0 0 
   .grid{grid-template-columns:1fr}
   .page{padding:12px 10px 40px}
   .tiles{grid-template-columns:1fr 1fr}
-  .hero,.synth{min-height:280px}
+  .hero,.hero-stage,.synth{min-height:320px}
   .nav-r .clock{display:none}
   .g-pct{font-size:40px}
 }
@@ -454,8 +480,20 @@ nav a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 0 0 
     </section>
   </div>
 
-  <div class="col">
-    <section class="hero glass">${synthVision(gates)}</section>
+  <div class="col col-center">
+    <section class="hero glass" id="hero">
+      <div class="hero-stage">
+        <div class="synth-fallback">${synthVision(gates)}</div>
+        <canvas class="synth3d" id="synth3d" aria-label="3D synthetic vision of KAPA and the Front Range"></canvas>
+        <div class="hero-hud" aria-hidden="true">
+          <div class="chip chip-tl"><b>KAPA</b>6,283 FT · RWY 17L/35R</div>
+          <div class="chip chip-tr"><b>TRK 031° · ALT 7,500</b>VSI −200 FPM</div>
+          <div class="chip chip-bl">KAPA CENTENNIAL · 6,283 FT MSL</div>
+          <div class="chip chip-bc">HDG 032° · GS 96</div>
+        </div>
+        <div class="hero-loading" id="heroLoad">LOADING TERRAIN…</div>
+      </div>
+    </section>
   </div>
 
   <div class="col">
@@ -475,6 +513,12 @@ nav a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 0 0 
     <section class="brief glass">
       <div class="slip"><span>NEXT LESSON · BRIEFING</span><span>${esc(cr.costs.rates.aircraftLabel || 'DA40')}</span></div>
       ${briefItems}
+      <div class="voice-row">
+        <button type="button" class="voice-btn" id="voiceBtn" hidden title="Play briefing" aria-label="Play briefing">
+          <svg id="voiceIcon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <div class="wave" id="voiceWave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      </div>
     </section>
 
     <section class="fuelc glass">
@@ -509,7 +553,10 @@ nav a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 0 0 
   </section>
 </div>
 </div>
-<script>
+<script type="module">
+const GATE_STATE = ${JSON.stringify({ gates: gates.gates, current: gates.current }).replace(/</g, '\\u003c')};
+const BRIEF_TEXT = ${JSON.stringify(brief).replace(/</g, '\\u003c')};
+
 (function(){
   const el=document.querySelector('.g-pct'),to=+el.dataset.count,t0=performance.now()+200,d=1400;
   if(matchMedia('(prefers-reduced-motion: reduce)').matches){el.firstChild.nodeValue=to;return}
@@ -518,11 +565,53 @@ nav a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 0 0 
 (function(){
   const c=document.getElementById('clock');
   function tick(){
-    try{
-      c.textContent=new Date().toLocaleTimeString('en-US',{timeZone:'America/Denver',hour12:false})+' MT';
-    }catch{c.textContent=new Date().toISOString().slice(11,19)+' Z'}
+    try{ c.textContent=new Date().toLocaleTimeString('en-US',{timeZone:'America/Denver',hour12:false})+' MT'; }
+    catch{ c.textContent=new Date().toISOString().slice(11,19)+' Z'; }
   }
   tick();setInterval(tick,1000);
+})();
+
+(function(){
+  const btn=document.getElementById('voiceBtn');
+  const wave=document.getElementById('voiceWave');
+  const icon=document.getElementById('voiceIcon');
+  if(!btn || !('speechSynthesis' in window) || !window.SpeechSynthesisUtterance) return;
+  btn.hidden=false;
+  let speaking=false;
+  const playPath='M8 5v14l11-7z';
+  const stopPath='M6 6h12v12H6z';
+  function setTalk(on){
+    speaking=on; btn.classList.toggle('talk',on); wave.classList.toggle('on',on);
+    icon.innerHTML='<path d="'+(on?stopPath:playPath)+'"/>';
+  }
+  btn.addEventListener('click',()=>{
+    if(speaking){ speechSynthesis.cancel(); setTalk(false); return; }
+    const u=new SpeechSynthesisUtterance(BRIEF_TEXT);
+    u.rate=1; u.pitch=1;
+    u.onend=u.onerror=()=>setTalk(false);
+    setTalk(true); speechSynthesis.cancel(); speechSynthesis.speak(u);
+  });
+})();
+
+(async function(){
+  const hero=document.getElementById('hero');
+  const canvas=document.getElementById('synth3d');
+  const load=document.getElementById('heroLoad');
+  try{
+    const canvasTest=document.createElement('canvas');
+    const gl=canvasTest.getContext('webgl')||canvasTest.getContext('experimental-webgl');
+    if(!gl) throw new Error('no webgl');
+    const { mountSynth3d }=await import('/js/cockpit-synth3d.js');
+    const handle=mountSynth3d(canvas, GATE_STATE);
+    await handle.ready;
+    canvas.classList.add('on');
+    hero.classList.add('webgl-on');
+    load?.classList.add('hide');
+  }catch(err){
+    console.warn('[cockpit] 3D fallback to SVG:', err);
+    if(load) load.textContent='SVG VIEW';
+    setTimeout(()=>load?.classList.add('hide'), 600);
+  }
 })();
 </script>
 </body></html>`;
