@@ -66,7 +66,30 @@ export function activeRunway(runways, wind) {
 }
 
 /** Normalise user settings + weather into a practice context. Nothing user-specific is hard-coded. */
-export function buildContext({ settings = {}, weather = null, scenario = 'ground_taxi' } = {}) {
+/* ------------------------------ traffic / rng ------------------------------ */
+/** Small deterministic PRNG (mulberry32) so tests can pin the "random" traffic. */
+export function rng(seed) {
+  let a = (Number(seed) >>> 0) || 1;
+  return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+export const TRAFFIC_TYPES = Object.freeze(['Cessna', 'Skyhawk', 'Cherokee', 'Archer', 'Warrior', 'Diamond Star', 'Cirrus', 'Bonanza', 'Mooney', 'Citation', 'King Air', 'Pilatus']);
+const TRAFFIC_POS = Object.freeze([
+  { leg: 'base', text: (s) => `on ${s} base` }, { leg: 'final', text: () => 'on a two mile final' },
+  { leg: 'final', text: () => 'on short final' }, { leg: 'downwind', text: (s) => `turning ${s} base` },
+]);
+/** Randomised traffic to follow: type, abbreviated callsign, position, our sequence number. */
+export function pickTraffic(rand, side = 'left') {
+  const type = TRAFFIC_TYPES[Math.floor(rand() * TRAFFIC_TYPES.length)];
+  const p = TRAFFIC_POS[Math.floor(rand() * TRAFFIC_POS.length)];
+  const tail = String(Math.floor(rand() * 9) + 1) + 'ABCDEFGHJKLMNPRSTUVWXYZ'[Math.floor(rand() * 23)] + 'ABCDEFGHJKLMNPRSTUVWXYZ'[Math.floor(rand() * 23)];
+  const number = rand() < 0.7 ? 2 : 3;
+  return { type, callsign: `N${Math.floor(rand() * 900) + 100}${tail.slice(1)}`, position: p.text(side), number };
+}
+const NUM_WORD = ['zero', 'one', 'two', 'three', 'four'];
+/** Speakable taxiway list: ["A","A3"] → "Alpha, Alpha three". */
+export const sayTaxiways = (route) => route.map((r) => r.replace(/^([A-Z]{1,2})(\d*)$/, (_, l, d) => l.split('').map(sayLetter).join(' ') + (d ? ' ' + sayDigits(d) : ''))).join(', ');
+
+export function buildContext({ settings = {}, weather = null, scenario = 'ground_taxi', airportData = null, seed = Date.now() } = {}) {
   const airport = String(settings.homeAirport || '').toUpperCase();
   const m = weather?.metar || null;
   const simulated = [];
@@ -82,10 +105,22 @@ export function buildContext({ settings = {}, weather = null, scenario = 'ground
   const callsign = String(settings.tailNumber || '').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'N123PL';
   if (!settings.tailNumber) simulated.push('callsign');
   const typeName = radioTypeName(settings.aircraftType);
-  // ATIS letter: deterministic from the hour so it is stable within a session
-  const atis = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[(new Date(weather?.metar?.obsTime || Date.now()).getUTCHours()) % 26];
+  // ATIS: real letter from D-ATIS when the field publishes one, else a stable simulated letter
+  let atis = airportData?.atis?.letter || null;
+  if (!atis) { atis = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[(new Date(weather?.metar?.obsTime || Date.now()).getUTCHours()) % 26]; simulated.push('atis'); }
   const side = runway.endsWith('R') ? 'right' : 'left'; // standard pattern is left unless parallel right
-  return { scenario, airport, facilityName, callsign, typeName, wind, altimeter, runway, atis, side, taxiway: 'Alpha', exitTaxiway: 'Charlie', simulated, needsSetup: !airport };
+  // Taxi route from OpenStreetMap taxiway names, else a clearly-labelled generic route
+  const taxi = airportData?.taxi?.[runway] || null;
+  const taxiRoute = taxi?.route?.length ? taxi.route : ['A'];
+  if (!taxi?.route?.length) simulated.push('taxi');
+  const exitTaxiway = taxi?.exit || (taxi?.route?.length ? taxi.route[0] : 'C');
+  if (!taxi?.exit) simulated.push('exit');
+  const exitSide = taxi?.exitSide || 'left';
+  const f = airportData?.freqs || null;
+  const freqs = { tower: f?.tower || null, ground: f?.ground || null, atis: f?.atis || null, source: f ? f.source : null };
+  if (!f) simulated.push('freq');
+  const traffic = pickTraffic(rng(seed), side);
+  return { scenario, airport, facilityName, callsign, typeName, wind, altimeter, runway, atis, side, taxiRoute, taxiway: taxiRoute.join(', '), sayTaxi: sayTaxiways(taxiRoute), exitTaxiway, sayExit: sayTaxiways([exitTaxiway]), exitSide, freqs, traffic, taxiSource: taxi ? 'OpenStreetMap' : null, simulated, needsSetup: !airport };
 }
 
 /* ------------------------------- normaliser -------------------------------- */
@@ -101,8 +136,22 @@ PHON_IN.alfa = 'A'; PHON_IN.juliet = 'J'; PHON_IN.xray = 'X'; PHON_IN.whisky = '
  * runs of single digits/letters joined ("one seven left" → "17L", "november four five two one delta" → "N4521D",
  * "three zero one two" / "30.12" → "3012").
  */
+const TEENS = { ten: '10', eleven: '11', twelve: '12', thirteen: '13', fourteen: '14', fifteen: '15', sixteen: '16', seventeen: '17', eighteen: '18', nineteen: '19' };
+const ONES = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, niner: 9 };
+/** Canonicalise common spoken/typed variants before tokenising. */
+export function canonicalize(text) {
+  let t = String(text || '').toLowerCase().replace(/&/g, ' and ').replace(/[’']/g, '');
+  t = t.replace(/\b(twenty|thirty)[\s-]+(one|two|three|four|five|six|seven|eight|nine|niner)\b/g, (_, a, b) => String((a === 'twenty' ? 20 : 30) + ONES[b]));
+  t = t.replace(/\b(ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen)\b/g, (w) => TEENS[w]).replace(/\btwenty\b/g, '20').replace(/\bthirty\b/g, '30');
+  return t
+    .replace(/\btake[\s-]+off\b/g, 'takeoff').replace(/\bdown[\s-]+wind\b/g, 'downwind').replace(/\bmid[\s-]+field\b/g, 'midfield')
+    .replace(/\btouch[\s-]*(and|n|&)?[\s-]*go(es)?\b/g, 'touch and go').replace(/\bfull[\s-]+stop\b/g, 'full stop')
+    .replace(/\bclear(ed)?\b/g, 'cleared').replace(/\bholding short\b/g, 'hold short').replace(/\bhold[\s-]+short\b/g, 'hold short')
+    .replace(/\bnumber to\b/g, 'number two').replace(/\bright[\s-]+hand\b/g, 'right').replace(/\bleft[\s-]+hand\b/g, 'left')
+    .replace(/\bwilco\b/g, 'wilco').replace(/\bwith (the )?information\b/g, 'information').replace(/\bwe have\b/g, 'have');
+}
 export function normalizeUtterance(text) {
-  const raw = String(text || '').toLowerCase().replace(/(\d)\.(\d)/g, '$1$2').replace(/[,;:!?.]/g, ' | ').replace(/[^a-z0-9\s|-]/g, ' ').replace(/-/g, ' ');
+  const raw = canonicalize(text).replace(/(\d)\.(\d)/g, '$1$2').replace(/[,;:!?.]/g, ' | ').replace(/[^a-z0-9\s|-]/g, ' ').replace(/-/g, ' ');
   const toks = [];
   for (const w of raw.split(/\s+/).filter(Boolean)) {
     if (w === '|') { toks.push({ t: '|', glue: false, sep: true }); continue; }
@@ -136,7 +185,25 @@ export function heardCallsign(toks, cs) {
   // speech has no commas, so a callsign can glue onto a preceding taxiway letter ("alpha eight sierra papa" → A8SP)
   return toks.some((t) => { const u = t.toUpperCase(); return u === full || u === noN || u.endsWith(noN) || (u.length >= 3 && u.endsWith(last3)); });
 }
-const heardRunway = (toks, rw) => toks.some((t) => t.toUpperCase() === rw.toUpperCase() || t.toUpperCase() === rw.toUpperCase().padStart(rw.length + 1, '0'));
+/** Taxiway designator heard: exact token, or glued onto a following callsign/number ("A3" + "PL" → "A3PL"). */
+export function heardTaxiway(toks, ref) {
+  const r = String(ref || '').toUpperCase();
+  // speech has no commas, so "alpha alpha three" arrives glued as "AA3": accept ref anywhere inside a glued token
+  return toks.some((t) => {
+    if (t !== t.toUpperCase() || !/[A-Z]/.test(t)) return false;
+    for (let i = t.indexOf(r); i >= 0; i = t.indexOf(r, i + 1)) {
+      if (/\d$/.test(r) && /^\d/.test(t.slice(i + r.length))) continue;
+      if (/^[A-Z]/.test(r) && i > 0 && /\d/.test(t[i - 1]) && i + r.length < t.length) continue;
+      return true;
+    }
+    return false;
+  });
+}
+const heardRunway = (toks, rw) => {
+  const R = rw.toUpperCase(), alts = [R, R.padStart(R.length + 1, '0')];
+  // exact, or glued onto a following callsign ("18" + "3PL" → "183PL") as long as the designator is complete
+  return toks.some((t) => { const u = t.toUpperCase(); return alts.some((a) => u === a || (u.startsWith(a) && u.length > a.length + 1 && (/[LRC]$/.test(a) || /[A-Z]/.test(u.slice(a.length))))); });
+};
 
 /* ------------------------------ scenario script ----------------------------- */
 const el = (id, label, why, test) => ({ id, label, why, test });
@@ -157,14 +224,14 @@ export function scenarioScript(ctx) {
   const wind = fmtWind(c.wind), swind = sayWind(c.wind);
   const alt = fmtAlt(c.altimeter), salt = sayAlt(c.altimeter);
   const facEl = (kind) => el('facility', `Who you're calling (${fac(kind)})`, 'Open with the facility you are calling, then who you are (AIM 4-2-3 initial contact).', (t) => hasPhrase(t, kind === 'ground' ? 'ground' : 'tower'));
-  const atisEl = el('atis', `ATIS “information ${sayLetter(c.atis)}”`, 'Tell ATC you have the current ATIS so they don\'t have to read you the weather (AIM 4-1-13).', (t) => has(t, new RegExp(`^${c.atis}$`, 'i')) && (hasPhrase(t, 'information') || hasPhrase(t, 'with')));
+  const atisEl = el('atis', `ATIS “information ${sayLetter(c.atis)}”`, 'Tell ATC you have the current ATIS so they don\'t have to read you the weather (AIM 4-1-13).', (t) => has(t, new RegExp(`^${c.atis}$`, 'i')) && (hasPhrase(t, 'information') || hasPhrase(t, 'with') || hasPhrase(t, 'have') || hasPhrase(t, 'got')));
   const S = {
     ground_taxi: [{
       cue: 'You\'re parked on the ramp with the ATIS. Call Ground for taxi to the active runway, staying in the pattern.',
       example: `${fac('ground')}, ${csFull}, at the ramp with information ${sayLetter(c.atis)}, ready to taxi, VFR closed traffic.`,
       call: [facEl('ground'), CS(c), el('position', 'Your position (e.g. “at the ramp”)', 'Ground needs to know where you are to build a taxi route.', (t) => hasPhrase(t, 'ramp') || hasPhrase(t, 'parking') || hasPhrase(t, 'fbo') || hasPhrase(t, 'hangar') || hasPhrase(t, 'tie down') || hasPhrase(t, 'spot')), atisEl, el('request', 'Request (“ready to taxi”)', 'State what you want.', (t) => hasPhrase(t, 'taxi'))],
-      reply: { text: `${csFull}, ${fac('ground')}, runway ${c.runway}, taxi via ${c.taxiway}, hold short of runway ${c.runway}.`, speak: `${csSayFull}, ${fac('ground')}, runway ${sayRunway(c.runway)}, taxi via ${c.taxiway}, hold short of runway ${sayRunway(c.runway)}.` },
-      readback: [RW(c), el('route', `Taxi route “via ${c.taxiway}”`, 'Read back the taxi route so Ground can catch a wrong turn before it happens (7110.65 3-7-2).', (t) => afterWord(t, 'via', c.taxiway[0])), el('hold_short', `“Hold short runway ${c.runway}”`, 'Hold-short instructions MUST be read back word-for-word (7110.65 3-7-2, AIM 4-3-18). This is the #1 runway-incursion safeguard.', (t) => hasPhrase(t, 'hold short')), CS(c)],
+      reply: { text: `${csFull}, ${fac('ground')}, runway ${c.runway}, taxi via ${c.taxiway}, hold short of runway ${c.runway}.`, speak: `${csSayFull}, ${fac('ground')}, runway ${sayRunway(c.runway)}, taxi via ${c.sayTaxi}, hold short of runway ${sayRunway(c.runway)}.` },
+      readback: [RW(c), el('route', `Taxi route “via ${c.taxiway}”`, 'Read back the taxi route so Ground can catch a wrong turn before it happens (7110.65 3-7-2).', (t) => heardTaxiway(t, c.taxiRoute[0]) && heardTaxiway(t, c.taxiRoute[c.taxiRoute.length - 1])), el('hold_short', `“Hold short runway ${c.runway}”`, 'Hold-short instructions MUST be read back word-for-word (7110.65 3-7-2, AIM 4-3-18). This is the #1 runway-incursion safeguard.', (t) => hasPhrase(t, 'hold short') || hasPhrase(t, 'short of')), CS(c)],
       ideal: `Runway ${c.runway}, taxi via ${c.taxiway}, hold short runway ${c.runway}, ${csAbbr}.`,
     }],
     takeoff: [{
@@ -172,7 +239,7 @@ export function scenarioScript(ctx) {
       example: `${fac('tower')}, ${csFull}, holding short runway ${c.runway}, ready for departure, closed traffic.`,
       call: [facEl('tower'), CS(c), el('position', `Position (“holding short runway ${c.runway}”)`, 'Tell Tower exactly where you are holding.', (t) => hasPhrase(t, 'holding short') || hasPhrase(t, 'hold short')), el('request', 'Request (“ready for departure”)', 'Say what you\'re ready for; add your intentions (closed traffic / departure direction).', (t) => hasPhrase(t, 'ready'))],
       reply: { text: `${csAbbr}, ${wind}, runway ${c.runway}, cleared for takeoff, make ${c.side} closed traffic.`, speak: `${csSayAbbr}, ${swind}, runway ${sayRunway(c.runway)}, cleared for takeoff, make ${c.side} closed traffic.` },
-      readback: [RW(c), el('clearance', '“Cleared for takeoff”', 'Never roll without reading back the takeoff clearance with the runway (AIM 4-3-18).', (t) => hasPhrase(t, 'cleared for takeoff') || hasPhrase(t, 'cleared takeoff')), el('pattern', `“${c.side} closed traffic”`, 'Read back pattern instructions so Tower knows you\'ll stay in the pattern.', (t) => hasPhrase(t, `${c.side} closed`) || hasPhrase(t, `${c.side} traffic`) || hasPhrase(t, 'closed traffic')), CS(c)],
+      readback: [RW(c), el('clearance', '“Cleared for takeoff”', 'Never roll without reading back the takeoff clearance with the runway (AIM 4-3-18).', (t) => hasPhrase(t, 'cleared for takeoff') || hasPhrase(t, 'cleared takeoff') || hasPhrase(t, 'cleared to go')), el('pattern', `“${c.side} closed traffic”`, 'Read back pattern instructions so Tower knows you\'ll stay in the pattern.', (t) => hasPhrase(t, `${c.side} closed`) || hasPhrase(t, `${c.side} traffic`) || hasPhrase(t, 'closed traffic') || hasPhrase(t, 'closed pattern') || hasPhrase(t, 'closed')), CS(c)],
       ideal: `Runway ${c.runway}, cleared for takeoff, ${c.side} closed traffic, ${csAbbr}.`,
     }],
     pattern_entry: [{
@@ -187,24 +254,24 @@ export function scenarioScript(ctx) {
       cue: `You\'re midfield ${c.side} downwind for runway ${c.runway}. Report and ask for a touch-and-go.`,
       example: `${fac('tower')}, ${csAbbr}, midfield ${c.side} downwind, touch and go.`,
       call: [facEl('tower'), CS(c), el('position', `Position (“midfield ${c.side} downwind”)`, 'Report where you are in the pattern.', (t) => hasPhrase(t, 'downwind') || hasPhrase(t, 'midfield')), el('request', 'Request (“touch and go” / “the option”)', 'Tell Tower what kind of landing you want.', (t) => hasPhrase(t, 'touch and go') || hasPhrase(t, 'option'))],
-      reply: { text: `${csAbbr}, number two, follow the Cessna on ${c.side} base, runway ${c.runway}, cleared touch-and-go.`, speak: `${csSayAbbr}, number two, follow the Cessna on ${c.side} base, runway ${sayRunway(c.runway)}, cleared touch and go.` },
-      readback: [el('sequence', '“Number two, follow the Cessna”', 'Acknowledge your sequence and traffic so Tower knows you have it (AIM 4-3-3).', (t) => hasPhrase(t, 'number 2') || hasPhrase(t, 'number two') || hasPhrase(t, 'follow')), RW(c), el('clearance', '“Cleared touch-and-go”', 'Read back the landing clearance with the runway — it\'s a runway clearance (AIM 4-3-18).', (t) => hasPhrase(t, 'cleared touch and go') || hasPhrase(t, 'cleared option') || hasPhrase(t, 'cleared for the option')), CS(c)],
-      ideal: `Number two, traffic in sight, runway ${c.runway}, cleared touch-and-go, ${csAbbr}.`,
+      reply: { text: `${csAbbr}, number ${c.traffic.number === 3 ? 'three' : 'two'}, follow the ${c.traffic.type} ${c.traffic.position}, runway ${c.runway}, cleared touch-and-go.`, speak: `${csSayAbbr}, number ${c.traffic.number === 3 ? 'three' : 'two'}, follow the ${c.traffic.type} ${c.traffic.position}, runway ${sayRunway(c.runway)}, cleared touch and go.` },
+      readback: [el('sequence', `“Number ${c.traffic.number === 3 ? 'three' : 'two'}, follow the ${c.traffic.type}”`, 'Acknowledge your sequence and traffic so Tower knows you have it (AIM 4-3-3).', (t) => hasPhrase(t, 'number 2') || hasPhrase(t, 'number 3') || hasPhrase(t, 'number two') || hasPhrase(t, 'number three') || hasPhrase(t, 'follow') || hasPhrase(t, 'in sight') || hasPhrase(t, 'traffic')), RW(c), el('clearance', '“Cleared touch-and-go”', 'Read back the landing clearance with the runway — it\'s a runway clearance (AIM 4-3-18).', (t) => hasPhrase(t, 'cleared touch and go') || hasPhrase(t, 'cleared option') || hasPhrase(t, 'cleared for the option') || hasPhrase(t, 'cleared for touch and go') || hasPhrase(t, 'cleared for the touch and go')), CS(c)],
+      ideal: `Number ${c.traffic.number === 3 ? 'three' : 'two'}, ${c.traffic.type} in sight, runway ${c.runway}, cleared touch-and-go, ${csAbbr}.`,
     }],
     full_stop: [{
       cue: `You\'re turning ${c.side} base for runway ${c.runway}. Report and request a full stop.`,
       example: `${fac('tower')}, ${csAbbr}, ${c.side} base runway ${c.runway}, full stop.`,
       call: [facEl('tower'), CS(c), el('position', `Position (“${c.side} base”)`, 'Report your leg.', (t) => hasPhrase(t, 'base') || hasPhrase(t, 'final')), el('request', 'Request (“full stop”)', 'Tell Tower this landing is a full stop.', (t) => hasPhrase(t, 'full stop') || hasPhrase(t, 'landing'))],
       reply: { text: `${csAbbr}, ${wind}, runway ${c.runway}, cleared to land.`, speak: `${csSayAbbr}, ${swind}, runway ${sayRunway(c.runway)}, cleared to land.` },
-      readback: [RW(c), el('clearance', '“Cleared to land”', 'Always read back a landing clearance with the runway (AIM 4-3-18).', (t) => hasPhrase(t, 'cleared to land')), CS(c)],
+      readback: [RW(c), el('clearance', '“Cleared to land”', 'Always read back a landing clearance with the runway (AIM 4-3-18).', (t) => hasPhrase(t, 'cleared to land') || hasPhrase(t, 'cleared for landing') || hasPhrase(t, 'cleared land')), CS(c)],
       ideal: `Runway ${c.runway}, cleared to land, ${csAbbr}.`,
     }, {
       cue: 'You\'re down and slowing. Tower calls you with your exit — read it back.',
       example: null,
       call: null,
-      reply: { text: `${csAbbr}, turn left at ${c.exitTaxiway}, contact Ground.`, speak: `${csSayAbbr}, turn left at ${c.exitTaxiway}, contact Ground.` },
-      readback: [el('exit', `“Left at ${c.exitTaxiway}”`, 'Read back the exit taxiway so Tower knows when you\'ll be clear.', (t) => afterWord(t, 'at', c.exitTaxiway[0]) || afterWord(t, 'left', c.exitTaxiway[0])), el('contact', '“Contact Ground”', 'Acknowledge the frequency change before switching.', (t) => hasPhrase(t, 'ground')), CS(c)],
-      ideal: `Left at ${c.exitTaxiway}, over to Ground, ${csAbbr}.`,
+      reply: { text: `${csAbbr}, turn ${c.exitSide} at ${c.exitTaxiway}, contact Ground${c.freqs.ground ? ' point ' + c.freqs.ground.split('.')[1].replace(/0+$/, '') : ''}.`, speak: `${csSayAbbr}, turn ${c.exitSide} at ${c.sayExit}, contact Ground${c.freqs.ground ? ' point ' + sayDigits(c.freqs.ground.split('.')[1].replace(/0+$/, '')) : ''}.` },
+      readback: [el('exit', `“${c.exitSide[0].toUpperCase() + c.exitSide.slice(1)} at ${c.exitTaxiway}”`, 'Read back the exit taxiway so Tower knows when you\'ll be clear.', (t) => heardTaxiway(t, c.exitTaxiway)), el('contact', '“Contact Ground”', 'Acknowledge the frequency change before switching.', (t) => hasPhrase(t, 'ground')), CS(c)],
+      ideal: `${c.exitSide[0].toUpperCase() + c.exitSide.slice(1)} at ${c.exitTaxiway}, over to Ground, ${csAbbr}.`,
     }],
   };
   return S[c.scenario] || S.ground_taxi;

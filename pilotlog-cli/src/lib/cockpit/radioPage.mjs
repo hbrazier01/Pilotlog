@@ -5,10 +5,11 @@
 import { shellStart, shellEnd } from './chrome.mjs';
 import { SCENARIOS, DISCLAIMER } from '../../../../public/js/atc-engine.js';
 
-export function renderRadioPage(esc, { demo = false, user = null, settings = {}, weather = null } = {}) {
+export function renderRadioPage(esc, { demo = false, user = null, settings = {}, weather = null, airportData = null } = {}) {
   const boot = {
     demo,
     settings: { homeAirport: settings.homeAirport || '', towerName: settings.towerName || '', runways: settings.runways || '', tailNumber: settings.tailNumber || '', aircraftType: settings.aircraftType || '' },
+    airportData: airportData ? { taxi: airportData.taxi || null, atis: airportData.atis || null, freqs: airportData.freqs ? { tower: airportData.freqs.tower, ground: airportData.freqs.ground, atis: airportData.freqs.atis, source: airportData.freqs.source } : null } : null,
     weather: weather && weather.metar ? { metar: { wdir: weather.metar.wdir ?? null, wspd: weather.metar.wspd ?? null, altim: weather.metar.altim ?? null, obsTime: weather.metar.obsTime ?? null }, station: { runways: weather.station?.runways || [] } } : null,
   };
   const q = demo ? '?demo=1' : '';
@@ -68,6 +69,13 @@ export function renderRadioPage(esc, { demo = false, user = null, settings = {},
 .ideal .eyebrow{display:block;color:var(--cy);margin-bottom:4px}
 .empty{color:var(--dim);font-size:13px;padding:8px 4px}
 .setup{margin-top:10px;font-size:12px}
+.lcd .mhz{font:800 22px var(--mono);color:#34f5a0;text-shadow:0 0 14px rgba(52,245,160,.6);margin-right:10px}
+.src{font:600 9px var(--mono);letter-spacing:.12em;color:var(--dim);margin-top:2px}
+.gmini{display:none}
+@media(max-width:720px){.gmini:not(:empty){display:flex;gap:10px;align-items:center;margin:0 12px 10px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:rgba(3,6,15,.6)}
+ .gmini .ring{width:52px;height:52px}.gmini .ring:after{inset:5px}.gmini .ring span{font-size:15px}
+ .gmini .gm-t{font-weight:700;font-size:13px;line-height:1.3}.gmini .gm-m{font-size:11px;color:#fda4af;margin-top:3px}.gmini a{font-size:11px;color:var(--cy)}
+ .lcd .mhz{font-size:17px}.lcd .ch{font-size:15px}.log{max-height:340px}}
 @media(max-width:1100px){.rp{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.radio{grid-column:1/-1;order:-1}}
 @media(max-width:720px){.rp{grid-template-columns:minmax(0,1fr)}.rp>*{min-width:0}.scen{order:-2!important}.rp-head h1{font-size:24px}.radio{min-height:520px}
  .scen{padding:10px}.scen-list{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none}.sc{min-width:150px;margin:0;flex-direction:column;gap:6px}.sc .d{display:none}
@@ -80,12 +88,14 @@ export function renderRadioPage(esc, { demo = false, user = null, settings = {},
 <header class="rp-head"><div><div class="eyebrow">Class D · Tower &amp; Ground</div><h1>Radio Practice</h1></div><div class="ctxs" id="ctx"></div></header>
 <div class="rp">
   <aside class="glass scen"><h3>SCENARIO</h3><div class="scen-list" id="scen">${scen}</div>
+    <div class="src" id="dataSrc" style="margin:10px 4px 0;line-height:1.5"></div>
     <div class="setup dim" id="setupNote" hidden>Using generic practice values. <a href="/cockpit/settings${q}#airport">Add your airport, facility and callsign</a> to practice your own field.</div></aside>
   <section class="glass radio">
-    <div class="lcd"><div><div class="lab">COM1 · ACTIVE</div><div class="ch" id="freq">—</div></div>
+    <div class="lcd"><div><div class="lab">COM1 · ACTIVE</div><div style="display:flex;align-items:baseline;flex-wrap:wrap"><span class="mhz" id="mhz"></span><span class="ch" id="freq">—</span></div><div class="src" id="freqSrc"></div></div>
       <div class="rx"><span class="led" id="rxLed"></span>RX<span class="led" id="txLed"></span>TX</div></div>
     <div class="cue" id="cue"></div>
     <div class="log" id="log" aria-live="polite"></div>
+    <div class="gmini" id="gmini" aria-live="polite"></div>
     <div class="ptt-row">
       <button type="button" class="ptt" id="ptt" aria-label="Push to talk">PTT</button>
       <div class="say">

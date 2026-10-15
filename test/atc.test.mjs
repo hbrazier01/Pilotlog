@@ -27,7 +27,7 @@ test('active runway is the end most into the wind; nothing hard-coded', () => {
   assert.equal(c.facilityName, 'Springfield');
   assert.equal(c.callsign, 'N738SP');
   assert.equal(c.altimeter, 29.92);
-  assert.deepEqual(c.simulated, []);
+  assert.deepEqual(c.simulated.filter((k) => !['atis', 'taxi', 'exit', 'freq'].includes(k)), []);
 });
 
 test('missing settings fall back to clearly-flagged generic values (no personal defaults)', () => {
@@ -54,7 +54,7 @@ test('tower phraseology: takeoff clearance includes wind, runway, clearance, pat
 
 test('ground taxi phraseology includes hold-short; grader requires it', () => {
   const [st] = scenarioScript(ctx('ground_taxi'));
-  assert.match(st.reply.text, /taxi via Alpha, hold short of runway 20\.$/);
+  assert.match(st.reply.text, /taxi via A, hold short of runway 20\.$/);
   const good = gradeReadback('Runway two zero, taxi via Alpha, hold short runway two zero, Skyhawk eight sierra papa', st);
   assert.ok(good.passed, JSON.stringify(good.missing));
   const bad = gradeReadback('taxi via alpha, eight sierra papa', st);
@@ -96,7 +96,7 @@ test('session flow: missing callsign → say again; missing hold short → contr
   const f = createSession(ctx('full_stop'));
   respond(f, 'Springfield Tower, Skyhawk 8SP, left base runway 20, full stop');
   r = respond(f, 'runway two zero cleared to land eight sierra papa');
-  assert.match(r.tower.text, /turn left at Charlie, contact Ground/);
+  assert.match(r.tower.text, /turn left at C, contact Ground/);
   respond(f, 'left at charlie, over to ground, 8SP');
   assert.ok(f.done);
   assert.equal(towerOpening(createSession(ctx('takeoff'))), null);

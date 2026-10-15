@@ -37,10 +37,20 @@ function renderCtx() {
   const w = ctx.wind.kt < 3 ? 'CALM' : `${String(ctx.wind.dir).padStart(3, '0')}@${ctx.wind.kt}`;
   $('ctx').innerHTML = [
     ['FIELD', ctx.airport || '—', ''], ['RWY', ctx.runway, sim('runway')], ['WIND', w, sim('wind')],
-    ['ALTM', ctx.altimeter.toFixed(2), sim('altimeter')], ['ATIS', sayLetter(ctx.atis).toUpperCase(), ''], ['CALLSIGN', ctx.callsign, sim('callsign')],
+    ['ALTM', ctx.altimeter.toFixed(2), sim('altimeter')], ['ATIS', sayLetter(ctx.atis).toUpperCase(), sim('atis')],
+    ['TAXI', ctx.taxiRoute.join('→'), sim('taxi')], ['TWR', ctx.freqs.tower || '—', sim('freq')], ['GND', ctx.freqs.ground || '—', sim('freq')], ['CALLSIGN', ctx.callsign, sim('callsign')],
   ].map(([k, v, s]) => `<div class="cx">${k}${s}<b>${esc(v)}</b></div>`).join('');
   $('setupNote').hidden = !(ctx.needsSetup || ctx.simulated.includes('callsign'));
+  renderFreq();
+  const src = [ctx.taxiSource ? 'Taxiways © OpenStreetMap contributors (ODbL)' : 'Taxi route SIM (no map data for this field)', ctx.freqs.source ? 'Frequencies: OurAirports' : 'Frequencies SIM', ctx.simulated.includes('atis') ? 'ATIS letter SIM (no D-ATIS)' : 'ATIS: FAA D-ATIS'];
+  $('dataSrc').textContent = src.join(' · ');
+}
+function renderFreq() {
+  const ground = facLabel().endsWith('GROUND');
+  const mhz = ground ? ctx.freqs.ground : ctx.freqs.tower;
+  $('mhz').textContent = mhz || '';
   $('freq').textContent = facLabel();
+  $('freqSrc').textContent = mhz ? `${ctx.freqs.source} · verify on the chart supplement` : 'SIM · frequency not available';
 }
 function renderCue() {
   if (session.done) {
@@ -51,10 +61,13 @@ function renderCue() {
   const st = session.steps[session.i];
   const phaseTxt = session.phase === 'call' ? 'Your call' : 'Read it back';
   $('cue').innerHTML = `<span class="eyebrow">${phaseTxt}</span>${esc(session.phase === 'readback' && st.call ? 'Read back the instruction — include every required item (runway, hold-short, clearance, callsign…).' : st.cue)}${st.example && session.phase === 'call' ? `<details><summary>Show an example call</summary>${esc(st.example)}</details>` : ''}`;
-  $('freq').textContent = facLabel();
+  renderFreq();
 }
 function renderGrade(g) {
   if (!g) return;
+  const colm = g.score === 100 ? 'var(--gr)' : g.score >= 60 ? 'var(--am)' : '#fb7185';
+  const vm = g.kind === 'call' ? (g.passed ? 'Clean initial call.' : `Call missing ${g.missing.length} item${g.missing.length > 1 ? 's' : ''}.`) : g.verdict;
+  $('gmini').innerHTML = `<div class="ring" style="--p:${g.score};--rc:${colm}"><span style="color:${colm}">${g.score}</span></div><div><div class="gm-t">${esc(vm)}</div>${g.missing.length ? `<div class="gm-m">✕ ${esc(g.missing.map((m) => m.label).join(' · '))}</div>` : ''}${g.ideal ? `<div class="gm-m" style="color:var(--cy)">Model: ${esc(g.ideal)}</div>` : ''}<a href="#grade">Full check ↓</a></div>`;
   const col = g.score === 100 ? 'var(--gr)' : g.score >= 60 ? 'var(--am)' : '#fb7185';
   const verdict = g.kind === 'call' ? (g.passed ? 'Clean initial call.' : `Call missing ${g.missing.length} item${g.missing.length > 1 ? 's' : ''}.`) : g.verdict;
   $('grade').innerHTML = `<h3>${g.kind === 'call' ? 'INITIAL CALL CHECK' : 'READBACK CHECK'}</h3>
@@ -66,9 +79,9 @@ function renderGrade(g) {
 function start(id) {
   scenario = id;
   document.querySelectorAll('.sc').forEach((b) => b.classList.toggle('on', b.dataset.id === id));
-  ctx = buildContext({ settings: boot.settings, weather: boot.weather, scenario: id });
+  ctx = buildContext({ settings: boot.settings, weather: boot.weather, scenario: id, airportData: boot.airportData, seed: Number(new URLSearchParams(location.search).get('seed')) || Date.now() });
   session = createSession(ctx);
-  $('log').innerHTML = '';
+  $('log').innerHTML = ''; $('gmini').innerHTML = '';
   $('grade').innerHTML = '<h3>READBACK CHECK</h3><div class="empty">Make your call. Each transmission is checked for the required elements: callsign, runway, clearance, hold-short, altimeter, and more.</div>';
   renderCtx();
   addMsg('sys', `${ctx.facilityName} · runway ${ctx.runway} in use · information ${sayLetter(ctx.atis)}`);
