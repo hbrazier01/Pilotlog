@@ -140,6 +140,14 @@ test('acsSkillStrip percentages and renderReplayPage SAMPLE', () => {
   assert.match(html, /shareBtn/);
   assert.match(html, /cockpit-replay3d\.js/);
   assert.match(html, /Steep turn|Slow flight|Bounced/i);
+  // never-blank viewport: 2D track fallback is server-rendered under the 3D canvas,
+  // and the 3D mount is raced against a timeout that surfaces an error message
+  const i2d = html.indexOf('id="replay2d"');
+  assert.ok(i2d > 0 && i2d < html.indexOf('id="replay3d"'));
+  assert.match(html.slice(i2d, html.indexOf('id="replay3d"')), /<svg[\s\S]*<path d="M/);
+  assert.match(html, /R3D_TIMEOUT_MS/);
+  assert.match(html, /Promise\.race\(\[handle\.ready/);
+  assert.match(html, /3D view unavailable/);
 });
 
 test('empty entries mission map locks first solo', () => {

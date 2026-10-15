@@ -54,7 +54,7 @@ async function loadHeightmap({ z = 12, mobile = false } = {}) {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   const jobs = [];
   for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
-    jobs.push(fetch(`/api/terrain/${z}/${tx}/${ty}.png`)
+    jobs.push(fetch(`/api/terrain/${z}/${tx}/${ty}.png`, typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? { signal: AbortSignal.timeout(8000) } : {})
       .then((r) => { if (!r.ok) throw new Error('tile ' + r.status); return r.blob(); })
       .then((b) => createImageBitmap(b))
       .then((bmp) => {

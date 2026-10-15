@@ -118,6 +118,12 @@ ${chromeCss()}
 .hero-stage{position:absolute;inset:0;background:#05070f}
 .replay3d{position:absolute;inset:0;width:100%;height:100%;opacity:0;transition:opacity .5s;z-index:2}
 .replay3d.on{opacity:1}
+.replay2d{position:absolute;inset:0;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:80px 40px 130px;background:radial-gradient(ellipse at 50% 60%,#14203a,#05070f)}
+.replay2d svg{width:100%;max-width:640px;height:auto;flex:1;min-height:0}
+.replay2d svg path{stroke:#4fe3ff;stroke-width:2.5;fill:none;filter:drop-shadow(0 0 6px #4fe3ff)}
+.r3d-status{order:-1;font:600 11px/1.4 ui-monospace,monospace;letter-spacing:.12em;color:#8fa3c8;text-transform:uppercase}
+.r3d-status.err{color:#ffb35c}
+.replay2d.gone{display:none}
 .hero-hud{position:absolute;inset:0;z-index:3;pointer-events:none;font-family:var(--mono)}
 .hero-hud .chip{position:absolute;background:rgba(3,6,15,.55);border:1px solid rgba(34,211,238,.25);border-radius:8px;padding:8px 10px;font-size:10px;color:#a8b4cc;backdrop-filter:blur(6px)}
 .hero-hud .chip b{color:var(--cy);display:block;font-size:11px;margin-bottom:2px}
@@ -195,6 +201,7 @@ ${renderNav(esc, { active: 'replay', demo, user, timeZone: tz })}
   <div class="col">
     <section class="hero glass" id="hero">
       <div class="hero-stage">
+        <div class="replay2d" id="replay2d">${miniTrackSvg(points, 640, 360)}<div class="r3d-status" id="r3dStatus" role="status">Loading 3D replay…</div></div>
         <canvas class="replay3d" id="replay3d" aria-label="3D flight replay"></canvas>
         <div class="hero-hud">
           <div class="chip chip-tl">
@@ -274,6 +281,7 @@ ${renderNav(esc, { active: 'replay', demo, user, timeZone: tz })}
 <script type="module">
 const TRACK = ${trackJson};
 const DUR = ${JSON.stringify(dur)};
+const R3D_TIMEOUT_MS = 25000;
 
 function fmt(sec){sec=Math.max(0,Math.round(sec));const m=Math.floor(sec/60),s=sec%60;return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');}
 
@@ -293,9 +301,10 @@ let ctl=null;
     if(!gl) throw new Error('no webgl');
     const { mountReplay3d }=await import('/js/cockpit-replay3d.js');
     const handle=mountReplay3d(canvas, TRACK);
-    await handle.ready;
+    await Promise.race([handle.ready, new Promise((_,rej)=>setTimeout(()=>rej(new Error('3D load timed out')),R3D_TIMEOUT_MS))]);
     ctl=handle.controls;
     canvas.classList.add('on');
+    setTimeout(()=>document.getElementById('replay2d')?.classList.add('gone'),600);
     const vb=document.getElementById('viewBtn'); if(vb&&ctl.view) vb.textContent=ctl.view.toUpperCase();
     ctl.onHud(({altFt,gsKt,hdgDeg,t})=>{
       hudAlt.textContent='ALT '+(altFt!=null?Number(altFt).toLocaleString('en-US'):'—')+' FT';
@@ -310,7 +319,8 @@ let ctl=null;
     });
   }catch(err){
     console.warn('[replay]',err);
-    document.getElementById('hudClock').textContent='SVG / 2D fallback';
+    document.getElementById('hudClock').textContent='2D track view';
+    const st=document.getElementById('r3dStatus'); if(st){st.textContent='3D view unavailable ('+(err?.message||'error')+') — showing 2D track';st.classList.add('err');}
   }
 })();
 
