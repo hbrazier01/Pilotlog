@@ -114,7 +114,7 @@ ${chromeCss()}
 .ring>i{width:56px;height:56px;border-radius:50%;background:rgba(3,6,15,.92);display:grid;place-items:center;font:700 14px var(--mono);font-style:normal}
 .next b{display:block;font-size:13px;margin-top:2px}
 .hero{position:relative;min-height:540px;overflow:hidden;flex:1;padding:0}
-.hero-stage{position:absolute;inset:0;background:#12081c}
+.hero-stage{position:absolute;inset:0;background:#05070f}
 .replay3d{position:absolute;inset:0;width:100%;height:100%;opacity:0;transition:opacity .5s;z-index:2}
 .replay3d.on{opacity:1}
 .hero-hud{position:absolute;inset:0;z-index:3;pointer-events:none;font-family:var(--mono)}
@@ -122,7 +122,8 @@ ${chromeCss()}
 .hero-hud .chip b{color:var(--cy);display:block;font-size:11px;margin-bottom:2px}
 .hero-hud .chip .mg{color:var(--mg)}
 .chip-tl{top:14px;left:14px}.chip-tr{top:14px;right:14px;text-align:right}
-.chip-bl{bottom:86px;left:14px}
+.chip-bl{bottom:86px;left:14px;display:flex;gap:8px;align-items:center}
+.view-btn{pointer-events:auto;cursor:pointer;font:700 10px var(--mono);letter-spacing:.08em;color:var(--cy);background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.45);border-radius:999px;padding:6px 10px}
 .compass{width:44px;height:44px;border-radius:50%;border:1px solid rgba(34,211,238,.45);display:grid;place-items:center;color:var(--cy);font:700 12px var(--mono)}
 .playbar{position:absolute;left:12px;right:12px;bottom:12px;z-index:4;pointer-events:auto;padding:10px 12px;display:grid;gap:8px}
 .play-row{display:flex;align-items:center;gap:10px}
@@ -157,7 +158,7 @@ ${chromeCss()}
 .sample-banner{display:inline-flex;align-items:center;gap:6px;font:700 9px var(--mono);letter-spacing:.14em;color:var(--mg);border:1px solid rgba(244,114,208,.45);padding:3px 8px;border-radius:999px;margin-left:8px}
 .terrain-note{font:9px/1.3 var(--mono);color:#56627c;margin-top:6px}
 @media(max-width:1100px){.replay-grid{grid-template-columns:1fr 1fr}.hero{grid-column:1/-1;order:-1;min-height:420px}.acs-strip{grid-template-columns:repeat(3,1fr)}}
-@media(max-width:720px){.replay-grid{grid-template-columns:1fr}.acs-strip{grid-template-columns:1fr 1fr}.hero{min-height:360px}.ev-lab{display:none}}
+@media(max-width:720px){.replay-grid{grid-template-columns:1fr}.acs-strip{grid-template-columns:1fr 1fr}.hero{min-height:480px}.ev-lab{display:none}}
 `;
 
   const next = mission?.nextMilestone;
@@ -205,7 +206,7 @@ ${renderNav(esc, { active: 'replay', demo, user, timeZone: tz })}
             <span id="hudGs">GS — KT · HDG —°</span>
             <div style="margin-top:4px">GPS 3D</div>
           </div>
-          <div class="chip chip-bl"><div class="compass">N</div></div>
+          <div class="chip chip-bl"><div class="compass">N</div><button type="button" class="view-btn" id="viewBtn" aria-label="Toggle camera view">ORBIT</button></div>
         </div>
         <div class="playbar glass">
           <div class="play-row">
@@ -294,6 +295,7 @@ let ctl=null;
     await handle.ready;
     ctl=handle.controls;
     canvas.classList.add('on');
+    const vb=document.getElementById('viewBtn'); if(vb&&ctl.view) vb.textContent=ctl.view.toUpperCase();
     ctl.onHud(({altFt,gsKt,hdgDeg,t})=>{
       hudAlt.textContent='ALT '+(altFt!=null?Number(altFt).toLocaleString('en-US'):'—')+' FT';
       hudGs.textContent='GS '+(gsKt!=null?Math.round(gsKt):'—')+' KT · HDG '+(hdgDeg!=null?Math.round(hdgDeg):'—')+'°';
@@ -311,6 +313,7 @@ let ctl=null;
   }
 })();
 
+document.getElementById('viewBtn')?.addEventListener('click',(ev)=>{ if(!ctl)return; ev.currentTarget.textContent=ctl.toggleView().toUpperCase(); });
 playBtn?.addEventListener('click',()=>{ if(!ctl)return; const on=ctl.toggle(); playBtn.textContent=on?'❚❚':'▶'; });
 scrub?.addEventListener('input',()=>{ if(!ctl)return; ctl.pause(); ctl.seek((+scrub.value)/1000); playBtn.textContent='▶'; });
 speed?.addEventListener('change',()=>ctl?.setSpeed(speed.value));
