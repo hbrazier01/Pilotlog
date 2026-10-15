@@ -56,7 +56,12 @@ test('detectEvents finds steep turn, slow flight, bounce on SAMPLE track', () =>
   const types = new Set(sample.events.map((e) => e.type));
   assert.ok(types.has('steep_turn'), types);
   assert.ok(types.has('slow_flight'), types);
-  assert.ok(types.has('bounced_landing') || types.has('touch_and_go'), types);
+  assert.ok(types.has('bounced_landing'), types);
+  assert.ok(types.has('touch_and_go'), types);
+  assert.ok(types.has('full_stop'), types);
+  const order = sample.events.map((e) => e.type);
+  assert.deepEqual(order, ['steep_turn', 'steep_turn', 'slow_flight', 'touch_and_go', 'bounced_landing', 'full_stop']);
+  for (const e of sample.events.filter((x) => x.type === 'steep_turn')) assert.ok(e.meta.bankDeg >= 40 && e.meta.bankDeg <= 50, e.meta);
   assert.match(formatEventClock(sample.points[0].t, sample.events[0].t), /^\d{2}:\d{2}$/);
 });
 
@@ -153,4 +158,27 @@ test('acsSkillStrip percentages and renderReplayPage SAMPLE', () => {
 test('empty entries mission map locks first solo', () => {
   const map = buildMissionMap([], {});
   assert.equal(map.items.find((i) => i.key === 'firstSolo').status, 'locked');
+});
+
+test('SAMPLE track is smooth, 1 Hz, coherent and starts/ends at the field', () => {
+  const t = buildSampleKapaTrack();
+  const p = t.points;
+  for (let i = 1; i < p.length; i++) {
+    assert.equal(p[i].t - p[i - 1].t, 1000);
+    let dh = Math.abs(p[i].hdgDeg - p[i - 1].hdgDeg); if (dh > 180) dh = 360 - dh;
+    assert.ok(dh <= 13, `heading jump ${dh} at ${i}`);
+    assert.ok(Math.abs(p[i].altFt - p[i - 1].altFt) <= 40, `alt jump at ${i}`);
+  }
+  assert.ok(Math.abs(p[0].altFt - t.fieldElevFt) < 5 && Math.abs(p.at(-1).altFt - t.fieldElevFt) < 5);
+  assert.ok(p.at(-1).gsKt < 5);
+  assert.equal(t.endIso, new Date(p.at(-1).t).toISOString());
+  assert.match(t.dateLabel, /^May 18, 2024/);
+  assert.ok(t.hours > 0.4 && t.hours < 1.0);
+});
+
+test('detectEvents: lone touchdown that decelerates is a full stop, not a bounce', () => {
+  const pts = [];
+  for (let i = 0; i < 40; i++) pts.push({ t: i * 1000, lat: 0, lon: 0, altFt: 5885 + Math.max(0, 200 - i * 10), gsKt: Math.max(0, 65 - Math.max(0, i - 20) * 3), hdgDeg: 170 });
+  const ev = detectEvents(pts, { fieldElevFt: 5885 });
+  assert.deepEqual(ev.map((e) => e.type), ['full_stop']);
 });

@@ -165,7 +165,8 @@ ${chromeCss()}
 .sample-banner{display:inline-flex;align-items:center;gap:6px;font:700 9px var(--mono);letter-spacing:.14em;color:var(--mg);border:1px solid rgba(244,114,208,.45);padding:3px 8px;border-radius:999px;margin-left:8px}
 .terrain-note{font:9px/1.3 var(--mono);color:#56627c;margin-top:6px}
 @media(max-width:1100px){.replay-grid{grid-template-columns:1fr 1fr}.hero{grid-column:1/-1;order:-1;min-height:420px}.acs-strip{grid-template-columns:repeat(3,1fr)}}
-@media(max-width:720px){.replay-grid{grid-template-columns:1fr}.acs-strip{grid-template-columns:1fr 1fr}.hero{min-height:480px}.ev-lab{display:none}}
+@media(max-width:1100px){.col-hero{grid-column:1/-1;order:-1}}
+@media(max-width:720px){.replay-grid{grid-template-columns:1fr}.col-hero{order:-1}.acs-strip{grid-template-columns:1fr 1fr}.hero{min-height:0;display:flex;flex-direction:column;flex:none}.hero-stage{position:relative;inset:auto;height:62vh;min-height:440px;max-height:600px}.playbar{position:static;padding:10px 12px 12px;border-radius:0;border-left:0;border-right:0;border-bottom:0}.chip-bl{bottom:14px}.terrain-note{display:none}.ev-lab{display:none}.hero-hud .chip{padding:6px 8px;font-size:9px}.chip-tl{max-width:56%}.chip-tl>.mg:first-of-type{display:none}.chip-tr{max-width:38%}.play-row{flex-wrap:wrap}.scrub{order:5;flex-basis:100%}}
 `;
 
   const next = mission?.nextMilestone;
@@ -198,7 +199,7 @@ ${renderNav(esc, { active: 'replay', demo, user, timeZone: tz })}
     </section>
   </div>
 
-  <div class="col">
+  <div class="col col-hero">
     <section class="hero glass" id="hero">
       <div class="hero-stage">
         <div class="replay2d" id="replay2d">${miniTrackSvg(points, 640, 360)}<div class="r3d-status" id="r3dStatus" role="status">Loading 3D replay…</div></div>
@@ -216,6 +217,7 @@ ${renderNav(esc, { active: 'replay', demo, user, timeZone: tz })}
           </div>
           <div class="chip chip-bl"><div class="compass">N</div><button type="button" class="view-btn" id="viewBtn" aria-label="Toggle camera view">ORBIT</button></div>
         </div>
+      </div>
         <div class="playbar glass">
           <div class="play-row">
             <button type="button" class="play-btn" id="playBtn" aria-label="Play/Pause">▶</button>
@@ -233,9 +235,8 @@ ${renderNav(esc, { active: 'replay', demo, user, timeZone: tz })}
               </select>
             </label>
           </div>
-          <div class="terrain-note">Terrain: stylized Terrarium elevation. Photoreal satellite draping needs a Cesium/Google (or ArcGIS) key — Esri World Imagery terms do not clearly permit commercial product use without a subscription.</div>
+          <div class="terrain-note"><span class="tn-long">Terrain: stylized Terrarium elevation. Photoreal satellite draping needs a Cesium/Google (or ArcGIS) key — Esri World Imagery terms do not clearly permit commercial product use without a subscription.</span></div>
         </div>
-      </div>
     </section>
   </div>
 

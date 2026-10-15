@@ -79,27 +79,48 @@ export function detectEvents(points, { fieldElevFt = 5885 } = {}) {
     }
   }
 
-  // Touch-and-go / bounced landing: alt within 80 ft of field, GS drops then rises
-  for (let i = 2; i < points.length - 2; i++) {
-    const p = points[i];
-    const alt = p.altFt ?? 99999;
-    const agl = alt - fieldElevFt;
-    if (agl > 80 || agl < -50) continue;
-    const gs = p.gsKt ?? 0;
-    const prevGs = points[i - 1].gsKt ?? gs;
-    const nextGs = points[i + 1].gsKt ?? gs;
-    const next2 = points[i + 2].gsKt ?? nextGs;
-    // bounce / T&G: low GS near field then accelerate
-    if (gs <= 55 && next2 >= gs + 12 && (prevGs >= gs - 5)) {
-      const kind = next2 >= 70 ? 'touch_and_go' : 'bounced_landing';
-      events.push({
-        type: kind,
-        label: kind === 'touch_and_go' ? 'Touch-and-go' : 'Bounced landing',
-        t: p.t,
-        index: i,
-        meta: { altFt: alt, gsKt: Math.round(gs) },
-      });
-      i += 8; // debounce
+  // Landings: find ground-contact runs (≤ 20 ft AGL, ≤ 75 kt), then classify.
+  //  - airborne gap < 12 s that stays below 60 ft AGL between two contacts → bounced landing
+  //  - contact followed by climb above 300 ft AGL → touch-and-go
+  //  - final contact that decelerates below 20 kt → full-stop landing
+  const onGnd = points.map((p) => {
+    const agl = (p.altFt ?? 99999) - fieldElevFt;
+    return agl <= 20 && agl > -60 && (p.gsKt ?? 0) <= 75;
+  });
+  const runs = [];
+  for (let i = 0; i < points.length; i++) {
+    if (!onGnd[i]) continue;
+    let j = i;
+    while (j + 1 < points.length && onGnd[j + 1]) j++;
+    runs.push({ a: i, b: j });
+    i = j;
+  }
+  // skip the initial departure run (starts slow and only accelerates)
+  const isTakeoffOnly = (r) => r.a === 0 || (points[r.a].gsKt ?? 0) < 30;
+  for (let k = 0; k < runs.length; k++) {
+    const r = runs[k];
+    if (isTakeoffOnly(r)) continue;
+    const nxt = runs[k + 1];
+    const p = points[r.a];
+    const meta = { altFt: p.altFt, gsKt: Math.round(p.gsKt ?? 0) };
+    if (nxt) {
+      const gapSec = (points[nxt.a].t - points[r.b].t) / 1000;
+      let maxAgl = -Infinity;
+      for (let i = r.b; i <= nxt.a; i++) maxAgl = Math.max(maxAgl, (points[i].altFt ?? 0) - fieldElevFt);
+      if (gapSec < 12 && maxAgl < 60) {
+        events.push({ type: 'bounced_landing', label: 'Bounced landing', t: p.t, index: r.a, meta: { ...meta, bounceFt: Math.round(maxAgl) } });
+        runs[k + 1] = { a: r.a, b: nxt.b, second: nxt.a };
+        // fall through to classify the merged run on next iteration (as a continuation)
+        runs[k + 1].continuation = true;
+        continue;
+      }
+    }
+    const minGs = Math.min(...points.slice(r.a, r.b + 1).map((q) => q.gsKt ?? 0));
+    if (minGs < 20) {
+      if (!r.continuation) events.push({ type: 'full_stop', label: 'Full-stop landing', t: p.t, index: r.a, meta });
+      else { const q = points[r.second]; events.push({ type: 'full_stop', label: 'Full-stop landing', t: q.t, index: r.second, meta: { altFt: q.altFt, gsKt: Math.round(q.gsKt ?? 0) } }); }
+    } else if (!r.continuation) {
+      events.push({ type: 'touch_and_go', label: 'Touch-and-go', t: p.t, index: r.a, meta });
     }
   }
 

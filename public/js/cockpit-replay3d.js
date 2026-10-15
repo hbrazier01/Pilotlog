@@ -298,7 +298,18 @@ function makeCurtain(samples, prog) {
   return g;
 }
 
-const EVENT_COLORS = { steep_turn: '#f472d0', slow_flight: '#fbbf24', bounced_landing: '#fb7185' };
+const EVENT_COLORS = { steep_turn: '#f472d0', slow_flight: '#fbbf24', bounced_landing: '#fb7185', touch_and_go: '#34f5a0', full_stop: '#22d3ee' };
+// Merge events that would stack on the same spot: back-to-back steep turns, bounce + full stop.
+export function clusterEvents(events, t0) {
+  const out = [];
+  for (const e of events || []) {
+    const prev = out[out.length - 1];
+    if (prev && prev.type === 'steep_turn' && e.type === 'steep_turn' && e.t - prev.lastT < 120000) { prev.count++; prev.lastT = e.t; prev.label = `Steep turns ×${prev.count}`; continue; }
+    if (prev && prev.type === 'bounced_landing' && e.type === 'full_stop' && e.t - prev.lastT < 60000) { prev.lastT = e.t; continue; }
+    out.push({ ...e, count: 1, lastT: e.t });
+  }
+  return out;
+}
 
 function makeEventPin(pos, ground, label, sub, color) {
   const g = new THREE.Group();
@@ -437,7 +448,7 @@ export function mountReplay3d(canvas, track) {
 
     // events as glowing labeled pins
     const pins = [];
-    for (const e of track.events || []) {
+    for (const e of clusterEvents(track.events, t0)) {
       const i = Number.isInteger(e.index) ? e.index : uToParam((e.t - t0) / Math.max(1, t1 - t0)).idx;
       const p = points[Math.max(0, Math.min(points.length - 1, i))];
       const pos = vecs[Math.max(0, Math.min(vecs.length - 1, i))].clone();
@@ -489,6 +500,7 @@ export function mountReplay3d(canvas, track) {
     }
     resize();
     window.addEventListener('resize', resize);
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => resize()).observe(canvas);
     const io = new IntersectionObserver((en) => { visible = en.some((e) => e.isIntersecting); }, { threshold: 0.05 });
     io.observe(canvas);
 
@@ -500,15 +512,25 @@ export function mountReplay3d(canvas, track) {
     const baseAz = Math.atan2(-SUN_DIR.z, -SUN_DIR.x); // direction opposite sun on XZ
     const corners = [];
     for (let i = 0; i < vecs.length; i += 4) corners.push(vecs[i]);
+    // Portrait screens: look down the track's long axis so the whole flight fits the tall frame
+    let axisAz = baseAz;
+    {
+      let sxx = 0, szz = 0, sxz = 0;
+      for (const c of corners) { const dx = c.x - center.x, dz = c.z - center.z; sxx += dx * dx; szz += dz * dz; sxz += dx * dz; }
+      const ang = 0.5 * Math.atan2(2 * sxz, sxx - szz);
+      const opts = [ang, ang + Math.PI];
+      axisAz = opts.reduce((b, a) => (Math.abs(Math.atan2(Math.sin(a - baseAz), Math.cos(a - baseAz))) < Math.abs(Math.atan2(Math.sin(b - baseAz), Math.cos(b - baseAz))) ? a : b));
+    }
     function orbitTarget(acPos) {
-      const az = baseAz + Math.sin(orbitT * 0.05) * 0.3;
+      const az0 = mobile && aspect < 0.9 ? axisAz : baseAz;
+      const az = az0 + Math.sin(orbitT * 0.05) * 0.3;
       const el = (mobile ? 30 : 25) * DEG;
       const d = new THREE.Vector3(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el));
       const look = center.clone().lerp(acPos, 0.15);
       const f = d.clone().negate();
       const r = new THREE.Vector3().crossVectors(f, up).normalize();
       const uu = new THREE.Vector3().crossVectors(r, f).normalize();
-      const tanY = Math.tan((camera.fov * DEG) / 2) * (mobile ? 0.8 : 0.98), tanX = tanY * aspect;
+      const tanY = Math.tan((camera.fov * DEG) / 2) * (mobile ? 0.92 : 0.98), tanX = tanY * aspect;
       let D = 600;
       for (const c of corners) {
         const v = c.clone().sub(look);
@@ -517,6 +539,7 @@ export function mountReplay3d(canvas, track) {
       }
       // nudge framing so terrain/horizon fill the upper third like a cinematic establishing shot
       look.addScaledVector(uu, -D * 0.015); // keep track clear of the bottom scrubber overlay
+      if (mobile && aspect < 1) D *= 1.15; // portrait: labels + ribbon need side margin
       orbitD = D;
       return { pos: look.clone().addScaledVector(d, D), look };
     }
@@ -551,7 +574,7 @@ export function mountReplay3d(canvas, track) {
       prog.value = param;
 
       const chase = view === 'chase';
-      const orbitSc = Math.max(acScale, orbitD * (mobile ? 0.024 : 0.022)); // ~12% of frame width
+      const orbitSc = Math.max(acScale, orbitD * (mobile ? 0.028 : 0.024)); // ~12% of frame width
       const sc = THREE.MathUtils.lerp(aircraft.scale.x, chase ? 6 : orbitSc, snap ? 1 : Math.min(1, dt * 3));
       aircraft.scale.setScalar(sc); acGlow.scale.setScalar(sc * (chase ? 5 : 6)); acGlow.material.opacity = chase ? 0.08 : 0.4;
       glowTube.visible = coreTube.visible = !chase; chaseTube.visible = chase;
@@ -564,7 +587,7 @@ export function mountReplay3d(canvas, track) {
 
       // pin pulse + label sizing
       const now = performance.now() / 1000;
-      const lh = mobile ? 0.05 : 0.036;
+      const lh = mobile ? 0.04 : 0.034;
       for (const pin of pins) {
         const near = Math.abs(pin.userData.u - uu) < 0.04;
         const s = 1 + 0.25 * Math.sin(now * 3 + pin.userData.u * 20) + (near ? 0.6 : 0);
