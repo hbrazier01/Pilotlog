@@ -57,6 +57,10 @@ export function renderSettingsPage(esc, { demo = false, user = null, settings, r
   <section class="glass card" id="airport">
     <h2><span class="dot"></span>Home airport</h2>
     ${field('ICAO / FAA id', `<input name="homeAirport" maxlength="4" placeholder="e.g. KPAO" style="text-transform:uppercase" value="${esc(s.homeAirport || '')}"${ro}>`, 'Drives live METAR/TAF, runway crosswind and the 3D map origin.')}
+    <div class="row2">
+      ${field('Tower / facility name', `<input name="towerName" maxlength="40" placeholder="e.g. Palo Alto" value="${esc(s.towerName || '')}"${ro}>`, 'How you address ATC: “___ Tower”, “___ Ground”. Radio Practice uses it.')}
+      ${field('Runways (optional)', `<input name="runways" maxlength="60" placeholder="e.g. 13/31, 4/22" value="${esc(s.runways || '')}"${ro}>`, 'Overrides the runway list from the FAA airport feed.')}
+    </div>
     ${field('Time zone', `<select name="timeZone"${ro}>${tzOpts}</select>`, 'Cockpit clock. Defaults to this device.')}
   </section>
 
@@ -64,6 +68,7 @@ export function renderSettingsPage(esc, { demo = false, user = null, settings, r
     <h2><span class="dot"></span>Instructor & aircraft</h2>
     ${field('Instructor name', `<input name="instructorName" maxlength="40" placeholder="Your CFI" value="${esc(s.instructorName || '')}"${ro}>`, 'Used in the "Brief my instructor" message.')}
     ${field('Aircraft type', `<select name="aircraftType"${ro}><option value="">Choose…</option>${AIRCRAFT_TYPES.map((t) => `<option value="${t.id}"${s.aircraftType === t.id ? ' selected' : ''}>${esc(t.label)}</option>`).join('')}</select>`, 'Picks the 3D model in the cockpit and flight replay.')}
+    ${field('Callsign (N-number)', `<input name="tailNumber" maxlength="7" placeholder="e.g. N12345" style="text-transform:uppercase" value="${esc(s.tailNumber || '')}"${ro}>`, 'Used by Radio Practice — ATC will call you by this.')}
     ${field('Aircraft label / tail', `<input name="aircraftLabel" maxlength="40" placeholder="e.g. N12345 or C172S" value="${esc(s.aircraftLabel || rates.aircraftLabel || '')}"${ro}>`)}
     <div class="row2">
       ${field('Aircraft $/hr (wet)', `<input name="aircraftRate" type="number" min="0" max="9999" step="1" value="${esc(String(rates.aircraftRate ?? ''))}"${ro}>`)}
@@ -102,7 +107,7 @@ f.addEventListener('submit',async(e)=>{e.preventDefault();msg.className='mono';m
  if(v!=='none'&&!/^https:\\/\\//i.test(url.value.trim())){msg.className='mono err';msg.textContent='Booking link must start with https://';url.focus();return;}
  const n=(k)=>f[k].value===''?undefined:Number(f[k].value);
  const body={scheduling:{provider:v,url:url.value.trim(),label:f.label.value},homeAirport:f.homeAirport.value.trim().toUpperCase(),
-  timeZone:f.timeZone.value,instructorName:f.instructorName.value,aircraftType:f.aircraftType.value,aircraftLabel:f.aircraftLabel.value,
+  timeZone:f.timeZone.value,instructorName:f.instructorName.value,aircraftType:f.aircraftType.value,aircraftLabel:f.aircraftLabel.value,tailNumber:f.tailNumber.value.trim().toUpperCase(),towerName:f.towerName.value,runways:f.runways.value,
   limits:{maxCrosswindKt:n('maxCrosswindKt'),maxGustKt:n('maxGustKt'),maxWindKt:n('maxWindKt'),minCeilingFt:n('minCeilingFt'),minVisibilitySm:n('minVisibilitySm')},
   rates:{aircraftRate:n('aircraftRate'),instructorRate:n('instructorRate')}};
  try{const r=await fetch('/api/cockpit/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});

@@ -37,7 +37,7 @@ const esc = (s) =>
 test('concept nav has Dashboard through Settings', () => {
   assert.deepEqual(
     COCKPIT_NAV.map((n) => n.label),
-    ['Dashboard', 'Replay', 'Flight Plan', 'Logbook', 'Training', 'ACS', 'Resources', 'Settings']
+    ['Dashboard', 'Replay', 'Radio', 'Flight Plan', 'Logbook', 'Training', 'ACS', 'Resources', 'Settings']
   );
 });
 
