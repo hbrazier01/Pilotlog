@@ -55,17 +55,18 @@ function glowLineMat(color, opacity = 0.95) {
 /** Sleek low-wing DA40: tapered wings, T-tail, canopy — cyan translucent + wire glow. */
 function makeDa40() {
   const g = new THREE.Group();
+  const CYAN = 0x22d3ee;
   const fill = new THREE.MeshBasicMaterial({
-    color: 0x67e8f9,
+    color: CYAN,
     transparent: true,
-    opacity: 0.16,
+    opacity: 0.28,
     depthWrite: false,
     side: THREE.DoubleSide,
   });
   const edgeMat = new THREE.LineBasicMaterial({
-    color: 0xa5f3fc,
+    color: CYAN,
     transparent: true,
-    opacity: 0.95,
+    opacity: 1,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
@@ -96,13 +97,13 @@ function makeDa40() {
   // T-tail
   part(new THREE.BoxGeometry(0.55, 0.9, 0.055), [-1.85, 0.58, 0]);
   part(new THREE.BoxGeometry(0.42, 0.04, 1.55), [-1.85, 1.02, 0]);
-  // Prop disc
+  // Subtle prop disc (thin cyan ring, low opacity — not a big white circle)
   const prop = new THREE.Mesh(
-    new THREE.RingGeometry(0.08, 0.55, 24),
+    new THREE.RingGeometry(0.22, 0.38, 28),
     new THREE.MeshBasicMaterial({
-      color: 0x67e8f9,
+      color: CYAN,
       transparent: true,
-      opacity: 0.35,
+      opacity: 0.14,
       side: THREE.DoubleSide,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
@@ -111,7 +112,7 @@ function makeDa40() {
   prop.position.set(1.95, 0.08, 0);
   prop.rotation.y = Math.PI / 2;
   g.add(prop);
-  const light = new THREE.PointLight(0x22d3ee, 1.8, 800, 2);
+  const light = new THREE.PointLight(0x22d3ee, 2.4, 900, 2);
   light.position.set(0, 0.4, 0);
   g.add(light);
   return g;
@@ -119,28 +120,28 @@ function makeDa40() {
 
 function makeGate(label, lit) {
   const g = new THREE.Group();
-  const col = lit ? 0xf472d0 : 0x6b7280;
-  const intens = lit ? 1 : 0.25;
+  const col = lit ? 0xf472d0 : 0x4b5568;
+  const intens = lit ? 1 : 0.2;
   const bar = (w, h, d, x, y, z) => {
     const mesh = new THREE.Mesh(
       new THREE.BoxGeometry(w, h, d),
       new THREE.MeshBasicMaterial({
         color: col,
         transparent: true,
-        opacity: lit ? 0.85 : 0.35,
+        opacity: lit ? 0.9 : 0.22,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       })
     );
     mesh.position.set(x, y, z);
     g.add(mesh);
-    // outer glow shell
+    // outer glow shell (lit only — keeps unachieved gates quiet)
     const shell = new THREE.Mesh(
       new THREE.BoxGeometry(w * 1.35, h * 1.15, d * 1.35),
       new THREE.MeshBasicMaterial({
         color: col,
         transparent: true,
-        opacity: lit ? 0.18 : 0.06,
+        opacity: lit ? 0.22 : 0.03,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       })
@@ -149,8 +150,8 @@ function makeGate(label, lit) {
     g.add(shell);
   };
 
-  const W = 300; // opening width
-  const H = 420; // opening height
+  const W = 260; // opening width
+  const H = 380; // opening height
   const T = 14; // thickness
   // left / right posts
   bar(T, H + T * 2, T, 0, H / 2, W / 2);
@@ -178,15 +179,16 @@ function makeGate(label, lit) {
   ctx.textBaseline = 'middle';
   ctx.shadowColor = lit ? '#f472d0' : '#000';
   ctx.shadowBlur = lit ? 24 : 0;
-  ctx.fillStyle = lit ? '#fce7f3' : '#94a3b8';
+  ctx.fillStyle = lit ? '#fce7f3' : '#64748b';
   ctx.fillText(String(label).toUpperCase(), 256, 64);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(
     new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, blending: THREE.AdditiveBlending })
   );
-  sprite.scale.set(480, 120, 1);
-  sprite.position.set(0, H + 130, 0);
+  sprite.scale.set(400, 100, 1);
+  sprite.position.set(0, H + 140, 0);
+  sprite.userData.isGateLabel = true;
   g.add(sprite);
 
   // Face gates toward camera path (local +X is forward through gate)
@@ -464,37 +466,56 @@ export function mountSynth3d(canvas, gateState) {
     grid2.material.transparent = true;
     scene.add(grid2);
 
-    // Path + tall rectangular gates west toward Front Range
+    // Path curves south→north while running west so gates read L→R and recede
     const gateDefs = gateState.gates || [
       { key: 'solo', label: 'Solo', done: false },
       { key: 'xc', label: 'XC', done: false },
       { key: 'night', label: 'Night', done: false },
       { key: 'checkride', label: 'Checkride', done: false },
     ];
-    // Build a long curve; place aircraft near start, all four gates ahead and spaced for readability
+    // Anchor path through 4 well-separated gate waypoints (L→R + depth),
+    // then densify for a smooth dashed curve.
+    const gateWaypoints = [
+      { lon: KAPA.lon - 0.05, lat: KAPA.lat - 0.055, altAdd: 320 }, // SOLO near
+      { lon: KAPA.lon - 0.14, lat: KAPA.lat - 0.02, altAdd: 400 },  // XC
+      { lon: KAPA.lon - 0.25, lat: KAPA.lat + 0.025, altAdd: 500 }, // NIGHT
+      { lon: KAPA.lon - 0.38, lat: KAPA.lat + 0.07, altAdd: 620 },  // CHECKRIDE far
+    ];
     const pathPts = [];
-    const samples = 8;
-    for (let i = 0; i < samples; i++) {
-      const t = i / (samples - 1);
-      const lon = KAPA.lon - 0.01 - t * 0.32;
-      const lat = KAPA.lat + 0.018 * Math.sin(t * Math.PI) - t * 0.006;
-      const e = sampleElev(hm, lon, lat);
-      const alt = e + 300 + t * 220;
-      const p = toLocal(lon, lat, alt);
+    // start just before SOLO (aircraft)
+    {
+      const e = sampleElev(hm, KAPA.lon - 0.02, KAPA.lat - 0.065);
+      const p = toLocal(KAPA.lon - 0.02, KAPA.lat - 0.065, e + 280);
       pathPts.push(new THREE.Vector3(p.x, p.y, p.z));
     }
-    const curve = new THREE.CatmullRomCurve3(pathPts, false, 'catmullrom', 0.45);
+    for (const wp of gateWaypoints) {
+      const e = sampleElev(hm, wp.lon, wp.lat);
+      const p = toLocal(wp.lon, wp.lat, e + wp.altAdd);
+      pathPts.push(new THREE.Vector3(p.x, p.y, p.z));
+    }
+    // extend past last gate toward peaks
+    {
+      const last = gateWaypoints[gateWaypoints.length - 1];
+      const e = sampleElev(hm, last.lon - 0.08, last.lat + 0.03);
+      const p = toLocal(last.lon - 0.08, last.lat + 0.03, e + 700);
+      pathPts.push(new THREE.Vector3(p.x, p.y, p.z));
+    }
+    const curve = new THREE.CatmullRomCurve3(pathPts, false, 'catmullrom', 0.2);
     scene.add(makeDashedPath(curve));
 
-    // Gate U positions along curve (all ahead of aircraft)
-    const gateUs = [0.16, 0.32, 0.48, 0.64];
+    // Gates sit exactly on the 4 waypoints (indices 1..4 of pathPts)
     for (let i = 0; i < gateDefs.length; i++) {
       const lit = !!gateDefs[i].done || i === gateState.current;
       const gate = makeGate(gateDefs[i].label, lit);
-      const gu = gateUs[i];
-      const gp = curve.getPoint(gu);
-      const tan = curve.getTangent(gu).normalize();
+      const gp = pathPts[i + 1].clone();
+      const next = pathPts[i + 2] || gp.clone().add(new THREE.Vector3(-1, 0, 0));
+      const tan = next.clone().sub(gp).normalize();
       gate.position.copy(gp);
+      gate.scale.setScalar(1.05 - i * 0.05);
+      // Larger labels on farther gates so text stays readable
+      gate.traverse((o) => {
+        if (o.isSprite) o.scale.multiplyScalar(1 + i * 0.15);
+      });
       gate.lookAt(gp.clone().add(tan));
       gate.rotateY(Math.PI / 2);
       scene.add(gate);
@@ -527,12 +548,37 @@ export function mountSynth3d(canvas, gateState) {
       .add(tangent.clone().multiplyScalar(1100))
       .add(up.clone().multiplyScalar(-120));
 
+    // Desktop-only subtle Unreal bloom (skipped on mobile for perf)
+    let composer = null;
+    if (!mobile) {
+      try {
+        const { EffectComposer } = await import('/js/pp/EffectComposer.js');
+        const { RenderPass } = await import('/js/pp/RenderPass.js');
+        const { UnrealBloomPass } = await import('/js/pp/UnrealBloomPass.js');
+        const { OutputPass } = await import('/js/pp/OutputPass.js');
+        renderer.toneMapping = THREE.NoToneMapping;
+        composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+        const bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.45, 0.35, 0.82);
+        composer.addPass(bloom);
+        composer.addPass(new OutputPass());
+      } catch (err) {
+        console.warn('[cockpit] bloom disabled:', err);
+        composer = null;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      }
+    }
+
     function resize() {
       const w = canvas.clientWidth || canvas.parentElement?.clientWidth || 640;
       const h = canvas.clientHeight || canvas.parentElement?.clientHeight || 420;
       renderer.setSize(w, h, false);
       camera.aspect = w / Math.max(1, h);
       camera.updateProjectionMatrix();
+      if (composer) {
+        composer.setSize(w, h);
+        composer.setPixelRatio(renderer.getPixelRatio());
+      }
     }
     resize();
     window.addEventListener('resize', resize);
@@ -545,7 +591,6 @@ export function mountSynth3d(canvas, gateState) {
     );
     io.observe(canvas);
 
-    // Initial look
     camera.lookAt(lookTarget);
 
     function frame() {
@@ -561,7 +606,8 @@ export function mountSynth3d(canvas, gateState) {
         aircraft.position.y = pos.y + Math.sin(t * 0.7) * 5;
         aircraft.rotation.z = Math.sin(t * 0.35) * 0.03;
       }
-      renderer.render(scene, camera);
+      if (composer) composer.render();
+      else renderer.render(scene, camera);
     }
     frame();
 
