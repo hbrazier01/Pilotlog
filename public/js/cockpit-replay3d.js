@@ -214,6 +214,13 @@ function glowTex() {
   return _glow;
 }
 
+function ringTex() {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const x = c.getContext('2d'); x.strokeStyle = '#fff'; x.lineWidth = 7;
+  x.setLineDash([22, 12]); x.beginPath(); x.arc(64, 64, 52, 0, Math.PI * 2); x.stroke();
+  x.setLineDash([]); x.lineWidth = 3; x.beginPath(); x.arc(64, 64, 38, 0, Math.PI * 2); x.stroke();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
 function labelSprite(text, sub, color) {
   const c = document.createElement('canvas');
   const W = 360, H = 96; c.width = W; c.height = H;
@@ -467,6 +474,9 @@ export function mountReplay3d(canvas, track) {
     scene.add(aircraft);
     const acGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: 0x22d3ee, transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending }));
     acGlow.scale.setScalar(acScale * 16); scene.add(acGlow);
+    // screen-space locator ring: constant on-screen size so the aircraft is findable at any zoom
+    const marker = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTex(), color: 0x7ff3ff, transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: false }));
+    marker.scale.setScalar(mobile ? 0.11 : 0.09); marker.renderOrder = 30; scene.add(marker);
 
     // framing
     const box = new THREE.Box3().setFromPoints(vecs);
@@ -521,27 +531,67 @@ export function mountReplay3d(canvas, track) {
       const opts = [ang, ang + Math.PI];
       axisAz = opts.reduce((b, a) => (Math.abs(Math.atan2(Math.sin(a - baseAz), Math.cos(a - baseAz))) < Math.abs(Math.atan2(Math.sin(b - baseAz), Math.cos(b - baseAz))) ? a : b));
     }
-    function orbitTarget(acPos) {
-      const az0 = mobile && aspect < 0.9 ? axisAz : baseAz;
-      const az = az0 + Math.sin(orbitT * 0.05) * 0.3;
-      const el = (mobile ? 30 : 25) * DEG;
+    // Fit-to-frame: iteratively project the point set and solve for look + distance so the
+    // whole bounding set lands inside the viewport (both FOV axes), with padding for labels/UI.
+    const fitCam = new THREE.PerspectiveCamera();
+    const _v = new THREE.Vector3();
+    function fitView(pts, az, el, pad) {
+      fitCam.fov = camera.fov; fitCam.aspect = aspect; fitCam.near = 10; fitCam.far = 400000; fitCam.updateProjectionMatrix();
       const d = new THREE.Vector3(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el));
-      const look = center.clone().lerp(acPos, 0.15);
       const f = d.clone().negate();
       const r = new THREE.Vector3().crossVectors(f, up).normalize();
       const uu = new THREE.Vector3().crossVectors(r, f).normalize();
-      const tanY = Math.tan((camera.fov * DEG) / 2) * (mobile ? 0.92 : 0.98), tanX = tanY * aspect;
-      let D = 600;
-      for (const c of corners) {
-        const v = c.clone().sub(look);
-        const vf = v.dot(f);
-        D = Math.max(D, Math.abs(v.dot(r)) / tanX - vf, Math.abs(v.dot(uu)) / tanY - vf);
+      const bb = new THREE.Box3().setFromPoints(pts);
+      const look = bb.getCenter(new THREE.Vector3());
+      const tanY = Math.tan((camera.fov * DEG) / 2), tanX = tanY * aspect;
+      let D = 400;
+      for (const c of pts) { const v = c.clone().sub(look); const vf = v.dot(f); D = Math.max(D, Math.abs(v.dot(r)) / tanX - vf, Math.abs(v.dot(uu)) / tanY - vf); }
+      const availX = 2 - pad.l - pad.r, availY = 2 - pad.t - pad.b;
+      const cx = (pad.l - pad.r) / 2, cy = (pad.b - pad.t) / 2; // desired NDC centre of content
+      for (let it = 0; it < 16; it++) {
+        fitCam.position.copy(look).addScaledVector(d, D); fitCam.lookAt(look); fitCam.updateMatrixWorld();
+        let x0 = 9, x1 = -9, y0 = 9, y1 = -9;
+        for (const c of pts) { _v.copy(c).project(fitCam); if (_v.z > 1) { x0 = -9; continue; } x0 = Math.min(x0, _v.x); x1 = Math.max(x1, _v.x); y0 = Math.min(y0, _v.y); y1 = Math.max(y1, _v.y); }
+        const k = Math.max((x1 - x0) / availX, (y1 - y0) / availY, 0.05);
+        // shift look so content centre sits at desired centre, then scale distance
+        look.addScaledVector(r, (((x0 + x1) / 2) - cx) * D * tanX).addScaledVector(uu, (((y0 + y1) / 2) - cy) * D * tanY);
+        D = Math.max(300, D * k);
+        if (Math.abs(k - 1) < 0.01 && Math.abs((x0 + x1) / 2 - cx) < 0.01 && Math.abs((y0 + y1) / 2 - cy) < 0.01) break;
       }
-      // nudge framing so terrain/horizon fill the upper third like a cinematic establishing shot
-      look.addScaledVector(uu, -D * 0.015); // keep track clear of the bottom scrubber overlay
-      if (mobile && aspect < 1) D *= 1.15; // portrait: labels + ribbon need side margin
-      orbitD = D;
-      return { pos: look.clone().addScaledVector(d, D), look };
+      return { pos: look.clone().addScaledVector(d, D), look, D };
+    }
+    const portrait = () => aspect < 0.9;
+    function padFor() {
+      // top: room for labels that sit above pins; bottom: scrubber overlay (desktop) / compass chip (mobile)
+      return portrait() ? { l: 0.1, r: 0.1, t: 0.3, b: 0.3 } : { l: 0.1, r: 0.1, t: 0.24, b: mobile ? 0.3 : 0.42 };
+    }
+    // Airport-biased set: the ground half of the flight (pattern work) gets duplicated weight
+    const fitPts = samplesPts();
+    function samplesPts() { const out = []; for (let i = 0; i < vecs.length; i += 2) out.push(vecs[i]); out.push(vecs[vecs.length - 1]); return out; }
+    for (const pin of pins) fitPts.push(pin.userData.lab.position);
+    let orbitCache = null;
+    function orbitTarget() {
+      const az0 = portrait() ? axisAz : baseAz;
+      const az = az0 + Math.sin(orbitT * 0.05) * 0.12;
+      const el = (portrait() ? 58 : 34) * DEG; // portrait: look more top-down so the long track fits the tall frame
+      const key = `${aspect.toFixed(3)}|${az.toFixed(3)}`;
+      if (!orbitCache || orbitCache.key !== key) orbitCache = { key, ...fitView(fitPts, az, el, padFor()) };
+      orbitD = orbitCache.D;
+      return orbitCache;
+    }
+    // Focus: frame the current maneuver (±~2.5 min of track) — makes the pattern / turns legible
+    function focusTarget(uu) {
+      const tNow = t0 + uu * (t1 - t0), win = 150000;
+      const pts = [];
+      for (let i = 0; i < points.length; i++) if (Math.abs(points[i].t - tNow) <= win) pts.push(vecs[i]);
+      if (pts.length < 3) pts.push(...vecs.slice(0, 3));
+      // keep a minimum footprint so slow segments don't zoom absurdly close
+      const c = new THREE.Box3().setFromPoints(pts).getCenter(new THREE.Vector3());
+      pts.push(c.clone().add(new THREE.Vector3(900, 0, 900)), c.clone().add(new THREE.Vector3(-900, 0, -900)));
+      const az = (portrait() ? axisAz : baseAz) + Math.sin(orbitT * 0.05) * 0.12;
+      const t = fitView(pts, az, (portrait() ? 55 : 38) * DEG, padFor());
+      orbitD = t.D;
+      return t;
     }
     function chaseTarget(acPos, tan) {
       const flat = new THREE.Vector3(tan.x, 0, tan.z).normalize();
@@ -551,6 +601,16 @@ export function mountReplay3d(canvas, track) {
       return { pos, look };
     }
 
+    // Keep labels inside the viewport by moving their anchor (sprite.center) instead of clipping.
+    const _p = new THREE.Vector3(), M = 0.03;
+    function clampLabel(lab) {
+      camera.updateMatrixWorld();
+      _p.copy(lab.position).project(camera);
+      const W = lab.scale.x * camera.projectionMatrix.elements[0], H = lab.scale.y * camera.projectionMatrix.elements[5];
+      const cmin = 1 - (1 - M - _p.x) / W, cmax = (_p.x + 1 - M) / W;
+      lab.center.x = THREE.MathUtils.clamp(0.5, Math.min(cmin, cmax), Math.max(cmin, cmax));
+      lab.center.y = _p.y + 1.15 * H > 1 - M ? 1.15 : -0.15; // flip below the pin near the top edge
+    }
     function place(uu, dt = 0, snap = false) {
       const { param, idx } = uToParam(uu);
       const pos = curve.getPoint(param);
@@ -574,13 +634,14 @@ export function mountReplay3d(canvas, track) {
       prog.value = param;
 
       const chase = view === 'chase';
-      const orbitSc = Math.max(acScale, orbitD * (mobile ? 0.028 : 0.024)); // ~12% of frame width
+      const orbitSc = Math.max(acScale, orbitD * (view === 'focus' ? 0.011 : 0.014)); // readable at full-flight zoom
       const sc = THREE.MathUtils.lerp(aircraft.scale.x, chase ? 6 : orbitSc, snap ? 1 : Math.min(1, dt * 3));
-      aircraft.scale.setScalar(sc); acGlow.scale.setScalar(sc * (chase ? 5 : 6)); acGlow.material.opacity = chase ? 0.08 : 0.4;
+      aircraft.scale.setScalar(sc); acGlow.scale.setScalar(sc * (chase ? 5 : 9)); acGlow.material.opacity = chase ? 0.08 : 0.5;
+      marker.visible = !chase; marker.position.copy(pos); marker.material.rotation = performance.now() / 900;
       glowTube.visible = coreTube.visible = !chase; chaseTube.visible = chase;
       for (const pin of pins) pin.userData.halo.visible = !chase;
-      const tgt = view === 'chase' ? chaseTarget(pos, tan) : orbitTarget(pos);
-      const k = snap || !camInit ? 1 : 1 - Math.exp(-dt * (view === 'chase' ? 2.2 : 1.4));
+      const tgt = view === 'chase' ? chaseTarget(pos, tan) : view === 'focus' ? focusTarget(uu) : orbitTarget();
+      const k = snap || !camInit ? 1 : 1 - Math.exp(-dt * (view === 'chase' ? 2.2 : view === 'focus' ? 1.0 : 1.4));
       camPos.lerp(tgt.pos, k); camLook.lerp(tgt.look, k);
       if (!camInit || snap) { camPos.copy(tgt.pos); camLook.copy(tgt.look); camInit = true; }
       camera.position.copy(camPos); camera.lookAt(camLook);
@@ -593,7 +654,9 @@ export function mountReplay3d(canvas, track) {
         const s = 1 + 0.25 * Math.sin(now * 3 + pin.userData.u * 20) + (near ? 0.6 : 0);
         pin.userData.ring.scale.setScalar(s);
         pin.userData.halo.scale.setScalar(220 * (near ? 1.8 : 1));
-        pin.userData.lab.scale.set(lh * pin.userData.lab.userData.aspect / Math.max(0.6, Math.min(2.2, aspect)) * 1.0, lh, 1);
+        const lab = pin.userData.lab;
+        lab.scale.set(lh * lab.userData.aspect / Math.max(0.6, Math.min(2.2, aspect)) * 1.0, lh, 1);
+        clampLabel(lab);
       }
 
       const p = points[idx];
@@ -605,7 +668,7 @@ export function mountReplay3d(canvas, track) {
     const startU = Number(new URLSearchParams(location.search).get('replayU'));
     if (Number.isFinite(startU) && startU > 0) { u = Math.min(1, startU); }
     const qv = new URLSearchParams(location.search).get('view');
-    if (qv === 'chase') view = 'chase';
+    if (qv === 'chase' || qv === 'focus') view = qv;
     place(u, 0, true);
 
     function frame() {
@@ -631,8 +694,8 @@ export function mountReplay3d(canvas, track) {
       setSpeed(s) { speed = Math.max(0.25, Math.min(8, Number(s) || 1)); },
       seek(uu) { u = Math.max(0, Math.min(1, uu)); place(u, 0); },
       seekTime(t) { u = Math.max(0, Math.min(1, (t - t0) / Math.max(1, t1 - t0))); place(u, 0); },
-      setView(v) { view = v === 'chase' ? 'chase' : 'orbit'; return view; },
-      toggleView() { view = view === 'chase' ? 'orbit' : 'chase'; return view; },
+      setView(v) { view = ['chase', 'focus'].includes(v) ? v : 'orbit'; return view; },
+      toggleView() { view = view === 'orbit' ? 'focus' : view === 'focus' ? 'chase' : 'orbit'; return view; },
       get view() { return view; },
       onTime(fn) { listeners.time.push(fn); },
       onHud(fn) { listeners.hud.push(fn); },
