@@ -1,10 +1,11 @@
 /**
- * Flight replay 3D — cyan track ribbon + DA40 over Terrarium terrain (KAPA).
+ * Flight replay 3D — cyan track ribbon + DA40 over Terrarium terrain (ORIGIN).
  * Stylized terrain (no Esri imagery — commercial use needs ArcGIS/Cesium key).
  */
 import * as THREE from '/js/three.module.min.js';
 
-const KAPA = { lat: 39.5701, lon: -104.8484, elev: 1791 };
+/** Scene origin (home airport or track start). Default: sample area. */
+let ORIGIN = { lat: 39.5701, lon: -104.8484, elev: 1791 };
 const DEG = Math.PI / 180;
 const VERT_EXAG = 3.2;
 
@@ -29,14 +30,14 @@ function terrariumElev(r, g, b) {
   return r * 256 + g + b / 256 - 32768;
 }
 
-/** Local ENU meters relative to KAPA (x=east, y=up, z=south). */
+/** Local ENU meters relative to ORIGIN (x=east, y=up, z=south). */
 function toLocal(lon, lat, elevM) {
   const R = 6378137;
-  const dLon = (lon - KAPA.lon) * DEG;
-  const dLat = (lat - KAPA.lat) * DEG;
-  const x = dLon * Math.cos(KAPA.lat * DEG) * R;
+  const dLon = (lon - ORIGIN.lon) * DEG;
+  const dLat = (lat - ORIGIN.lat) * DEG;
+  const x = dLon * Math.cos(ORIGIN.lat * DEG) * R;
   const z = -dLat * R;
-  const y = (elevM - KAPA.elev) * VERT_EXAG;
+  const y = (elevM - ORIGIN.elev) * VERT_EXAG;
   return { x, y, z };
 }
 
@@ -117,7 +118,7 @@ function makeDa40() {
 
 
 async function loadHeightmap({ z = 10, mobile = false } = {}) {
-  const k = lonLatToTile(KAPA.lon, KAPA.lat, z);
+  const k = lonLatToTile(ORIGIN.lon, ORIGIN.lat, z);
   // Bias west (+mountains) and a bit north/south for Front Range ridge
   const tx0 = Math.floor(k.x) - 3;
   const tx1 = Math.floor(k.x) + 1;
@@ -240,8 +241,8 @@ function buildTerrainMesh(hm) {
 }
 
 function sampleElev(hm, lon, lat) {
-  const p = toLocal(lon, lat, KAPA.elev);
-  let best = KAPA.elev;
+  const p = toLocal(lon, lat, ORIGIN.elev);
+  let best = ORIGIN.elev;
   let bestD = Infinity;
   const { elev, cols, rows } = hm;
   for (let iy = 0; iy < rows; iy += 2) {
@@ -261,7 +262,7 @@ function sampleElev(hm, lon, lat) {
 
 
 function toLocalFt(lon, lat, altFt) {
-  return toLocal(lon, lat, (altFt || KAPA.elev * 3.28084) / 3.28084);
+  return toLocal(lon, lat, (altFt || ORIGIN.elev * 3.28084) / 3.28084);
 }
 
 function buildTrackCurve(points) {
@@ -292,6 +293,13 @@ function makeCyanRibbon(curve) {
  * @param {{ points: any[], events?: any[] }} track
  */
 export function mountReplay3d(canvas, track) {
+  {
+    const o = track?.origin;
+    const p0 = (track?.points || [])[0];
+    const fe = Number(track?.fieldElevFt);
+    if (o && Number.isFinite(o.lat)) ORIGIN = { lat: o.lat, lon: o.lon, elev: Number(o.elev) || 0 };
+    else if (p0) ORIGIN = { lat: p0.lat, lon: p0.lon, elev: Number.isFinite(fe) ? fe / 3.28084 : (Number(p0.altFt) || 0) / 3.28084 };
+  }
   let disposed = false, raf = 0, visible = true;
   let renderer, scene, camera, aircraft, curve, composer = null;
   let playing = true, speed = 1, u = 0;

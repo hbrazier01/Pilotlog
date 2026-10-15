@@ -1,7 +1,9 @@
 /**
  * Cockpit Dashboard routes.
  *   GET  /cockpit (+ pages)   glass-cockpit UI (?demo=1 for SAMPLE)
- *   GET  /api/weather/kapa    Live METAR+TAF + go/no-go
+ *   GET  /api/weather         Live METAR+TAF + go/no-go for the user's home airport
+ *   GET  /api/weather/kapa    (compat) KAPA weather
+ *   GET  /cockpit/settings    Settings UI;  GET/PUT /api/cockpit/settings
  *   CRUD /api/cockpit/entries File-backed logbook (no wallet gate)
  */
 import { renderCockpitPage } from './cockpitView.mjs';
@@ -21,7 +23,9 @@ import {
 } from './lib/cockpit/entries.mjs';
 import { computeCheckride } from './lib/checkride/index.mjs';
 import { demoData } from './lib/checkride/insights.mjs';
-import { getKapaWeather } from './lib/weather/fetch.mjs';
+import { getKapaWeather, getStationWeather } from './lib/weather/fetch.mjs';
+import { settingsFor, writeSettings, bookingAction, sanitizeSettings, readSettings } from './lib/cockpit/settings.mjs';
+import { renderSettingsPage } from './lib/cockpit/settingsPage.mjs';
 import { parseTileParams, terrariumUrl } from './lib/weather/terrain.mjs';
 import { createCheckrideStore } from './checkrideRoutes.mjs';
 import { cockpitUser, DEMO_USER } from './lib/cockpit/profile.mjs';
@@ -58,16 +62,51 @@ export function registerCockpitRoutes(app, { dataDir, readEntries, escapeHtml, p
     if (demo) {
       const d = demoData();
       const cr = computeCheckride(d.entries, d.store);
-      const weather = await getKapaWeather({ demo: true });
-      const briefing = instructorBriefing(cr);
-      return { demo: true, entries: d.entries, cr, weather, briefing, user: DEMO_USER };
+      const weather = await getStationWeather({ demo: true });
+      const settings = settingsFor({ demo: true });
+      const briefing = instructorBriefing(cr, { instructorName: settings.instructorName });
+      return { demo: true, entries: d.entries, cr, weather, briefing, user: DEMO_USER, settings };
     }
     const entries = cockpitEntries();
     const cr = state(undefined, entries);
-    const weather = await getKapaWeather({ demo: false });
-    const briefing = instructorBriefing(cr);
-    return { demo: false, entries, cr, weather, briefing, user: cockpitUser({ demo: false, dataDir }) };
+    const settings = settingsFor({ demo: false, dataDir });
+    const weather = await getStationWeather({ icao: settings.homeAirport, force: req.query.refresh === '1' });
+    const briefing = instructorBriefing(cr, { instructorName: settings.instructorName });
+    return { demo: false, entries, cr, weather, briefing, user: cockpitUser({ demo: false, dataDir }), settings };
   }
+
+  app.get('/api/weather', async (req, res) => {
+    const demo = req.query.demo === '1';
+    const icao = demo ? '' : settingsFor({ dataDir }).homeAirport;
+    res.json(await getStationWeather({ icao, demo, force: req.query.refresh === '1' }));
+  });
+
+  app.get('/api/cockpit/settings', (req, res) => {
+    const demo = req.query.demo === '1';
+    res.json({ demo, settings: settingsFor({ demo, dataDir }), rates: demo ? demoData().store.rates : store.read().rates });
+  });
+
+  app.put('/api/cockpit/settings', (req, res) => {
+    try {
+      const body = req.body || {};
+      // Validate everything first so a bad field never half-saves.
+      const next = sanitizeSettings(body, readSettings(dataDir));
+      let rates = null;
+      if (body.rates && (body.rates.aircraftRate !== undefined || body.rates.instructorRate !== undefined)) {
+        const cur = store.read();
+        const a = body.rates.aircraftRate ?? cur.rates?.aircraftRate;
+        const i = body.rates.instructorRate ?? cur.rates?.instructorRate;
+        if (!(Number(a) >= 0 && Number(a) < 10000) || !(Number(i) >= 0 && Number(i) < 10000)) throw new Error('rates must be numbers between 0 and 10000');
+        rates = { aircraftRate: Number(a), instructorRate: Number(i), aircraftLabel: next.aircraftLabel || cur.rates?.aircraftLabel || '' };
+        cur.rates = rates;
+        store.write(cur);
+      }
+      const saved = writeSettings(dataDir, next);
+      res.json({ ok: true, settings: saved, rates });
+    } catch (err) {
+      res.status(400).json({ ok: false, error: String(err.message || err) });
+    }
+  });
 
   app.get('/api/weather/kapa', async (req, res) => {
     const demo = req.query.demo === '1';
@@ -174,6 +213,7 @@ export function registerCockpitRoutes(app, { dataDir, readEntries, escapeHtml, p
           weather: ctx.weather,
           briefing: ctx.briefing,
           user: ctx.user,
+          settings: ctx.settings,
         })
       );
     } catch (err) {
@@ -190,6 +230,8 @@ export function registerCockpitRoutes(app, { dataDir, readEntries, escapeHtml, p
   app.get('/cockpit/training', htmlPage((esc, ctx) => renderTrainingPage(esc, ctx)));
   app.get('/cockpit/acs', htmlPage((esc, ctx) => renderAcsPage(esc, ctx)));
   app.get('/cockpit/resources', htmlPage((esc, ctx) => renderResourcesPage(esc, ctx)));
+  app.get('/cockpit/settings', htmlPage((esc, ctx) =>
+    renderSettingsPage(esc, { ...ctx, rates: ctx.demo ? demoData().store.rates : store.read().rates })));
 
   app.get('/cockpit/replay', async (req, res) => {
     try {
@@ -216,7 +258,8 @@ export function registerCockpitRoutes(app, { dataDir, readEntries, escapeHtml, p
             bestCrosswind: { runway: '17L', crosswindKt: 10 },
           }
         : ctx.weather;
-      const call = todaysCall(wxForCall, ctx.cr);
+      const call = todaysCall(wxForCall, ctx.cr, ctx.settings?.limits);
+      call.booking = bookingAction(ctx.settings, { demo: ctx.demo });
       const strip = acsSkillStrip(ctx.cr?.acs);
       res.type('html').send(
         renderReplayPage(escapeHtml, {
@@ -227,6 +270,8 @@ export function registerCockpitRoutes(app, { dataDir, readEntries, escapeHtml, p
           call,
           acsStrip: strip,
           cr: ctx.cr,
+          settings: ctx.settings,
+          station: ctx.weather?.station || null,
         })
       );
     } catch (err) {

@@ -7,36 +7,38 @@ import { ACS_STATUSES } from '../checkride/acs.mjs';
 
 const usd = () => '';
 
-export function renderFlightPlanPage(esc, { demo = false, weather = null, user = null } = {}) {
+export function renderFlightPlanPage(esc, { demo = false, weather = null, user = null, settings = null } = {}) {
   const wx = weather || {};
   const go = wx.goNoGo || {};
   const metar = wx.metar?.raw || '—';
   const taf = wx.taf?.raw || '—';
+  const st = wx.station || null;
+  const icao = st?.icao || '';
+  const home = icao || 'Home';
+  const ac = settings?.aircraftLabel || '';
+  const rw = (st?.runways || []).map((r) => r.id).join(', ');
+  const needs = !icao;
   return (
-    shellStart({ title: 'Flight Plan', active: 'flight-plan', demo, escapeHtml: esc, user }) +
+    shellStart({ title: 'Flight Plan', active: 'flight-plan', demo, escapeHtml: esc, user, timeZone: settings?.timeZone }) +
     `<section class="glass" style="padding:20px">
-  <div class="eyebrow">KAPA · Local practice area</div>
-  <h1 style="font-size:26px;margin:8px 0 6px;letter-spacing:-.02em">Centennial local training plan</h1>
-  <p class="dim" style="max-width:62ch;margin-bottom:18px">VFR practice in the KAPA Class D / Denver Class B shelf. Stay clear of DEN final unless coordinated. This plan is for local dual/solo pattern and airwork — not an IFR filing.</p>
-  <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:14px">
+  <div class="eyebrow">${esc(home)} · Local practice area</div>
+  <h1 style="font-size:26px;margin:8px 0 6px;letter-spacing:-.02em">${esc(st?.name ? st.name.replace(/\b\w+/g, (w) => w[0] + w.slice(1).toLowerCase()) : 'Local')} training plan</h1>
+  <p class="dim" style="max-width:62ch;margin-bottom:18px">${needs
+    ? 'Set your home airport in <a href="/cockpit/settings#airport">Settings</a> to see live weather and runways here.'
+    : `Local dual/solo pattern and airwork from ${esc(icao)}${rw ? ` (runways ${esc(rw)})` : ''}. Check the sectional for airspace around your practice area — this is not an IFR filing.`}</p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px">
     <div class="glass" style="padding:16px;background:rgba(0,0,0,.25)">
       <div class="eyebrow">Route</div>
       <table class="grid" style="margin-top:8px">
         <tr><th>Leg</th><th>From</th><th>To</th><th>Notes</th></tr>
-        <tr><td class="mono">1</td><td>KAPA</td><td>Practice area SE</td><td>Climb runway heading, remain below B shelf</td></tr>
-        <tr><td class="mono">2</td><td>Area SE</td><td>Area SE</td><td>Steep turns / slow flight / stalls as briefed</td></tr>
-        <tr><td class="mono">3</td><td>Area SE</td><td>KAPA</td><td>Return via published VFR landmark; call tower 10 NM</td></tr>
+        <tr><td class="mono">1</td><td>${esc(home)}</td><td>Practice area</td><td>Depart per local procedures; remain clear of overlying airspace</td></tr>
+        <tr><td class="mono">2</td><td>Practice area</td><td>Practice area</td><td>Steep turns / slow flight / stalls as briefed</td></tr>
+        <tr><td class="mono">3</td><td>Practice area</td><td>${esc(home)}</td><td>Return via a published VFR landmark; get ATIS/AWOS early</td></tr>
       </table>
-      <div class="eyebrow" style="margin-top:16px">Frequencies</div>
-      <table class="grid">
-        <tr><td>ATIS</td><td class="mono">135.975</td></tr>
-        <tr><td>Ground</td><td class="mono">121.8</td></tr>
-        <tr><td>Tower</td><td class="mono">118.9</td></tr>
-        <tr><td>DEN App (if needed)</td><td class="mono">126.45</td></tr>
-      </table>
+      <p class="dim" style="font-size:11px;margin-top:12px">Frequencies: use the current Chart Supplement for ${esc(home)}.</p>
     </div>
     <div class="glass" style="padding:16px;background:rgba(0,0,0,.25)">
-      <div class="eyebrow">Weather snapshot · KAPA</div>
+      <div class="eyebrow">Weather snapshot · ${esc(home)}</div>
       <div style="margin:10px 0"><span class="pill ${go.decision === 'GO' ? 'go' : go.decision === 'CAUTION' ? 'caut' : go.decision === 'NO-GO' ? 'nogo' : 'dim'}">${esc(go.decision || 'UNKNOWN')}</span>
       <span class="dim mono" style="margin-left:8px">${esc((go.reasons || []).slice(0, 2).join(' · '))}</span></div>
       <div class="eyebrow">METAR</div>
@@ -48,14 +50,15 @@ export function renderFlightPlanPage(esc, { demo = false, weather = null, user =
   </div>
   <div class="glass" style="padding:16px;margin-top:14px;background:rgba(0,0,0,.2)">
     <div class="eyebrow">Alternates & fuel</div>
-    <p style="margin-top:8px">Primary alternate: <b>KBJC</b> · Secondary: <b>KFTG</b>. Plan ≥ 45 min day VFR reserve. DA40 fuel burn ~10–12 gph cruise — confirm POH.</p>
+    <p style="margin-top:8px">Pick a primary and secondary alternate within range. Plan ≥ 30 min day / 45 min night VFR reserve (§91.151)${ac ? ` and confirm ${esc(ac)} fuel burn in the POH` : ' and confirm fuel burn in your POH'}.</p>
   </div>
 </section>` +
     shellEnd()
   );
 }
 
-export function renderLogbookPage(esc, { demo = false, entries = [], user = null } = {}) {
+export function renderLogbookPage(esc, { demo = false, entries = [], user = null, settings = null } = {}) {
+  const homeIcao = settings?.homeAirport || '';
   const tot = entryTotals(entries);
   const q = demoQ(demo);
   const rows = [...entries]
@@ -81,15 +84,15 @@ export function renderLogbookPage(esc, { demo = false, entries = [], user = null
   <div class="eyebrow">Add flight</div>
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:10px">
     <label class="dim">Date<input name="date" type="date" required></label>
-    <label class="dim">Aircraft<input name="aircraftId" placeholder="N272DS" value="N272DS"></label>
-    <label class="dim">From<input name="from" value="KAPA"></label>
-    <label class="dim">To<input name="to" value="KAPA"></label>
+    <label class="dim">Aircraft<input name="aircraftId" placeholder="N12345"></label>
+    <label class="dim">From<input name="from" placeholder="ICAO" value="${esc(homeIcao)}"></label>
+    <label class="dim">To<input name="to" placeholder="ICAO" value="${esc(homeIcao)}"></label>
     <label class="dim">Total hrs<input name="totalTime" type="number" step="0.1" min="0" max="24" required></label>
     <label class="dim">Dual<input name="dual" type="number" step="0.1" min="0"></label>
     <label class="dim">Solo<input name="solo" type="number" step="0.1" min="0"></label>
     <label class="dim">Night<input name="night" type="number" step="0.1" min="0"></label>
     <label class="dim">XC<input name="xc" type="number" step="0.1" min="0"></label>
-    <label class="dim" style="grid-column:span 3">Remarks<input name="remarks" placeholder="Pattern work with Giselle"></label>
+    <label class="dim" style="grid-column:span 3">Remarks<input name="remarks" placeholder="Pattern work with my CFI"></label>
   </div>
   <button class="btn" style="margin-top:12px" type="submit">Save flight</button>
   <span id="saveMsg" class="dim mono" style="margin-left:10px"></span>
@@ -115,7 +118,7 @@ document.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',as
 }));`;
 
   return (
-    shellStart({ title: 'Logbook', active: 'logbook', demo, escapeHtml: esc, user }) +
+    shellStart({ title: 'Logbook', active: 'logbook', demo, escapeHtml: esc, user, timeZone: settings?.timeZone }) +
     `<section class="glass" style="padding:20px">
   <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
     <div><div class="eyebrow">Logbook</div><h1 style="font-size:26px;margin:6px 0">Flight entries</h1></div>
@@ -140,7 +143,7 @@ document.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',as
   );
 }
 
-export function renderTrainingPage(esc, { demo = false, cr = null, briefing = null, user = null } = {}) {
+export function renderTrainingPage(esc, { demo = false, cr = null, briefing = null, user = null, settings = null } = {}) {
   const lessons = [
     { n: '01', title: 'Preflight & taxi flow', tags: ['PA.II', 'Ground'], status: 'done' },
     { n: '02', title: 'Normal & crosswind takeoffs/landings', tags: ['PA.IV'], status: 'done' },
@@ -166,11 +169,11 @@ export function renderTrainingPage(esc, { demo = false, cr = null, briefing = nu
     .join('');
 
   return (
-    shellStart({ title: 'Training', active: 'training', demo, escapeHtml: esc, user }) +
+    shellStart({ title: 'Training', active: 'training', demo, escapeHtml: esc, user, timeZone: settings?.timeZone }) +
     `<section class="glass" style="padding:20px">
   <div class="eyebrow">Training syllabus</div>
   <h1 style="font-size:26px;margin:6px 0 8px">Lesson plan</h1>
-  <p class="dim" style="margin-bottom:14px">Suggested sequence for Private ASEL at KAPA. Next focus from your ACS: ${
+  <p class="dim" style="margin-bottom:14px">Suggested sequence for Private ASEL. Next focus from your ACS: ${
     focus.length ? focus.map((f) => esc(f.text)).join(', ') : 'log flights to personalize'
   }.</p>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">${cards}</div>
@@ -179,7 +182,7 @@ export function renderTrainingPage(esc, { demo = false, cr = null, briefing = nu
   );
 }
 
-export function renderAcsPage(esc, { demo = false, cr = null, user = null } = {}) {
+export function renderAcsPage(esc, { demo = false, cr = null, user = null, settings = null } = {}) {
   const areas = cr?.acs?.areas || [];
   const dis = demo ? 'disabled' : '';
   const html = areas
@@ -214,7 +217,7 @@ document.querySelectorAll('select[data-task]').forEach(s=>s.addEventListener('ch
 }));`;
 
   return (
-    shellStart({ title: 'ACS', active: 'acs', demo, escapeHtml: esc, user }) +
+    shellStart({ title: 'ACS', active: 'acs', demo, escapeHtml: esc, user, timeZone: settings?.timeZone }) +
     `<section class="glass" style="padding:20px">
   <div class="eyebrow">${esc(cr?.acs?.standard || 'FAA-S-ACS-6C')}</div>
   <h1 style="font-size:26px;margin:6px 0 8px">Airman Certification Standards</h1>
@@ -225,7 +228,7 @@ document.querySelectorAll('select[data-task]').forEach(s=>s.addEventListener('ch
   );
 }
 
-export function renderResourcesPage(esc, { demo = false, user = null } = {}) {
+export function renderResourcesPage(esc, { demo = false, user = null, settings = null } = {}) {
   const links = [
     { title: 'Private Pilot ACS (FAA-S-ACS-6C)', href: 'https://www.faa.gov/training_testing/testing/acs', note: 'Airman Certification Standards' },
     { title: 'Pilot’s Handbook of Aeronautical Knowledge (PHAK)', href: 'https://www.faa.gov/regulations_policies/handbooks_manuals/aviation/phak', note: 'FAA-H-8083-25' },
@@ -233,7 +236,7 @@ export function renderResourcesPage(esc, { demo = false, user = null } = {}) {
     { title: 'Aeronautical Information Manual (AIM)', href: 'https://www.faa.gov/air_traffic/publications/atpubs/aim_html/', note: 'Procedures & phraseology' },
     { title: '14 CFR Part 61 — Certification', href: 'https://www.ecfr.gov/current/title-14/chapter-I/subchapter-D/part-61', note: '§61.109 aeronautical experience' },
     { title: 'aviationweather.gov', href: 'https://aviationweather.gov/', note: 'METAR / TAF / GFA' },
-    { title: 'Chart Supplement SW (KAPA)', href: 'https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dafd/', note: 'Airport remarks & procedures' },
+    { title: 'Chart Supplement (your airport)', href: 'https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dafd/', note: 'Airport remarks, frequencies & procedures' },
   ];
   const cards = links
     .map(
@@ -244,7 +247,7 @@ export function renderResourcesPage(esc, { demo = false, user = null } = {}) {
     )
     .join('');
   return (
-    shellStart({ title: 'Resources', active: 'resources', demo, escapeHtml: esc, user }) +
+    shellStart({ title: 'Resources', active: 'resources', demo, escapeHtml: esc, user, timeZone: settings?.timeZone }) +
     `<section class="glass" style="padding:20px">
   <div class="eyebrow">Resources</div>
   <h1 style="font-size:26px;margin:6px 0 14px">FAA references</h1>

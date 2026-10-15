@@ -1,6 +1,6 @@
 /**
  * Cockpit Dashboard — bold glass-cockpit layout matching the "unlimited" concept.
- * Center hero: three.js + Terrarium terrain with SVG fallback. Live weather via /api/weather/kapa.
+ * Center hero: three.js + Terrarium terrain with SVG fallback. Live weather for the user's home airport.
  */
 import { readinessScore, projectCheckride } from './lib/checkride/insights.mjs';
 import { cockpitGates, acsTiles, logbookTimeline, progressBars } from './lib/checkride/cockpit.mjs';
@@ -59,8 +59,29 @@ function fuelGauge(spent, remaining) {
   </svg>`;
 }
 
+
+/** HUD labels for the user's home airport (from weather.station). Escaped. */
+export function stationLabels(station, esc = (x) => String(x ?? '')) {
+  if (!station || !station.icao) {
+    return { icao: 'HOME', sub: 'SET AIRPORT IN SETTINGS', long: 'NO HOME AIRPORT SET', origin: null };
+  }
+  const elev = Number.isFinite(station.elevFt) ? `${Number(station.elevFt).toLocaleString('en-US')} FT` : '';
+  const rw = (station.runways || []).slice(0, 2).map((r) => r.id).join(' · ');
+  const sub = [elev, rw ? `RWY ${rw}` : ''].filter(Boolean).join(' · ') || '—';
+  const name = String(station.name || '').toUpperCase();
+  const origin = Number.isFinite(station.lat) && Number.isFinite(station.lon)
+    ? { lat: station.lat, lon: station.lon, elev: Number.isFinite(station.elevFt) ? station.elevFt / 3.28084 : 0 }
+    : null;
+  return {
+    icao: esc(station.icao),
+    sub: esc(sub),
+    long: esc([station.icao, name].filter(Boolean).join(' ') + (elev ? ` · ${elev} MSL` : '')),
+    origin,
+  };
+}
+
 /** Stylized synthetic-vision hero: Front Range silhouette + DA40 + magenta gates. */
-function synthVision(gates) {
+function synthVision(gates, st = stationLabels(null)) {
   const n = gates.gates.length;
   const W = 720,
     H = 420;
@@ -157,8 +178,8 @@ function synthVision(gates) {
       <g class="hud" font-family="ui-monospace,SF Mono,Menlo,monospace" fill="#e6edf7">
         <g transform="translate(16 16)">
           <rect width="150" height="52" rx="8" fill="rgba(3,6,15,.55)" stroke="rgba(34,211,238,.25)"/>
-          <text x="12" y="20" font-size="11" fill="#22d3ee" letter-spacing="1.5">KAPA</text>
-          <text x="12" y="38" font-size="10" fill="#7d8aa5">6,283 FT · RWY 17L/35R</text>
+          <text x="12" y="20" font-size="11" fill="#22d3ee" letter-spacing="1.5">${st.icao}</text>
+          <text x="12" y="38" font-size="10" fill="#7d8aa5">${st.sub}</text>
         </g>
         <g transform="translate(${W - 166} 16)">
           <rect width="150" height="52" rx="8" fill="rgba(3,6,15,.55)" stroke="rgba(34,211,238,.25)"/>
@@ -167,7 +188,7 @@ function synthVision(gates) {
         </g>
         <g transform="translate(16 ${H - 48})">
           <rect width="220" height="32" rx="8" fill="rgba(3,6,15,.55)" stroke="rgba(34,211,238,.2)"/>
-          <text x="12" y="21" font-size="10" fill="#a8b4cc">KAPA CENTENNIAL · 6,283 FT MSL</text>
+          <text x="12" y="21" font-size="10" fill="#a8b4cc">${st.long}</text>
         </g>
         <g transform="translate(${W / 2 - 70} ${H - 48})">
           <rect width="140" height="32" rx="8" fill="rgba(3,6,15,.55)" stroke="rgba(244,114,208,.3)"/>
@@ -209,7 +230,9 @@ function goDial(decision) {
 <div class="go-caption">GO / NO-GO</div>`;
 }
 
-export function renderCockpitPage(cr, esc, { entries = [], demo = false, weather = null, briefing = null, user = null } = {}) {
+export function renderCockpitPage(cr, esc, { entries = [], demo = false, weather = null, briefing = null, user = null, settings = null } = {}) {
+  const st = stationLabels(weather?.station, esc);
+  const acLabel = settings?.aircraftLabel || cr.costs.rates.aircraftLabel || '';
   const score = readinessScore(cr);
   const proj = projectCheckride(cr, entries);
   const bars = progressBars(cr);
@@ -505,7 +528,7 @@ nav.top a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 
 <linearGradient id="fuelg" x1="0" x2="1"><stop offset="0" stop-color="#34f5a0"/><stop offset=".55" stop-color="#fbbf24"/><stop offset="1" stop-color="#f472d0"/></linearGradient>
 </defs></svg>
 <div class="page">
-${renderNav(esc, { active: 'dashboard', demo, user })}
+${renderNav(esc, { active: 'dashboard', demo, user, timeZone: settings?.timeZone || '' })}
 
 <div class="grid">
   <div class="col">
@@ -528,12 +551,12 @@ ${renderNav(esc, { active: 'dashboard', demo, user })}
   <div class="col col-center">
     <section class="hero glass" id="hero">
       <div class="hero-stage">
-        <div class="synth-fallback">${synthVision(gates)}</div>
-        <canvas class="synth3d" id="synth3d" aria-label="3D synthetic vision of KAPA and the Front Range"></canvas>
+        <div class="synth-fallback">${synthVision(gates, st)}</div>
+        <canvas class="synth3d" id="synth3d" aria-label="3D synthetic vision of ${st.icao}"></canvas>
         <div class="hero-hud" aria-hidden="true">
-          <div class="chip chip-tl"><b>KAPA</b>6,283 FT · RWY 17L/35R</div>
+          <div class="chip chip-tl"><b>${st.icao}</b>${st.sub}</div>
           <div class="chip chip-tr"><b>TRK 031° · ALT 7,500</b>VSI −200 FPM</div>
-          <div class="chip chip-bl">KAPA CENTENNIAL · 6,283 FT MSL</div>
+          <div class="chip chip-bl">${st.long}</div>
           <div class="chip chip-bc">HDG 032° · GS 96</div>
         </div>
         <div class="hero-loading" id="heroLoad">LOADING TERRAIN…</div>
@@ -544,7 +567,7 @@ ${renderNav(esc, { active: 'dashboard', demo, user })}
   <div class="col">
     <section class="wx glass" id="wx">
       <div class="wx-h">
-        <span class="eyebrow">Live Weather · KAPA</span>
+        <span class="eyebrow">Live Weather · ${st.icao}</span>${weather?.needsSetup ? `<a class="mono" style="font-size:10px" href="/cockpit/settings#airport">SET HOME AIRPORT →</a>` : ''}
         <span class="wx-meta mono dim"><span id="utcClock">— Z</span>
           <button type="button" class="icon-btn" id="wxRefresh" title="Refresh weather" aria-label="Refresh weather">↻</button>
         </span>
@@ -559,7 +582,7 @@ ${renderNav(esc, { active: 'dashboard', demo, user })}
     </section>
 
     <section class="brief glass">
-      <div class="slip"><span>AI INSTRUCTOR BRIEFING <span class="ai-badge">AI</span></span><span>${esc(cr.costs.rates.aircraftLabel || 'DA40')}</span></div>
+      <div class="slip"><span>AI INSTRUCTOR BRIEFING <span class="ai-badge">AI</span></span><span>${esc(acLabel)}</span></div>
       ${briefItems}
       <div class="voice-row">
         <div class="wave" id="voiceWave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
@@ -603,6 +626,7 @@ ${renderNav(esc, { active: 'dashboard', demo, user })}
 </div>
 </div>
 <script type="module">
+const ORIGIN = ${JSON.stringify(st.origin)};
 const GATE_STATE = ${JSON.stringify({ gates: gates.gates, current: gates.current }).replace(/</g, '\\u003c')};
 const BRIEF_TEXT = ${JSON.stringify(brief).replace(/</g, '\\u003c')};
 
@@ -616,7 +640,7 @@ const BRIEF_TEXT = ${JSON.stringify(brief).replace(/</g, '\\u003c')};
   const u=document.getElementById('utcClock');
   function tick(){
     const n=new Date();
-    try{ if(c) c.textContent=n.toLocaleTimeString('en-US',{timeZone:'America/Denver',hour12:false})+' MT'; }
+    try{ if(c){const parts=new Intl.DateTimeFormat('en-US',{timeZone:c.dataset.tz||undefined,hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZoneName:'short'}).formatToParts(n);const g=(t)=>(parts.find(p=>p.type===t)||{}).value||'';c.textContent=g('hour')+':'+g('minute')+':'+g('second')+' '+g('timeZoneName');} }
     catch{ if(c) c.textContent=n.toISOString().slice(11,19)+' Z'; }
     if(u) u.textContent=n.toISOString().slice(11,16)+'Z';
   }
@@ -656,7 +680,7 @@ document.getElementById('briefRefresh')?.addEventListener('click',()=>location.r
     const gl=canvasTest.getContext('webgl')||canvasTest.getContext('experimental-webgl');
     if(!gl) throw new Error('no webgl');
     const { mountSynth3d }=await import('/js/cockpit-synth3d.js');
-    const handle=mountSynth3d(canvas, GATE_STATE);
+    const handle=mountSynth3d(canvas, GATE_STATE, ORIGIN);
     await handle.ready;
     canvas.classList.add('on');
     hero.classList.add('webgl-on');

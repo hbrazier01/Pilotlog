@@ -127,6 +127,11 @@ test('acsSkillStrip percentages and renderReplayPage SAMPLE', () => {
     acsStrip: strip,
     cr,
   });
+  assert.match(html, /Set up scheduling/);
+  call.booking = { kind: 'book', label: 'Book on FlightCircle', href: 'https://www.flightcircle.com/', provider: 'flightcircle' };
+  const html2 = renderReplayPage(esc, { demo: true, track, mission, call, acsStrip: strip, cr, station: { icao: 'KAPA' } });
+  assert.match(html2, /Book on FlightCircle/);
+  assert.match(html2, /Today's Call · KAPA/);
   assert.match(html, /Mission Map/);
   assert.match(html, /REPLAY MODE/);
   assert.match(html, /SAMPLE/);
@@ -134,7 +139,6 @@ test('acsSkillStrip percentages and renderReplayPage SAMPLE', () => {
   assert.match(html, /Lesson Debrief/);
   assert.match(html, /shareBtn/);
   assert.match(html, /cockpit-replay3d\.js/);
-  assert.match(html, /Book lesson/);
   assert.match(html, /Steep turn|Slow flight|Bounced/i);
 });
 

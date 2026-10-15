@@ -37,7 +37,12 @@ export function renderReplayPage(esc, {
   call = null,
   acsStrip = [],
   cr = null,
+  settings = null,
+  station = null,
 } = {}) {
+  const tz = settings?.timeZone || '';
+  const callStation = station?.icao || '';
+  const booking = call?.booking || { kind: 'setup', label: 'Set up scheduling', href: '/cockpit/settings#scheduling' };
   const t = track || { points: [], events: [], label: 'No track', sample: demo };
   const points = t.points || [];
   const t0 = points[0]?.t || 0;
@@ -164,7 +169,7 @@ ${chromeCss()}
 <title>Flight Replay — PilotLog</title>
 <style>${css}</style></head><body>
 <div class="page">
-${renderNav(esc, { active: 'replay', demo, user })}
+${renderNav(esc, { active: 'replay', demo, user, timeZone: tz })}
 <div class="replay-grid">
   <div class="col">
     <section class="mission glass">
@@ -192,7 +197,7 @@ ${renderNav(esc, { active: 'replay', demo, user })}
         <div class="hero-hud">
           <div class="chip chip-tl">
             <b>REPLAY MODE${t.sample ? ' <span class="sample-banner">SAMPLE</span>' : ''}</b>
-            <span class="mg">${esc(t.label || 'KAPA track')}</span>
+            <span class="mg">${esc(t.label || 'Flight track')}</span>
             <div id="hudClock" class="mg" style="margin-top:4px">—</div>
           </div>
           <div class="chip chip-tr">
@@ -228,7 +233,7 @@ ${renderNav(esc, { active: 'replay', demo, user })}
   <div class="col">
     <section class="call glass">
       <div class="call-h">
-        <span class="eyebrow">Today's Call · KAPA</span>
+        <span class="eyebrow">Today's Call${callStation ? ' · ' + esc(callStation) : ''}</span>
         <span class="go-big ${callCls}">${esc(callDec)}${callDec === 'GO' ? ' →' : ''}</span>
       </div>
       <div class="suggest">${esc(call?.suggested || '—')}</div>
@@ -238,7 +243,9 @@ ${renderNav(esc, { active: 'replay', demo, user })}
         <div class="chipx"><b>CEILING</b>${esc(chips.ceiling || '—')}</div>
         <div class="chipx"><b>VIS</b>${esc(chips.visibility || '—')}</div>
       </div>
-      <a class="btn" href="${esc(call?.flightCircleUrl || 'https://www.flightcircle.com/')}" target="_blank" rel="noopener">📅 Book lesson</a>
+      ${booking.kind === 'book'
+        ? `<a class="btn" id="bookBtn" data-provider="${esc(booking.provider)}" href="${esc(booking.href)}" target="_blank" rel="noopener noreferrer">📅 ${esc(booking.label)}</a>`
+        : `<a class="btn ghost" id="bookBtn" data-provider="none" href="${esc(booking.href)}">⚙ ${esc(booking.label)}</a>`}
       <div class="adv">${esc(call?.advisory || 'Advisory only.')}${demo || t.sample ? ' · SAMPLE weather/track.' : ''}</div>
     </section>
 
@@ -249,7 +256,7 @@ ${renderNav(esc, { active: 'replay', demo, user })}
       </div>
       ${miniTrackSvg(points)}
       <div style="margin-top:8px;font-weight:650">${esc(t.dateLabel || '—')}</div>
-      <div class="mono dim" style="font-size:12px;margin-top:4px">${esc(String(t.hours ?? stats.durationSec / 3600))} hrs · ${esc(String(t.takeoffs ?? 1))} Takeoffs · ${esc(t.airport || 'KAPA')}</div>
+      <div class="mono dim" style="font-size:12px;margin-top:4px">${esc(String(t.hours ?? stats.durationSec / 3600))} hrs · ${esc(String(t.takeoffs ?? 1))} Takeoffs · ${esc(t.airport || callStation || '')}</div>
       <div class="eyebrow" style="margin-top:10px">Skills nailed</div>
       <div class="skills">${skills || '<span class="dim">—</span>'}</div>
       <div class="mono dim" style="font-size:11px;margin:8px 0">+${esc(String(t.hours ?? 1.4))} hrs toward certificate</div>
@@ -332,7 +339,7 @@ document.getElementById('shareBtn')?.addEventListener('click', async ()=>{
   ctx.fillText(${JSON.stringify(String(t.dateLabel || 'Flight'))},16,54);
   ctx.font='12px ui-monospace,monospace';
   ctx.fillStyle='#7d8aa5';
-  ctx.fillText(${JSON.stringify(`${t.hours ?? '—'} hrs · ${t.airport || 'KAPA'}`)}+(${JSON.stringify(t.sample ? ' · SAMPLE' : '')}),16,74);
+  ctx.fillText(${JSON.stringify(`${t.hours ?? '—'} hrs · ${t.airport || callStation || ''}`)}+(${JSON.stringify(t.sample ? ' · SAMPLE' : '')}),16,74);
   ctx.fillStyle='#22d3ee';
   ctx.fillText('Skills: '+${JSON.stringify((t.skills || events.map((e) => e.label)).slice(0, 3).join(' · ') || '—')},16,100);
   // draw mini path

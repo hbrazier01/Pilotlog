@@ -135,13 +135,14 @@ export function buildSampleKapaTrack({ startIso = '2024-05-18T14:15:00Z' } = {})
     label: 'SAMPLE · KAPA Traffic Pattern & Steep Turns',
     airport: 'KAPA',
     fieldElevFt: KAPA.elev,
+    origin: { lat: 39.5701, lon: -104.8484, elev: 1791 },
     startIso,
     points,
     events,
     skills: ['Steep Turns', 'Slow Flight', 'Crosswind Landings'],
     hours: 1.4, // logged lesson time (track is a condensed SAMPLE replay)
     takeoffs: 1,
-    dateLabel: 'May 18, 2024 · 14:15 MDT',
+    dateLabel: 'May 18, 2024 · 14:15Z',
   };
 }
 

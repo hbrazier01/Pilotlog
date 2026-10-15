@@ -73,10 +73,10 @@ test('meets all minimums with a complete synthetic logbook', () => {
 });
 
 test('endorsements: stored date marks obtained; bad date rejected', () => {
-  const list = buildEndorsementChecklist({ preSoloKnowledge: { date: '2026-10-10', cfiName: 'Giselle' } });
+  const list = buildEndorsementChecklist({ preSoloKnowledge: { date: '2026-10-10', cfiName: 'Sam Instructor' } });
   const k = list.find(x => x.key === 'preSoloKnowledge');
   assert.equal(k.obtained, true);
-  assert.equal(k.cfiName, 'Giselle');
+  assert.equal(k.cfiName, 'Sam Instructor');
   assert.equal(list.find(x => x.key === 'practicalTest').obtained, false);
   assert.throws(() => sanitizeEndorsement({ date: '10/10/2026' }));
 });
@@ -92,10 +92,10 @@ test('ACS: 12 areas, area X empty for ASEL, status counts', () => {
   assert.equal(c.counts.not_started, c.total - 2);
 });
 
-test('costs: defaults $229 aircraft / $60 instructor, block billing override', () => {
-  assert.deepEqual(flightCost({ totalTime: 1.2, dual: 1.2 }), { hours: 1.2, aircraftRate: 229, instructorRate: 60, instructorHours: 1.2, aircraft: 274.8, instructor: 72, total: 346.8 });
+test('costs: defaults $180 aircraft / $65 instructor, block billing override', () => {
+  assert.deepEqual(flightCost({ totalTime: 1.2, dual: 1.2 }), { hours: 1.2, aircraftRate: 180, instructorRate: 65, instructorHours: 1.2, aircraft: 216, instructor: 78, total: 294 });
   const blk = flightCost({ totalTime: 1.2, dual: 1.2, instructorHours: 2 });
-  assert.equal(blk.instructor, 120);
+  assert.equal(blk.instructor, 130);
   const custom = flightCost({ totalTime: 1 }, { aircraftRate: 200, instructorRate: 70 });
   assert.equal(custom.total, 200);
 });
@@ -104,7 +104,7 @@ test('costs: to-date by phase and projection from deficits', () => {
   const entries = [dual('2026-10-01', 1.0, { instructorHours: 1.5 }), dual('2026-10-02', 1.0, { instructorHours: 1.5 })];
   const r = evaluate61109a(entries, { asOf: '2026-10-13' });
   const c = computeCosts(entries, r.requirements);
-  assert.equal(c.toDate, 2 * (229 + 90));
+  assert.equal(c.toDate, 2 * (180 + 97.5));
   assert.equal(c.byPhase.find(p => p.phase === 'pre_solo').flights, 2);
   const p = c.projection;
   // dual: max(18, 3+3+3+3=12) = 18; solo: max(10,5)=10; total deficit 38 = 28 → +10 filler dual
@@ -112,8 +112,8 @@ test('costs: to-date by phase and projection from deficits', () => {
   assert.equal(p.remainingSoloHours, 10);
   assert.equal(p.instructorBlockFactor, 1.5);
   assert.equal(p.estimatedLessons, 38);
-  assert.equal(p.aircraftCost, 38 * 229);
-  assert.equal(p.instructorCost, 28 * 1.5 * 60);
+  assert.equal(p.aircraftCost, 38 * 180);
+  assert.equal(p.instructorCost, 28 * 1.5 * 65);
 });
 
 test('computeCheckride merges per-flight details without mutating entries', () => {
@@ -166,5 +166,5 @@ test('store: uses pg adapter when enabled, file otherwise', () => {
   assert.equal(pgStore.read().testDate, null, 'pg mode ignores the JSON file');
   const p = pgStore.read(); p.rates.aircraftRate = 240; pgStore.write(p);
   assert.equal(saved.rates.aircraftRate, 240);
-  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'checkride.json'), 'utf8')).rates.aircraftRate, 229, 'file untouched in pg mode');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'checkride.json'), 'utf8')).rates.aircraftRate, 180, 'file untouched in pg mode');
 });

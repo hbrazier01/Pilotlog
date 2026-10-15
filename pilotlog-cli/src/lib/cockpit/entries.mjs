@@ -1,7 +1,7 @@
 /**
  * Cockpit logbook entries — file-backed CRUD for the training UI.
  * Reads/writes <dataDir>/entries.json without requiring a wallet session,
- * so Holland can log flights and see readiness update immediately.
+ * so a student can log flights and see readiness update immediately.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -63,8 +63,8 @@ export function createEntry(dataDir, input) {
     ...body,
     dual: body.dual ?? (body.solo ? 0 : body.totalTime),
     solo: body.solo ?? 0,
-    from: body.from || 'KAPA',
-    to: body.to || 'KAPA',
+    from: body.from || '',
+    to: body.to || body.from || '',
     createdAt: new Date().toISOString(),
   };
   entries.push(entry);
