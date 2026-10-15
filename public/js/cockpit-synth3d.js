@@ -121,54 +121,48 @@ function makeDa40() {
 function makeGate(label, lit) {
   const g = new THREE.Group();
   const col = lit ? 0xf472d0 : 0x4b5568;
-  const intens = lit ? 1 : 0.2;
-  const bar = (w, h, d, x, y, z) => {
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(w, h, d),
-      new THREE.MeshBasicMaterial({
-        color: col,
-        transparent: true,
-        opacity: lit ? 0.9 : 0.22,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      })
-    );
-    mesh.position.set(x, y, z);
-    g.add(mesh);
-    // outer glow shell (lit only — keeps unachieved gates quiet)
-    const shell = new THREE.Mesh(
-      new THREE.BoxGeometry(w * 1.35, h * 1.15, d * 1.35),
-      new THREE.MeshBasicMaterial({
-        color: col,
-        transparent: true,
-        opacity: lit ? 0.22 : 0.03,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      })
-    );
-    shell.position.copy(mesh.position);
-    g.add(shell);
-  };
-
-  const W = 260; // opening width
-  const H = 380; // opening height
-  const T = 14; // thickness
-  // left / right posts
-  bar(T, H + T * 2, T, 0, H / 2, W / 2);
-  bar(T, H + T * 2, T, 0, H / 2, -W / 2);
-  // top / bottom
-  bar(T, T, W + T * 2, 0, H + T / 2, 0);
-  bar(T, T, W + T * 2, 0, -T / 2, 0);
-  // thin cross accents
-  bar(T * 0.5, T * 0.5, W * 0.9, 0, H * 0.5, 0);
+  // Tall glowing pillars (concept: vertical magenta pillars with label above)
+  const H = 520; // pillar height
+  const T = 22;  // pillar thickness
+  const W = 280; // opening width
+  const pillarMat = (opacity) =>
+    new THREE.MeshBasicMaterial({
+      color: col,
+      transparent: true,
+      opacity,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+  function pillar(x, z) {
+    const core = new THREE.Mesh(new THREE.BoxGeometry(T, H, T), pillarMat(lit ? 0.95 : 0.28));
+    core.position.set(x, H / 2, z);
+    g.add(core);
+    const glow = new THREE.Mesh(new THREE.BoxGeometry(T * 2.2, H * 1.05, T * 2.2), pillarMat(lit ? 0.28 : 0.05));
+    glow.position.copy(core.position);
+    g.add(glow);
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(T * 1.6, T * 1.2, T * 1.6), pillarMat(lit ? 1 : 0.35));
+    tip.position.set(x, H + T * 0.4, z);
+    g.add(tip);
+  }
+  pillar(0, W / 2);
+  pillar(0, -W / 2);
+  // Soft lintel glow connecting tips
+  const lintel = new THREE.Mesh(
+    new THREE.BoxGeometry(T * 0.6, T * 0.5, W + T),
+    pillarMat(lit ? 0.55 : 0.08)
+  );
+  lintel.position.set(0, H + T * 0.2, 0);
+  g.add(lintel);
 
   if (lit) {
-    const pl = new THREE.PointLight(0xf472d0, 3.5 * intens, 900, 2);
-    pl.position.set(0, H * 0.5, 0);
+    const pl = new THREE.PointLight(0xf472d0, 4.2, 1100, 2);
+    pl.position.set(0, H * 0.55, 0);
     g.add(pl);
+    const pl2 = new THREE.PointLight(0xf9a8d4, 1.8, 700, 2);
+    pl2.position.set(0, H + 40, 0);
+    g.add(pl2);
   }
 
-  // Label sprite above gate
   const c = document.createElement('canvas');
   c.width = 512;
   c.height = 128;
@@ -178,7 +172,7 @@ function makeGate(label, lit) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.shadowColor = lit ? '#f472d0' : '#000';
-  ctx.shadowBlur = lit ? 24 : 0;
+  ctx.shadowBlur = lit ? 28 : 0;
   ctx.fillStyle = lit ? '#fce7f3' : '#64748b';
   ctx.fillText(String(label).toUpperCase(), 256, 64);
   const tex = new THREE.CanvasTexture(c);
@@ -186,12 +180,10 @@ function makeGate(label, lit) {
   const sprite = new THREE.Sprite(
     new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, blending: THREE.AdditiveBlending })
   );
-  sprite.scale.set(400, 100, 1);
-  sprite.position.set(0, H + 140, 0);
+  sprite.scale.set(420, 105, 1);
+  sprite.position.set(0, H + 180, 0);
   sprite.userData.isGateLabel = true;
   g.add(sprite);
-
-  // Face gates toward camera path (local +X is forward through gate)
   return g;
 }
 
@@ -279,11 +271,13 @@ function buildTerrainMesh(hm) {
         color.setRGB(0.18 + u * 0.2, 0.2 + u * 0.08, 0.14 + u * 0.04);
       } else {
         const u = (t - 0.5) / 0.5;
-        // bright snow ridges
-        color.setRGB(0.72 + u * 0.28, 0.74 + u * 0.24, 0.78 + u * 0.2);
+        // bright snow-capped peaks
+        color.setRGB(0.82 + u * 0.18, 0.84 + u * 0.16, 0.88 + u * 0.12);
       }
-      if (t > 0.55) {
-        color.r = Math.min(1, color.r + 0.06);
+      if (t > 0.48) {
+        color.r = Math.min(1, color.r + 0.1);
+        color.g = Math.min(1, color.g + 0.08);
+        color.b = Math.min(1, color.b + 0.1);
       }
       colors[idx * 3] = color.r;
       colors[idx * 3 + 1] = color.g;
@@ -344,10 +338,10 @@ function makeDashedPath(curve) {
     geo,
     new THREE.LineDashedMaterial({
       color: 0xf472d0,
-      dashSize: 70,
-      gapSize: 40,
+      dashSize: 90,
+      gapSize: 48,
       transparent: true,
-      opacity: 0.95,
+      opacity: 1,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     })
@@ -357,13 +351,13 @@ function makeDashedPath(curve) {
 
   // Additive glow core (very thin tube)
   const glow = new THREE.Mesh(
-    new THREE.TubeGeometry(curve, 100, 3.2, 6, false),
-    glowLineMat(0xf472d0, 0.55)
+    new THREE.TubeGeometry(curve, 120, 4.5, 8, false),
+    glowLineMat(0xf472d0, 0.7)
   );
   group.add(glow);
   const halo = new THREE.Mesh(
-    new THREE.TubeGeometry(curve, 80, 9, 6, false),
-    glowLineMat(0xf472d0, 0.18)
+    new THREE.TubeGeometry(curve, 90, 14, 8, false),
+    glowLineMat(0xf9a8d4, 0.22)
   );
   group.add(halo);
 
@@ -411,7 +405,7 @@ export function mountSynth3d(canvas, gateState) {
 
     scene = new THREE.Scene();
     // Haze — warm near horizon
-    scene.fog = new THREE.FogExp2(0x2a1824, mobile ? 0.000028 : 0.000022);
+    scene.fog = new THREE.FogExp2(0x24141f, mobile ? 0.000032 : 0.000024);
 
     // Sky: sunrise behind western mountains
     const skyMat = new THREE.ShaderMaterial({
@@ -436,10 +430,10 @@ export function mountSynth3d(canvas, gateState) {
     });
     scene.add(new THREE.Mesh(new THREE.SphereGeometry(90000, 32, 20), skyMat));
 
-    scene.add(new THREE.HemisphereLight(0xffd0b0, 0x1a2838, 0.85));
+    scene.add(new THREE.HemisphereLight(0xffd8c0, 0x152030, 1.05));
     // Sunrise west-northwest — illuminates snow faces, not pure backlight silhouette
-    const sun = new THREE.DirectionalLight(0xffc090, 1.55);
-    sun.position.set(-4200, 1800, 1600);
+    const sun = new THREE.DirectionalLight(0xffd0a0, 1.85);
+    sun.position.set(-4800, 2200, 1400);
     scene.add(sun);
     const fillL = new THREE.DirectionalLight(0xa8c4ff, 0.75);
     fillL.position.set(3500, 2200, -1200);
@@ -447,7 +441,7 @@ export function mountSynth3d(canvas, gateState) {
     const rim = new THREE.DirectionalLight(0xff8844, 0.55);
     rim.position.set(-2000, 800, -2500);
     scene.add(rim);
-    scene.add(new THREE.AmbientLight(0x3a4558, 0.55));
+    scene.add(new THREE.AmbientLight(0x4a5568, 0.65));
 
     const hm = await loadHeightmap({ z: 10, mobile });
     if (disposed) return;
@@ -530,23 +524,23 @@ export function mountSynth3d(canvas, gateState) {
     aircraft.position.copy(pos);
     aircraft.lookAt(pos.clone().add(tangent));
     aircraft.rotateY(-Math.PI / 2);
-    aircraft.scale.setScalar(mobile ? 70 : 92);
+    // Slightly smaller so full wingspan stays inside frame on desktop + mobile
+    aircraft.scale.setScalar(mobile ? 52 : 68);
     scene.add(aircraft);
 
-    camera = new THREE.PerspectiveCamera(mobile ? 42 : 38, 1, 2, 140000);
+    camera = new THREE.PerspectiveCamera(mobile ? 40 : 36, 1, 2, 140000);
     const up = new THREE.Vector3(0, 1, 0);
     const right = new THREE.Vector3().crossVectors(tangent, up).normalize();
-    // Pull back + side so entire DA40 is in frame and near horizontal center
+    // Pull well back + modest side offset so BOTH wings stay in frame
     const camBase = pos.clone()
-      .add(tangent.clone().multiplyScalar(mobile ? -1100 : -1350))
-      .add(right.clone().multiplyScalar(mobile ? 380 : 480))
-      .add(up.clone().multiplyScalar(mobile ? 320 : 380));
+      .add(tangent.clone().multiplyScalar(mobile ? -1650 : -2100))
+      .add(right.clone().multiplyScalar(mobile ? 220 : 280))
+      .add(up.clone().multiplyScalar(mobile ? 380 : 460));
     camera.position.copy(camBase);
-    // Look at a point just ahead of the plane (not the far horizon) so the
-    // aircraft sits mid-frame and the horizon falls near the upper third.
+    // Look slightly ahead/below aircraft so wing tips clear edges and horizon sits upper-third
     const lookTarget = pos.clone()
-      .add(tangent.clone().multiplyScalar(1100))
-      .add(up.clone().multiplyScalar(-120));
+      .add(tangent.clone().multiplyScalar(900))
+      .add(up.clone().multiplyScalar(-80));
 
     // Desktop-only subtle Unreal bloom (skipped on mobile for perf)
     let composer = null;
@@ -559,7 +553,7 @@ export function mountSynth3d(canvas, gateState) {
         renderer.toneMapping = THREE.NoToneMapping;
         composer = new EffectComposer(renderer);
         composer.addPass(new RenderPass(scene, camera));
-        const bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.45, 0.35, 0.82);
+        const bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.55, 0.4, 0.78);
         composer.addPass(bloom);
         composer.addPass(new OutputPass());
       } catch (err) {
@@ -598,13 +592,14 @@ export function mountSynth3d(canvas, gateState) {
       raf = requestAnimationFrame(frame);
       if (!visible) return;
       const t = clock.getElapsedTime();
-      camera.position.x = camBase.x + Math.sin(t * 0.045) * 40;
-      camera.position.y = camBase.y + Math.sin(t * 0.06) * 14;
-      camera.position.z = camBase.z + Math.cos(t * 0.04) * 30;
-      camera.lookAt(lookTarget.x, lookTarget.y + Math.sin(t * 0.035) * 10, lookTarget.z);
+      // Slow cinematic drift
+      camera.position.x = camBase.x + Math.sin(t * 0.028) * 55;
+      camera.position.y = camBase.y + Math.sin(t * 0.035) * 18;
+      camera.position.z = camBase.z + Math.cos(t * 0.025) * 40;
+      camera.lookAt(lookTarget.x, lookTarget.y + Math.sin(t * 0.022) * 12, lookTarget.z);
       if (aircraft) {
-        aircraft.position.y = pos.y + Math.sin(t * 0.7) * 5;
-        aircraft.rotation.z = Math.sin(t * 0.35) * 0.03;
+        aircraft.position.y = pos.y + Math.sin(t * 0.55) * 6;
+        aircraft.rotation.z = Math.sin(t * 0.28) * 0.025;
       }
       if (composer) composer.render();
       else renderer.render(scene, camera);

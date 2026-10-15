@@ -1,18 +1,71 @@
 /**
  * Cockpit Dashboard routes.
- *   GET /cockpit              HTML dashboard (?demo=1 for sample data)
- *   GET /api/weather/kapa     Live METAR+TAF + go/no-go (?demo=1 for sample)
+ *   GET  /cockpit (+ pages)   glass-cockpit UI (?demo=1 for SAMPLE)
+ *   GET  /api/weather/kapa    Live METAR+TAF + go/no-go
+ *   CRUD /api/cockpit/entries File-backed logbook (no wallet gate)
  */
 import { renderCockpitPage } from './cockpitView.mjs';
+import {
+  renderFlightPlanPage,
+  renderLogbookPage,
+  renderTrainingPage,
+  renderAcsPage,
+  renderResourcesPage,
+} from './lib/cockpit/pages.mjs';
+import { instructorBriefing } from './lib/cockpit/briefing.mjs';
+import {
+  readCockpitEntries,
+  createEntry,
+  updateEntry,
+  deleteEntry,
+} from './lib/cockpit/entries.mjs';
 import { computeCheckride } from './lib/checkride/index.mjs';
 import { demoData } from './lib/checkride/insights.mjs';
 import { getKapaWeather } from './lib/weather/fetch.mjs';
 import { parseTileParams, terrariumUrl } from './lib/weather/terrain.mjs';
 import { createCheckrideStore } from './checkrideRoutes.mjs';
 
+const SAMPLE_USER = {
+  name: 'JORDAN P.',
+  role: 'PRIVATE PILOT STUDENT',
+  initials: 'JP',
+  sample: true,
+};
+
 export function registerCockpitRoutes(app, { dataDir, readEntries, escapeHtml, pg = null }) {
   const store = createCheckrideStore(dataDir, pg);
-  const state = (asOf) => computeCheckride(readEntries(), store.read(), { asOf });
+
+  /** Prefer file-backed cockpit entries so readiness works without a wallet. */
+  function cockpitEntries() {
+    const file = readCockpitEntries(dataDir);
+    if (file.length) return file;
+    try {
+      const gated = typeof readEntries === 'function' ? readEntries() : [];
+      return Array.isArray(gated) ? gated : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function state(asOf, entries) {
+    return computeCheckride(entries ?? cockpitEntries(), store.read(), { asOf });
+  }
+
+  async function loadContext(req) {
+    const demo = req.query.demo === '1';
+    if (demo) {
+      const d = demoData();
+      const cr = computeCheckride(d.entries, d.store);
+      const weather = await getKapaWeather({ demo: true });
+      const briefing = instructorBriefing(cr);
+      return { demo: true, entries: d.entries, cr, weather, briefing, user: SAMPLE_USER };
+    }
+    const entries = cockpitEntries();
+    const cr = state(undefined, entries);
+    const weather = await getKapaWeather({ demo: false });
+    const briefing = instructorBriefing(cr);
+    return { demo: false, entries, cr, weather, briefing, user: SAMPLE_USER };
+  }
 
   app.get('/api/weather/kapa', async (req, res) => {
     const demo = req.query.demo === '1';
@@ -24,7 +77,11 @@ export function registerCockpitRoutes(app, { dataDir, readEntries, escapeHtml, p
       res.status(502).json({
         ok: false,
         error: String(err.message || err),
-        goNoGo: { decision: 'UNKNOWN', reasons: ['Weather fetch failed'], advisory: 'Get an official briefing before flight.' },
+        goNoGo: {
+          decision: 'UNKNOWN',
+          reasons: ['Weather fetch failed'],
+          advisory: 'Get an official briefing before flight.',
+        },
       });
     }
   });
@@ -54,29 +111,81 @@ export function registerCockpitRoutes(app, { dataDir, readEntries, escapeHtml, p
       tileCache.set(key, buf);
       res.set('Cache-Control', 'public, max-age=86400');
       res.type('png').send(buf);
-    } catch (err) {
+    } catch {
       res.status(502).send('tile error');
     }
   });
 
-  app.get('/cockpit', async (req, res) => {
-    const demo = req.query.demo === '1';
+  app.get('/api/cockpit/entries', (req, res) => {
+    if (req.query.demo === '1') {
+      return res.json({ demo: true, entries: demoData().entries });
+    }
+    res.json({ demo: false, entries: cockpitEntries() });
+  });
+
+  app.post('/api/cockpit/entries', (req, res) => {
     try {
-      let cr, entries, weather;
-      if (demo) {
-        const d = demoData();
-        entries = d.entries;
-        cr = computeCheckride(d.entries, d.store);
-        weather = await getKapaWeather({ demo: true });
-      } else {
-        entries = readEntries();
-        cr = state();
-        weather = await getKapaWeather({ demo: false });
-      }
-      res.type('html').send(renderCockpitPage(cr, escapeHtml, { entries, demo, weather }));
+      const entry = createEntry(dataDir, req.body || {});
+      res.status(201).json(entry);
     } catch (err) {
-      console.error('[cockpit]', err);
-      res.status(500).type('html').send(`<!doctype html><title>Cockpit error</title><pre>${escapeHtml(String(err.message || err))}</pre>`);
+      res.status(400).json({ error: String(err.message || err) });
     }
   });
+
+  app.put('/api/cockpit/entries/:id', (req, res) => {
+    try {
+      const entry = updateEntry(dataDir, req.params.id, req.body || {});
+      res.json(entry);
+    } catch (err) {
+      res.status(err.message === 'unknown entry' ? 404 : 400).json({ error: String(err.message || err) });
+    }
+  });
+
+  app.delete('/api/cockpit/entries/:id', (req, res) => {
+    try {
+      res.json(deleteEntry(dataDir, req.params.id));
+    } catch (err) {
+      res.status(err.message === 'unknown entry' ? 404 : 400).json({ error: String(err.message || err) });
+    }
+  });
+
+  const htmlPage = (handler) => async (req, res) => {
+    try {
+      const ctx = await loadContext(req);
+      res.type('html').send(handler(escapeHtml, ctx));
+    } catch (err) {
+      console.error('[cockpit]', err);
+      res
+        .status(500)
+        .type('html')
+        .send(`<!doctype html><title>Cockpit error</title><pre>${escapeHtml(String(err.message || err))}</pre>`);
+    }
+  };
+
+  app.get('/cockpit', async (req, res) => {
+    try {
+      const ctx = await loadContext(req);
+      res.type('html').send(
+        renderCockpitPage(ctx.cr, escapeHtml, {
+          entries: ctx.entries,
+          demo: ctx.demo,
+          weather: ctx.weather,
+          briefing: ctx.briefing,
+          user: ctx.user,
+        })
+      );
+    } catch (err) {
+      console.error('[cockpit]', err);
+      res
+        .status(500)
+        .type('html')
+        .send(`<!doctype html><title>Cockpit error</title><pre>${escapeHtml(String(err.message || err))}</pre>`);
+    }
+  });
+
+  app.get('/cockpit/flight-plan', htmlPage((esc, ctx) => renderFlightPlanPage(esc, ctx)));
+  app.get('/cockpit/logbook', htmlPage((esc, ctx) => renderLogbookPage(esc, ctx)));
+  app.get('/cockpit/training', htmlPage((esc, ctx) => renderTrainingPage(esc, ctx)));
+  app.get('/cockpit/acs', htmlPage((esc, ctx) => renderAcsPage(esc, ctx)));
+  app.get('/cockpit/resources', htmlPage((esc, ctx) => renderResourcesPage(esc, ctx)));
 }

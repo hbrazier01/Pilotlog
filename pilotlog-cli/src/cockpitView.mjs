@@ -2,8 +2,10 @@
  * Cockpit Dashboard — bold glass-cockpit layout matching the "unlimited" concept.
  * Center hero: three.js + Terrarium terrain with SVG fallback. Live weather via /api/weather/kapa.
  */
-import { readinessScore, projectCheckride, nextLesson, briefText } from './lib/checkride/insights.mjs';
+import { readinessScore, projectCheckride } from './lib/checkride/insights.mjs';
 import { cockpitGates, acsTiles, logbookTimeline, progressBars } from './lib/checkride/cockpit.mjs';
+import { chromeCss, renderNav, clockScript } from './lib/cockpit/chrome.mjs';
+import { instructorBriefing, minutesAgoLabel } from './lib/cockpit/briefing.mjs';
 
 const usd = (v) => '$' + Math.round(Number(v || 0)).toLocaleString('en-US');
 const fmtDate = (iso) =>
@@ -187,15 +189,37 @@ function goBadge(decision) {
   return `<span class="badge ${m.cls}"><i>${m.icon}</i> ${m.label}</span>`;
 }
 
-export function renderCockpitPage(cr, esc, { entries = [], demo = false, weather = null } = {}) {
+/** Large circular GO / NO-GO dial matching the concept. */
+function goDial(decision) {
+  const map = {
+    GO: { cls: 'go', icon: '✓', label: 'GO', ring: '#34f5a0' },
+    'NO-GO': { cls: 'nogo', icon: '✕', label: 'NO-GO', ring: '#fb7185' },
+    CAUTION: { cls: 'caut', icon: '!', label: 'CAUTION', ring: '#fbbf24' },
+    UNKNOWN: { cls: 'unk', icon: '?', label: '—', ring: '#64748b' },
+  };
+  const m = map[decision] || map.UNKNOWN;
+  return `<div class="go-dial ${m.cls}" role="img" aria-label="Go/no-go ${m.label}">
+  <svg viewBox="0 0 120 120" class="go-svg">
+    <circle cx="60" cy="60" r="52" class="go-track"/>
+    <circle cx="60" cy="60" r="52" class="go-arc" stroke="${m.ring}"/>
+    <circle cx="60" cy="60" r="40" class="go-face"/>
+  </svg>
+  <div class="go-core"><span class="go-ico">${m.icon}</span><span class="go-lab">${m.label}</span></div>
+</div>
+<div class="go-caption">GO / NO-GO</div>`;
+}
+
+export function renderCockpitPage(cr, esc, { entries = [], demo = false, weather = null, briefing = null, user = null } = {}) {
   const score = readinessScore(cr);
   const proj = projectCheckride(cr, entries);
   const bars = progressBars(cr);
   const gates = cockpitGates(cr, entries);
   const tiles = acsTiles(cr.acs);
   const timeline = logbookTimeline(cr, entries, proj.date);
-  const focus = nextLesson(cr);
-  const brief = briefText(focus);
+  const briefObj = briefing || instructorBriefing(cr);
+  const focus = briefObj.focus || [];
+  const brief = briefObj.spoken || briefObj.text || '';
+  const briefAgo = minutesAgoLabel(briefObj.updatedAt);
   const p = cr.costs.projection;
   const days =
     proj.date != null
@@ -431,6 +455,36 @@ nav a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 0 0 
 .tl-sum{display:flex;gap:18px;justify-content:flex-end;margin-top:14px;padding-top:12px;border-top:1px solid var(--line);font:600 11px var(--mono);letter-spacing:.08em;color:var(--dim)}
 .tl-sum b{color:var(--txt);font-size:14px;margin-left:6px}
 
+
+.go-wrap{display:flex;flex-direction:column;align-items:center;margin:4px 0 8px}
+.go-dial{position:relative;width:118px;height:118px}
+.go-svg{width:100%;height:100%;display:block}
+.go-track{fill:none;stroke:rgba(255,255,255,.08);stroke-width:8}
+.go-arc{fill:none;stroke-width:8;stroke-linecap:round;filter:drop-shadow(0 0 10px currentColor)}
+.go-face{fill:rgba(3,6,15,.55);stroke:rgba(255,255,255,.06);stroke-width:1}
+.go-core{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.go-ico{font:700 28px/1 var(--mono)}.go-lab{font:800 14px/1 var(--mono);letter-spacing:.14em}
+.go-dial.go .go-ico,.go-dial.go .go-lab{color:var(--gr)}.go-dial.go .go-arc{filter:drop-shadow(0 0 14px #34f5a0)}
+.go-dial.nogo .go-ico,.go-dial.nogo .go-lab{color:#fb7185}
+.go-dial.caut .go-ico,.go-dial.caut .go-lab{color:var(--am)}
+.go-dial.unk .go-ico,.go-dial.unk .go-lab{color:var(--dim)}
+.go-caption{font:700 9px var(--mono);letter-spacing:.2em;color:var(--dim);margin-top:2px}
+.wx-meta{display:inline-flex;align-items:center;gap:6px;font-size:10px}
+.icon-btn{background:transparent;border:1px solid var(--line);color:var(--cy);border-radius:6px;width:22px;height:22px;cursor:pointer;font-size:13px;line-height:1;padding:0}
+.icon-btn:hover{box-shadow:0 0 10px rgba(34,211,238,.3)}
+.ai-badge{display:inline-block;font:800 8px var(--mono);letter-spacing:.14em;color:#031018;background:linear-gradient(135deg,var(--cy),var(--mg));padding:2px 6px;border-radius:4px;margin-left:6px;vertical-align:middle}
+.brief-stamp{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:8px;border-top:1px dashed rgba(255,255,255,.1);font:600 9px var(--mono);letter-spacing:.12em}
+.userchip{display:inline-flex;align-items:center;gap:8px;padding:4px 10px 4px 4px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.03)}
+.userchip .av{width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#0891b2,#f472d0);display:grid;place-items:center;font:700 10px var(--mono);color:#031018}
+.userchip .nm{font:600 10px var(--mono);letter-spacing:.08em;color:var(--txt);line-height:1.2}
+.userchip .role{font:600 8px var(--mono);letter-spacing:.12em;color:var(--dim)}
+.demo{color:var(--mg);border:1px solid rgba(244,114,208,.45);padding:3px 8px;border-radius:999px}
+nav.top{display:flex;align-items:center;gap:2px;margin-bottom:16px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+nav.top .brand{font-family:var(--mono);font-size:12px;letter-spacing:.22em;color:var(--cy);margin-right:12px;white-space:nowrap;display:flex;align-items:center;gap:8px}
+nav.top .brand:before{content:"";width:18px;height:18px;background:conic-gradient(from 210deg,var(--cy),var(--mg),var(--am),var(--cy));border-radius:50%;box-shadow:0 0 12px rgba(34,211,238,.5)}
+nav.top a{color:var(--dim);font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:7px 11px;border-radius:999px;white-space:nowrap;border-bottom:2px solid transparent}
+nav.top a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 0 0 1px rgba(34,211,238,.4);border-bottom-color:var(--cy)}
+
 @media(max-width:1100px){
   .grid{grid-template-columns:1fr 1fr}
   .hero{grid-column:1/-1;order:-1}
@@ -451,17 +505,7 @@ nav a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 0 0 
 <linearGradient id="fuelg" x1="0" x2="1"><stop offset="0" stop-color="#34f5a0"/><stop offset=".55" stop-color="#fbbf24"/><stop offset="1" stop-color="#f472d0"/></linearGradient>
 </defs></svg>
 <div class="page">
-<nav>
-  <span class="brand">PILOTLOG</span>
-  <a class="on" href="/cockpit${demo ? '?demo=1' : ''}">Dashboard</a>
-  <a href="/checkride${demo ? '?demo=1' : ''}">Checkride</a>
-  <a href="/progression">Progression</a>
-  <a href="/pilot-report">Logbook</a>
-  <div class="nav-r">
-    ${demo ? '<span class="demo">DEMO DATA</span>' : '<span class="live">LIVE</span>'}
-    <span class="clock" id="clock">— MT</span>
-  </div>
-</nav>
+${renderNav(esc, { active: 'dashboard', demo, user })}
 
 <div class="grid">
   <div class="col">
@@ -477,7 +521,7 @@ nav a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 0 0 
         ${days != null ? `<div class="days">≈ ${days} DAYS</div>` : ''}
       </div>
       ${barHtml}
-      <a class="btn" href="/checkride${demo ? '?demo=1' : ''}">VIEW READINESS REPORT →</a>
+      <a class="btn" href="/cockpit/acs${demo ? '?demo=1' : ''}">VIEW READINESS REPORT →</a>
     </section>
   </div>
 
@@ -501,25 +545,29 @@ nav a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 0 0 
     <section class="wx glass" id="wx">
       <div class="wx-h">
         <span class="eyebrow">Live Weather · KAPA</span>
-        ${goBadge(go.decision || 'UNKNOWN')}
+        <span class="wx-meta mono dim"><span id="utcClock">— Z</span>
+          <button type="button" class="icon-btn" id="wxRefresh" title="Refresh weather" aria-label="Refresh weather">↻</button>
+        </span>
       </div>
+      <div class="go-wrap">${goDial(go.decision || 'UNKNOWN')}</div>
       ${(go.reasons || []).length ? `<div class="reasons">${esc((go.reasons || []).slice(0, 3).join(' · '))}</div>` : ''}
       <div class="eyebrow" style="margin-top:6px">METAR</div>
       <div class="raw" id="metar">${esc(metarRaw)}</div>
       <div class="eyebrow">TAF</div>
       <div class="raw" id="taf">${esc(tafRaw)}</div>
-      <div class="adv">${esc(go.advisory || wx.advisory || 'Advisory only — not a substitute for an official weather briefing.')}${wx.demo ? ' · Sample data.' : ''}${wx.stale ? ' · Stale cache.' : ''}</div>
+      <div class="adv">${esc(go.advisory || wx.advisory || 'Advisory only — not a substitute for an official weather briefing.')}${wx.demo ? ' · SAMPLE weather.' : ''}${wx.stale ? ' · Stale cache.' : ''}</div>
     </section>
 
     <section class="brief glass">
-      <div class="slip"><span>NEXT LESSON · BRIEFING</span><span>${esc(cr.costs.rates.aircraftLabel || 'DA40')}</span></div>
+      <div class="slip"><span>AI INSTRUCTOR BRIEFING <span class="ai-badge">AI</span></span><span>${esc(cr.costs.rates.aircraftLabel || 'DA40')}</span></div>
       ${briefItems}
       <div class="voice-row">
-        <button type="button" class="voice-btn" id="voiceBtn" hidden title="Play briefing" aria-label="Play briefing">
-          <svg id="voiceIcon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-        </button>
         <div class="wave" id="voiceWave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <button type="button" class="voice-btn" id="voiceBtn" hidden title="Play briefing" aria-label="Play briefing">
+          <svg id="voiceIcon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11h-2z"/></svg>
+        </button>
       </div>
+      <div class="brief-stamp mono dim">BRIEFING UPDATED ${esc(briefAgo).toUpperCase()} <button type="button" class="icon-btn" id="briefRefresh" title="Refresh briefing" aria-label="Refresh briefing">↻</button></div>
     </section>
 
     <section class="fuelc glass">
@@ -538,7 +586,7 @@ nav a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 0 0 
   <section class="acs-row glass">
     <div class="acs-h">
       <span class="eyebrow">ACS Tasks · ${cr.acs.total} total</span>
-      <span class="mono dim">${cr.acs.counts.proficient} proficient · ${cr.acs.counts.introduced} introduced</span>
+      <a class="mono dim" href="/cockpit/acs${demo ? '?demo=1' : ''}">${cr.acs.counts.proficient} proficient · ${cr.acs.counts.introduced} introduced →</a>
     </div>
     <div class="tiles">${tileHtml}</div>
   </section>
@@ -565,25 +613,30 @@ const BRIEF_TEXT = ${JSON.stringify(brief).replace(/</g, '\\u003c')};
 })();
 (function(){
   const c=document.getElementById('clock');
+  const u=document.getElementById('utcClock');
   function tick(){
-    try{ c.textContent=new Date().toLocaleTimeString('en-US',{timeZone:'America/Denver',hour12:false})+' MT'; }
-    catch{ c.textContent=new Date().toISOString().slice(11,19)+' Z'; }
+    const n=new Date();
+    try{ if(c) c.textContent=n.toLocaleTimeString('en-US',{timeZone:'America/Denver',hour12:false})+' MT'; }
+    catch{ if(c) c.textContent=n.toISOString().slice(11,19)+' Z'; }
+    if(u) u.textContent=n.toISOString().slice(11,16)+'Z';
   }
   tick();setInterval(tick,1000);
 })();
 
+document.getElementById('wxRefresh')?.addEventListener('click',()=>{
+  const q=new URLSearchParams(location.search); q.set('refresh','1');
+  location.search=q.toString();
+});
+document.getElementById('briefRefresh')?.addEventListener('click',()=>location.reload());
+
 (function(){
   const btn=document.getElementById('voiceBtn');
   const wave=document.getElementById('voiceWave');
-  const icon=document.getElementById('voiceIcon');
   if(!btn || !('speechSynthesis' in window) || !window.SpeechSynthesisUtterance) return;
   btn.hidden=false;
   let speaking=false;
-  const playPath='M8 5v14l11-7z';
-  const stopPath='M6 6h12v12H6z';
   function setTalk(on){
     speaking=on; btn.classList.toggle('talk',on); wave.classList.toggle('on',on);
-    icon.innerHTML='<path d="'+(on?stopPath:playPath)+'"/>';
   }
   btn.addEventListener('click',()=>{
     if(speaking){ speechSynthesis.cancel(); setTalk(false); return; }

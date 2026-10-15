@@ -67,14 +67,15 @@ test('renderCockpitPage includes 3D canvas, voice btn, SVG fallback, DEMO', () =
     taf: { raw: 'TAF KAPA DEMO' },
   };
   const html = renderCockpitPage(cr, esc, { entries: d.entries, demo: true, weather: wx });
-  assert.match(html, /DEMO DATA/);
+  assert.match(html, /SAMPLE/);
   assert.match(html, /CHECKRIDE READY/);
   assert.match(html, /class="synth"/);
   assert.match(html, /id="synth3d"/);
   assert.match(html, /cockpit-synth3d\.js/);
   assert.match(html, /id="voiceBtn"/);
   assert.match(html, /speechSynthesis/);
-  assert.match(html, /badge go[\s\S]*?GO/);
+  assert.match(html, /go-dial go/);
+  assert.match(html, /GO \/ NO-GO/);
   assert.match(html, /METAR KAPA DEMO SAMPLE/);
   assert.match(html, /ACS Tasks/);
   assert.match(html, /Logbook Timeline/);
