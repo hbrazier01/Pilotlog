@@ -43,8 +43,8 @@ function toLocal(lon, lat, elevM) {
 async function loadHeightmap({ z = 12, mobile = false } = {}) {
   const k = lonLatToTile(ORIGIN.lon, ORIGIN.lat, z);
   const cx = Math.floor(k.x), cy = Math.floor(k.y);
-  const tx0 = cx - (mobile ? 3 : 5), tx1 = cx + (mobile ? 2 : 3);
-  const ty0 = cy - (mobile ? 2 : 3), ty1 = cy + (mobile ? 2 : 3);
+  const tx0 = cx - (mobile ? 5 : 7), tx1 = cx + (mobile ? 4 : 5);
+  const ty0 = cy - (mobile ? 4 : 5), ty1 = cy + (mobile ? 4 : 4);
   const step = mobile ? 8 : 4;
   const tw = 256 / step;
   const cols = (tx1 - tx0 + 1) * tw, rows = (ty1 - ty0 + 1) * tw;
@@ -86,18 +86,73 @@ function groundAt(hm, lon, lat) {
   return (e(x0, y0) * (1 - fx) + e(x0 + 1, y0) * fx) * (1 - fy) + (e(x0, y0 + 1) * (1 - fx) + e(x0 + 1, y0 + 1) * fx) * fy;
 }
 
+/**
+ * Photoreal imagery atlases (Cesium ion → Bing Aerial, proxied by /api/imagery so the token stays
+ * server-side). base: whole terrain extent at the heightmap zoom+1; detail: the flight area at z15.
+ */
+async function loadImagery(hm, { mobile = false, bbox = null } = {}) {
+  try {
+    const st = await (await fetch('/api/imagery/status')).json();
+    if (!st?.enabled) return null;
+    const atlas = async (z, tx0, ty0, nx, ny) => {
+      const cv = document.createElement('canvas'); cv.width = nx * 256; cv.height = ny * 256;
+      const c2 = cv.getContext('2d'); c2.fillStyle = '#3a3a30'; c2.fillRect(0, 0, cv.width, cv.height);
+      let ok = 0; const queue = [];
+      for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) queue.push([x, y]);
+      const total = queue.length;
+      const one = async ([x, y]) => {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const r = await fetch(`/api/imagery/${z}/${tx0 + x}/${ty0 + y}.jpg`);
+            if (!r.ok) throw new Error(String(r.status));
+            const bmp = await createImageBitmap(await r.blob());
+            c2.drawImage(bmp, x * 256, y * 256); ok++; return;
+          } catch { await new Promise((res) => setTimeout(res, 300 * (attempt + 1))); }
+        }
+      };
+      // bounded concurrency so we don't hammer the proxy/upstream
+      await Promise.all(Array.from({ length: 8 }, async () => { while (queue.length) await one(queue.shift()); }));
+      if (ok < total * 0.5) return null;
+      const tex = new THREE.CanvasTexture(cv);
+      tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8; tex.generateMipmaps = true; tex.minFilter = THREE.LinearMipmapLinearFilter;
+      return { tex, z, tx0, ty0, nx, ny };
+    };
+    // three levels: far (heightmap zoom, whole extent), mid (flight area + margin), detail (flight area)
+    const base = await atlas(hm.z, hm.tx0, hm.ty0, Math.round(hm.cols / hm.tw), Math.round(hm.rows / hm.tw));
+    if (!base) return null;
+    const region = async (zd, pad, cap) => {
+      if (!bbox) return null;
+      const a = lonLatToTile(bbox.w - pad, bbox.n + pad, zd), b = lonLatToTile(bbox.e + pad, bbox.s - pad, zd);
+      let x0 = Math.floor(a.x), y0 = Math.floor(a.y), nx = Math.floor(b.x) - x0 + 1, ny = Math.floor(b.y) - y0 + 1;
+      if (nx > cap) { x0 += Math.floor((nx - cap) / 2); nx = cap; }
+      if (ny > cap) { y0 += Math.floor((ny - cap) / 2); ny = cap; }
+      return atlas(zd, x0, y0, nx, ny);
+    };
+    const mid = await region(mobile ? 13 : 14, 0.07, mobile ? 10 : 16);
+    const detail = await region(15, 0.012, mobile ? 10 : 20);
+    return { base, mid, detail, attribution: st.attribution };
+  } catch { return null; }
+}
+function atlasUv(img, lon, lat) {
+  if (!img) return [-1, -1];
+  const k = lonLatToTile(lon, lat, img.z);
+  return [(k.x - img.tx0) / img.nx, 1 - (k.y - img.ty0) / img.ny];
+}
+
 const TERRAIN_VS = `
-attribute float aElev;
-varying float vElev; varying vec3 vN; varying vec3 vW; varying float vDist;
+attribute float aElev; attribute vec2 aUvB; attribute vec2 aUvD; attribute vec2 aUvM;
+varying float vElev; varying vec3 vN; varying vec3 vW; varying float vDist; varying vec2 vUvB; varying vec2 vUvD; varying vec2 vUvM;
 void main(){
-  vElev = aElev; vN = normalize(normal);
+  vElev = aElev; vUvB = aUvB; vUvD = aUvD; vUvM = aUvM; vN = normalize(normal);
   vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz;
   vec4 mv = viewMatrix * w; vDist = -mv.z;
   gl_Position = projectionMatrix * mv;
 }`;
 const TERRAIN_FS = `
 uniform vec3 uSun; uniform vec3 uHaze; uniform vec3 uSunCol; uniform float uFog; uniform float uField;
-varying float vElev; varying vec3 vN; varying vec3 vW; varying float vDist;
+uniform float uPhoto; uniform float uHasD; uniform float uHasM; uniform sampler2D uImgB; uniform sampler2D uImgD; uniform sampler2D uImgM;
+varying float vElev; varying vec3 vN; varying vec3 vW; varying float vDist; varying vec2 vUvB; varying vec2 vUvD; varying vec2 vUvM;
+float inside(vec2 uv, float soft){ float e = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)); return smoothstep(0.0, soft, e); }
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
 float noise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
   return mix(mix(hash(i),hash(i+vec2(1,0)),f.x), mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x), f.y); }
@@ -140,18 +195,34 @@ void main(){
   float sunScat = pow(max(dot(view, uSun), 0.0), 6.0);
   vec3 haze = mix(uHaze, vec3(0.45,0.24,0.16), sunScat * 0.5);
   col = mix(col, haze, clamp(fogF, 0.0, 1.0));
+  if (uPhoto > 0.5) {
+    // satellite imagery (sRGB texture → linear by three), detail atlas where available, soft-edged
+    vec3 img = texture2D(uImgB, vUvB).rgb;
+    img = mix(img, texture2D(uImgM, vUvM).rgb, uHasM * inside(vUvM, 0.15));
+    img = mix(img, texture2D(uImgD, vUvD).rgb, uHasD * inside(vUvD, 0.15));
+    float ndl2 = max(dot(normalize(vN), uSun), 0.0);
+    img = pow(img, vec3(0.92)) * 1.18; // lift Bing's dark mid-tones a touch
+    vec3 pc = img * (0.86 + 0.32 * ndl2) * mix(vec3(1.0), uSunCol, 0.25 * ndl2);
+    float fogP = 1.0 - exp(-pow(vDist * uFog * 0.55, 1.5));
+    pc = mix(pc, mix(vec3(0.30,0.33,0.42), vec3(0.62,0.42,0.32), sunScat * 0.5), clamp(fogP, 0.0, 0.8));
+    col = pc;
+  }
   gl_FragColor = vec4(col, 1.0);
   #include <colorspace_fragment>
 }`;
 
-function buildTerrainMesh(hm) {
+function buildTerrainMesh(hm, imagery = null) {
   const { elev, cols, rows } = hm;
   const pos = new Float32Array(cols * rows * 3), ae = new Float32Array(cols * rows);
+  const uvB = new Float32Array(cols * rows * 2), uvD = new Float32Array(cols * rows * 2), uvM = new Float32Array(cols * rows * 2);
   for (let iy = 0; iy < rows; iy++) for (let ix = 0; ix < cols; ix++) {
     const i = iy * cols + ix;
     const ll = tileXYToLonLat(hm.z, hm.tx0 + ix / hm.tw, hm.ty0 + iy / hm.tw);
     const p = toLocal(ll.lon, ll.lat, elev[i]);
     pos[i * 3] = p.x; pos[i * 3 + 1] = p.y; pos[i * 3 + 2] = p.z; ae[i] = elev[i];
+    const b = atlasUv(imagery?.base, ll.lon, ll.lat), d = atlasUv(imagery?.detail, ll.lon, ll.lat);
+    uvB[i * 2] = b[0]; uvB[i * 2 + 1] = b[1]; uvD[i * 2] = d[0]; uvD[i * 2 + 1] = d[1];
+    const m = atlasUv(imagery?.mid, ll.lon, ll.lat); uvM[i * 2] = m[0]; uvM[i * 2 + 1] = m[1];
   }
   const idx = new Uint32Array((cols - 1) * (rows - 1) * 6);
   let k = 0;
@@ -162,6 +233,9 @@ function buildTerrainMesh(hm) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('aElev', new THREE.BufferAttribute(ae, 1));
+  geo.setAttribute('aUvB', new THREE.BufferAttribute(uvB, 2));
+  geo.setAttribute('aUvD', new THREE.BufferAttribute(uvD, 2));
+  geo.setAttribute('aUvM', new THREE.BufferAttribute(uvM, 2));
   geo.setIndex(new THREE.BufferAttribute(idx, 1));
   geo.computeVertexNormals();
   // un-exaggerate normals a bit so hillshade isn't blown out
@@ -170,6 +244,9 @@ function buildTerrainMesh(hm) {
     uniforms: {
       uSun: { value: SUN_DIR }, uHaze: { value: HAZE }, uSunCol: { value: new THREE.Color(1.0, 0.78, 0.55) },
       uFog: { value: 1 / 42000 }, uField: { value: ORIGIN.elev },
+      uPhoto: { value: imagery ? 1 : 0 }, uHasD: { value: imagery?.detail ? 1 : 0 },
+      uImgB: { value: imagery?.base?.tex || null }, uImgD: { value: imagery?.detail?.tex || imagery?.base?.tex || null },
+      uHasM: { value: imagery?.mid ? 1 : 0 }, uImgM: { value: imagery?.mid?.tex || imagery?.base?.tex || null },
     },
   });
   mat.extensions = { derivatives: true };
@@ -370,7 +447,7 @@ export function mountReplay3d(canvas, track) {
     else if (p0) ORIGIN = { lat: p0.lat, lon: p0.lon, elev: Number.isFinite(fe) ? fe / 3.28084 : (Number(p0.altFt) || 0) / 3.28084 };
   }
   let disposed = false, raf = 0, visible = true;
-  let renderer, scene, camera, aircraft, curve, composer = null;
+  let renderer, scene, camera, aircraft, curve, composer = null, photo = null;
   let playing = true, speed = 1, u = 0, view = 'orbit';
   const prog = { value: 0 };
   const clock = new THREE.Clock();
@@ -408,7 +485,13 @@ export function mountReplay3d(canvas, track) {
 
     const hm = await loadHeightmap({ z: 12, mobile });
     if (disposed) return;
-    const terrain = buildTerrainMesh(hm);
+    let bbox = null;
+    for (const p of points) { if (!bbox) bbox = { w: p.lon, e: p.lon, n: p.lat, s: p.lat }; bbox.w = Math.min(bbox.w, p.lon); bbox.e = Math.max(bbox.e, p.lon); bbox.n = Math.max(bbox.n, p.lat); bbox.s = Math.min(bbox.s, p.lat); }
+    
+    const imagery = new URLSearchParams(location.search).get('photo') === '0' ? null : await loadImagery(hm, { mobile, bbox });
+    if (disposed) return;
+    photo = imagery ? { attribution: imagery.attribution } : null;
+    const terrain = buildTerrainMesh(hm, imagery);
     scene.add(terrain);
 
     // track samples with ground under each point
@@ -563,7 +646,7 @@ export function mountReplay3d(canvas, track) {
     const portrait = () => aspect < 0.9;
     function padFor() {
       // top: room for labels that sit above pins; bottom: scrubber overlay (desktop) / compass chip (mobile)
-      return portrait() ? { l: 0.1, r: 0.1, t: 0.3, b: 0.3 } : { l: 0.1, r: 0.1, t: 0.24, b: mobile ? 0.3 : 0.42 };
+      return portrait() ? { l: 0.1, r: 0.1, t: 0.3, b: 0.3 } : { l: 0.08, r: 0.08, t: 0.22, b: mobile ? 0.3 : 0.34 };
     }
     // Airport-biased set: the ground half of the flight (pattern work) gets duplicated weight
     const fitPts = samplesPts();
@@ -573,7 +656,7 @@ export function mountReplay3d(canvas, track) {
     function orbitTarget() {
       const az0 = portrait() ? axisAz : baseAz;
       const az = az0 + Math.sin(orbitT * 0.05) * 0.12;
-      const el = (portrait() ? 58 : 34) * DEG; // portrait: look more top-down so the long track fits the tall frame
+      const el = (portrait() ? 58 : 47) * DEG; // portrait: look more top-down so the long track fits the tall frame
       const key = `${aspect.toFixed(3)}|${az.toFixed(3)}`;
       if (!orbitCache || orbitCache.key !== key) orbitCache = { key, ...fitView(fitPts, az, el, padFor()) };
       orbitD = orbitCache.D;
@@ -610,6 +693,30 @@ export function mountReplay3d(canvas, track) {
       const cmin = 1 - (1 - M - _p.x) / W, cmax = (_p.x + 1 - M) / W;
       lab.center.x = THREE.MathUtils.clamp(0.5, Math.min(cmin, cmax), Math.max(cmin, cmax));
       lab.center.y = _p.y + 1.15 * H > 1 - M ? 1.15 : -0.15; // flip below the pin near the top edge
+    }
+    // Screen-space collision avoidance: stack overlapping labels vertically (alternating above/below
+    // their pin), hide the lowest-priority ones if no free slot is found. Priority = pin order.
+    const _q = new THREE.Vector3();
+    function declutterLabels() {
+      const placed = [];
+      const ex = camera.projectionMatrix.elements;
+      for (const pin of pins) {
+        const lab = pin.userData.lab;
+        _q.copy(lab.position).project(camera);
+        if (_q.z > 1) { lab.visible = false; continue; }
+        const W = lab.scale.x * ex[0], H = lab.scale.y * ex[5];
+        const base = lab.center.y, x0 = _q.x - lab.center.x * W, x1 = x0 + W;
+        const tries = [0, 1.1, -1.1, 2.2, -2.2, 3.3, -3.3];
+        let ok = false;
+        for (const d of tries) {
+          const cy = base + d;
+          const y0 = _q.y - cy * H, y1 = y0 + H;
+          if (y1 > 1 - M || y0 < -1 + M) continue;
+          if (placed.some((r) => x0 < r.x1 + 0.006 && x1 > r.x0 - 0.006 && y0 < r.y1 + 0.004 && y1 > r.y0 - 0.004)) continue;
+          lab.center.y = cy; placed.push({ x0, x1, y0, y1 }); ok = true; break;
+        }
+        lab.visible = ok;
+      }
     }
     function place(uu, dt = 0, snap = false) {
       const { param, idx } = uToParam(uu);
@@ -658,6 +765,7 @@ export function mountReplay3d(canvas, track) {
         lab.scale.set(lh * lab.userData.aspect / Math.max(0.6, Math.min(2.2, aspect)) * 1.0, lh, 1);
         clampLabel(lab);
       }
+      declutterLabels();
 
       const p = points[idx];
       const tNow = t0 + uu * (t1 - t0);
@@ -711,6 +819,7 @@ export function mountReplay3d(canvas, track) {
   return {
     ready,
     get controls() { return mountReplay3d._ctl; },
+    get photo() { return photo; },
     destroy() { disposed = true; mountReplay3d._ctl?.destroy?.(); },
   };
 }

@@ -27,6 +27,7 @@ import { getKapaWeather, getStationWeather } from './lib/weather/fetch.mjs';
 import { settingsFor, writeSettings, bookingAction, sanitizeSettings, readSettings } from './lib/cockpit/settings.mjs';
 import { renderSettingsPage } from './lib/cockpit/settingsPage.mjs';
 import { parseTileParams, terrariumUrl } from './lib/weather/terrain.mjs';
+import { imageryEnabled, fetchImageryTile, imageryAttribution } from './lib/weather/imagery.mjs';
 import { createCheckrideStore } from './checkrideRoutes.mjs';
 import { cockpitUser, DEMO_USER } from './lib/cockpit/profile.mjs';
 import { renderReplayPage } from './replayView.mjs';
@@ -154,6 +155,24 @@ export function registerCockpitRoutes(app, { dataDir, readEntries, escapeHtml, p
       res.type('png').send(buf);
     } catch {
       res.status(502).send('tile error');
+    }
+  });
+
+  // Photoreal imagery through Cesium ion (token stays server-side; see imagery.mjs)
+  app.get('/api/imagery/status', (req, res) => {
+    res.json({ enabled: imageryEnabled(), attribution: imageryAttribution(), note: 'Cesium ion free tier: non-commercial use' });
+  });
+  app.get('/api/imagery/:z/:x/:y.jpg', async (req, res) => {
+    const t = parseTileParams(req.params.z, req.params.x, req.params.y);
+    if (!t || t.z > 17) return res.status(400).send('bad tile');
+    if (!imageryEnabled()) return res.status(404).send('imagery disabled');
+    try {
+      const v = await fetchImageryTile(t);
+      if (!v) return res.status(404).send('imagery disabled');
+      res.set('Cache-Control', 'public, max-age=86400');
+      res.type(v.type).send(v.buf);
+    } catch {
+      res.status(502).send('imagery error');
     }
   });
 

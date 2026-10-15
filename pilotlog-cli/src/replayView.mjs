@@ -164,6 +164,8 @@ ${chromeCss()}
 .acs-bar b{display:block;height:100%;background:linear-gradient(90deg,#0891b2,var(--cy))}
 .sample-banner{display:inline-flex;align-items:center;gap:6px;font:700 9px var(--mono);letter-spacing:.14em;color:var(--mg);border:1px solid rgba(244,114,208,.45);padding:3px 8px;border-radius:999px;margin-left:8px}
 .terrain-note{font:9px/1.3 var(--mono);color:#56627c;margin-top:6px}
+.img-attrib{position:absolute;right:10px;bottom:6px;z-index:4;font:8px var(--mono);color:rgba(255,255,255,.55);text-shadow:0 1px 2px #000;pointer-events:none}
+@media(max-width:720px){.img-attrib{bottom:auto;top:auto;right:8px;bottom:4px}}
 @media(max-width:1100px){.replay-grid{grid-template-columns:1fr 1fr}.hero{grid-column:1/-1;order:-1;min-height:420px}.acs-strip{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:1100px){.col-hero{grid-column:1/-1;order:-1}}
 @media(max-width:720px){.replay-grid{grid-template-columns:1fr}.col-hero{order:-1}.acs-strip{grid-template-columns:1fr 1fr}.hero{min-height:0;display:flex;flex-direction:column;flex:none}.hero-stage{position:relative;inset:auto;height:62vh;min-height:440px;max-height:600px}.playbar{position:static;padding:10px 12px 12px;border-radius:0;border-left:0;border-right:0;border-bottom:0}.chip-bl{bottom:14px}.terrain-note{display:none}.ev-lab{display:none}.hero-hud .chip{padding:6px 8px;font-size:9px}.chip-tl{max-width:56%}.chip-tl>.mg:first-of-type{display:none}.chip-tr{max-width:38%}.play-row{flex-wrap:wrap}.scrub{order:5;flex-basis:100%}}
@@ -204,6 +206,7 @@ ${renderNav(esc, { active: 'replay', demo, user, timeZone: tz })}
       <div class="hero-stage">
         <div class="replay2d" id="replay2d">${miniTrackSvg(points, 640, 360)}<div class="r3d-status" id="r3dStatus" role="status">Loading 3D replay…</div></div>
         <canvas class="replay3d" id="replay3d" aria-label="3D flight replay"></canvas>
+        <div class="img-attrib" id="imgAttrib" hidden></div>
         <div class="hero-hud">
           <div class="chip chip-tl">
             <b>REPLAY MODE${t.sample ? ' <span class="sample-banner">SAMPLE</span>' : ''}</b>
@@ -235,7 +238,7 @@ ${renderNav(esc, { active: 'replay', demo, user, timeZone: tz })}
               </select>
             </label>
           </div>
-          <div class="terrain-note"><span class="tn-long">Terrain: stylized Terrarium elevation. Photoreal satellite draping needs a Cesium/Google (or ArcGIS) key — Esri World Imagery terms do not clearly permit commercial product use without a subscription.</span></div>
+          <div class="terrain-note"><span class="tn-long" id="tnLong">Terrain: stylized Terrarium elevation (no imagery key configured). Set CESIUM_ION_TOKEN on the server for satellite ground.</span></div>
         </div>
     </section>
   </div>
@@ -282,7 +285,7 @@ ${renderNav(esc, { active: 'replay', demo, user, timeZone: tz })}
 <script type="module">
 const TRACK = ${trackJson};
 const DUR = ${JSON.stringify(dur)};
-const R3D_TIMEOUT_MS = 25000;
+const R3D_TIMEOUT_MS = 40000;
 
 function fmt(sec){sec=Math.max(0,Math.round(sec));const m=Math.floor(sec/60),s=sec%60;return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');}
 
@@ -305,6 +308,7 @@ let ctl=null;
     await Promise.race([handle.ready, new Promise((_,rej)=>setTimeout(()=>rej(new Error('3D load timed out')),R3D_TIMEOUT_MS))]);
     ctl=handle.controls;
     canvas.classList.add('on');
+    if(handle.photo){const a=document.getElementById('imgAttrib');a.textContent=handle.photo.attribution;a.hidden=false;const tn=document.getElementById('tnLong');if(tn)tn.textContent='Ground: satellite imagery via Cesium ion (free tier, non-commercial) draped on Terrarium elevation.';}
     setTimeout(()=>document.getElementById('replay2d')?.classList.add('gone'),600);
     const vb=document.getElementById('viewBtn'); if(vb&&ctl.view) vb.textContent=ctl.view.toUpperCase();
     ctl.onHud(({altFt,gsKt,hdgDeg,t})=>{
