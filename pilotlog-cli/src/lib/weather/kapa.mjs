@@ -12,6 +12,8 @@ export const KAPA = {
   icao: 'KAPA',
   name: 'Centennial Airport',
   elevFt: 5885,
+  lat: 39.5701,
+  lon: -104.8493,
   runways: [
     { id: '17L/35R', headings: [170, 350] },
     { id: '17R/35L', headings: [170, 350] },
@@ -112,11 +114,11 @@ const XWIND_NOGO = 20; // kt hard caution → still GO if VFR mins met, but flag
  * @param {{ visib, clouds, wdir, wspd, wgst, fltCat }} obs
  * @returns {{ decision: 'GO'|'NO-GO'|'CAUTION'|'UNKNOWN', reasons: string[], ceilingFt, visSm, crosswind, advisory: string }}
  */
-export function evaluateVfrGoNoGo(obs = {}) {
+export function evaluateVfrGoNoGo(obs = {}, { runways } = {}) {
   const visSm = parseVisibilitySm(obs.visib);
   const ceil = ceilingFt(obs.clouds);
   const reasons = [];
-  const xw = bestCrosswind(obs.wdir, obs.wspd ?? obs.wgst);
+  const xw = runways && runways.length ? bestCrosswind(obs.wdir, obs.wspd ?? obs.wgst, runways) : bestCrosswind(obs.wdir, obs.wspd ?? obs.wgst);
 
   if (visSm == null && ceil == null && obs.wdir == null) {
     return {
@@ -217,5 +219,28 @@ export function demoWeather() {
     goNoGo: go,
     fetchedAt: new Date().toISOString(),
     stale: false,
+  };
+}
+
+/**
+ * aviationweather.gov airport row → station { icao, name, elevFt, lat, lon, runways }.
+ * Runway headings come from the published alignment (true); helipads/unknown skipped.
+ */
+export function stationFromAirport(row, icao = '') {
+  if (!row) return null;
+  const runways = (row.runways || [])
+    .filter((r) => r && Number.isFinite(Number(r.alignment)) && /\//.test(String(r.id)))
+    .map((r) => {
+      const a = Number(r.alignment) % 360;
+      return { id: String(r.id), headings: [a, (a + 180) % 360] };
+    });
+  const elevM = Number(row.elev);
+  return {
+    icao: String(row.icaoId || icao).toUpperCase(),
+    name: String(row.name || '').trim().replace(/\s+/g, ' '),
+    elevFt: Number.isFinite(elevM) ? Math.round(elevM * 3.28084) : null,
+    lat: Number(row.lat),
+    lon: Number(row.lon),
+    runways,
   };
 }

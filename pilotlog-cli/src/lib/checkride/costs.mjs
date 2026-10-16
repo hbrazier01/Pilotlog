@@ -4,7 +4,8 @@
  */
 import { isDual, isSolo, xcHours, totalHours } from './requirements.mjs';
 
-export const DEFAULT_RATES = { aircraftRate: 229, instructorRate: 60, aircraftLabel: 'DA40 XLT' };
+/** Generic placeholder rates until the student sets their own in Settings. */
+export const DEFAULT_RATES = { aircraftRate: 180, instructorRate: 65, aircraftLabel: '' };
 export const PHASES = ['pre_solo', 'dual', 'solo', 'cross_country', 'night', 'checkride_prep'];
 export const PHASE_LABELS = { pre_solo: 'Pre-solo dual', dual: 'Post-solo dual', solo: 'Solo', cross_country: 'Cross-country', night: 'Night', checkride_prep: 'Checkride prep' };
 

@@ -1,12 +1,14 @@
 /**
  * PilotLog cockpit 3D synthetic vision — Terrarium elevation + three.js.
- * Concept: cyan wireframe DA40, thin dashed magenta path, tall rectangular
+ * Concept: cyan wireframe trainer (type from Settings), thin dashed magenta path, tall rectangular
  * gates, Front Range at sunrise with snow ridges + plains HUD grid.
  * Falls back by rejecting; caller keeps SVG visible.
  */
 import * as THREE from '/js/three.module.min.js';
+import { buildAircraft } from '/js/aircraft-models.js';
 
-const KAPA = { lat: 39.5701, lon: -104.8484, elev: 1791 };
+/** Scene origin (home airport or track start). Default: sample area. */
+let ORIGIN = { lat: 39.5701, lon: -104.8484, elev: 1791 };
 const DEG = Math.PI / 180;
 const VERT_EXAG = 3.2;
 
@@ -31,14 +33,14 @@ function terrariumElev(r, g, b) {
   return r * 256 + g + b / 256 - 32768;
 }
 
-/** Local ENU meters relative to KAPA (x=east, y=up, z=south). */
+/** Local ENU meters relative to ORIGIN (x=east, y=up, z=south). */
 function toLocal(lon, lat, elevM) {
   const R = 6378137;
-  const dLon = (lon - KAPA.lon) * DEG;
-  const dLat = (lat - KAPA.lat) * DEG;
-  const x = dLon * Math.cos(KAPA.lat * DEG) * R;
+  const dLon = (lon - ORIGIN.lon) * DEG;
+  const dLat = (lat - ORIGIN.lat) * DEG;
+  const x = dLon * Math.cos(ORIGIN.lat * DEG) * R;
   const z = -dLat * R;
-  const y = (elevM - KAPA.elev) * VERT_EXAG;
+  const y = (elevM - ORIGIN.elev) * VERT_EXAG;
   return { x, y, z };
 }
 
@@ -50,72 +52,6 @@ function glowLineMat(color, opacity = 0.95) {
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
-}
-
-/** Sleek low-wing DA40: tapered wings, T-tail, canopy — cyan translucent + wire glow. */
-function makeDa40() {
-  const g = new THREE.Group();
-  const CYAN = 0x22d3ee;
-  const fill = new THREE.MeshBasicMaterial({
-    color: CYAN,
-    transparent: true,
-    opacity: 0.28,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
-  const edgeMat = new THREE.LineBasicMaterial({
-    color: CYAN,
-    transparent: true,
-    opacity: 1,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
-
-  function part(geo, pos, rot = [0, 0, 0], scale = [1, 1, 1]) {
-    const m = new THREE.Mesh(geo, fill.clone());
-    m.position.set(...pos);
-    m.rotation.set(...rot);
-    m.scale.set(...scale);
-    g.add(m);
-    const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 15), edgeMat.clone());
-    e.position.copy(m.position);
-    e.rotation.copy(m.rotation);
-    e.scale.copy(m.scale);
-    g.add(e);
-  }
-
-  // Fuselage body (nose toward +X)
-  part(new THREE.CylinderGeometry(0.22, 0.32, 2.4, 12), [0.1, 0.08, 0], [0, 0, Math.PI / 2]);
-  part(new THREE.ConeGeometry(0.22, 0.85, 12), [1.55, 0.08, 0], [0, 0, -Math.PI / 2]);
-  part(new THREE.CylinderGeometry(0.12, 0.22, 1.1, 10), [-1.4, 0.12, 0], [0, 0, Math.PI / 2]);
-  // Canopy bubble
-  part(new THREE.SphereGeometry(0.4, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), [0.45, 0.35, 0]);
-  // Long low wing
-  part(new THREE.BoxGeometry(0.9, 0.045, 5.6), [0.2, -0.06, 0]);
-  part(new THREE.BoxGeometry(0.4, 0.03, 0.85), [0.05, -0.05, 2.55]);
-  part(new THREE.BoxGeometry(0.4, 0.03, 0.85), [0.05, -0.05, -2.55]);
-  // T-tail
-  part(new THREE.BoxGeometry(0.55, 0.9, 0.055), [-1.85, 0.58, 0]);
-  part(new THREE.BoxGeometry(0.42, 0.04, 1.55), [-1.85, 1.02, 0]);
-  // Subtle prop disc (thin cyan ring, low opacity — not a big white circle)
-  const prop = new THREE.Mesh(
-    new THREE.RingGeometry(0.22, 0.38, 28),
-    new THREE.MeshBasicMaterial({
-      color: CYAN,
-      transparent: true,
-      opacity: 0.14,
-      side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    })
-  );
-  prop.position.set(1.95, 0.08, 0);
-  prop.rotation.y = Math.PI / 2;
-  g.add(prop);
-  const light = new THREE.PointLight(0x22d3ee, 2.4, 900, 2);
-  light.position.set(0, 0.4, 0);
-  g.add(light);
-  return g;
 }
 
 function makeGate(label, lit) {
@@ -188,7 +124,7 @@ function makeGate(label, lit) {
 }
 
 async function loadHeightmap({ z = 10, mobile = false } = {}) {
-  const k = lonLatToTile(KAPA.lon, KAPA.lat, z);
+  const k = lonLatToTile(ORIGIN.lon, ORIGIN.lat, z);
   // Bias west (+mountains) and a bit north/south for Front Range ridge
   const tx0 = Math.floor(k.x) - 3;
   const tx1 = Math.floor(k.x) + 1;
@@ -311,8 +247,8 @@ function buildTerrainMesh(hm) {
 }
 
 function sampleElev(hm, lon, lat) {
-  const p = toLocal(lon, lat, KAPA.elev);
-  let best = KAPA.elev;
+  const p = toLocal(lon, lat, ORIGIN.elev);
+  let best = ORIGIN.elev;
   let bestD = Infinity;
   const { elev, cols, rows } = hm;
   for (let iy = 0; iy < rows; iy += 2) {
@@ -377,7 +313,8 @@ function makeDashedPath(curve) {
  * @param {HTMLCanvasElement} canvas
  * @param {{ gates: {key,label,done}[], current: number }} gateState
  */
-export function mountSynth3d(canvas, gateState) {
+export function mountSynth3d(canvas, gateState, origin = null, aircraftType = 'other') {
+  if (origin && Number.isFinite(origin.lat) && Number.isFinite(origin.lon)) ORIGIN = { lat: origin.lat, lon: origin.lon, elev: Number(origin.elev) || 0 };
   let disposed = false;
   let raf = 0;
   let visible = true;
@@ -447,7 +384,7 @@ export function mountSynth3d(canvas, gateState) {
     if (disposed) return;
     scene.add(buildTerrainMesh(hm));
 
-    // HUD grid over plains near KAPA
+    // HUD grid over plains near ORIGIN
     const grid = new THREE.GridHelper(9000, 60, 0x22d3ee, 0x0c1a28);
     grid.position.set(0, 8, 0);
     grid.material.opacity = 0.32;
@@ -470,16 +407,16 @@ export function mountSynth3d(canvas, gateState) {
     // Anchor path through 4 well-separated gate waypoints (L→R + depth),
     // then densify for a smooth dashed curve.
     const gateWaypoints = [
-      { lon: KAPA.lon - 0.05, lat: KAPA.lat - 0.055, altAdd: 320 }, // SOLO near
-      { lon: KAPA.lon - 0.14, lat: KAPA.lat - 0.02, altAdd: 400 },  // XC
-      { lon: KAPA.lon - 0.25, lat: KAPA.lat + 0.025, altAdd: 500 }, // NIGHT
-      { lon: KAPA.lon - 0.38, lat: KAPA.lat + 0.07, altAdd: 620 },  // CHECKRIDE far
+      { lon: ORIGIN.lon - 0.05, lat: ORIGIN.lat - 0.055, altAdd: 320 }, // SOLO near
+      { lon: ORIGIN.lon - 0.14, lat: ORIGIN.lat - 0.02, altAdd: 400 },  // XC
+      { lon: ORIGIN.lon - 0.25, lat: ORIGIN.lat + 0.025, altAdd: 500 }, // NIGHT
+      { lon: ORIGIN.lon - 0.38, lat: ORIGIN.lat + 0.07, altAdd: 620 },  // CHECKRIDE far
     ];
     const pathPts = [];
     // start just before SOLO (aircraft)
     {
-      const e = sampleElev(hm, KAPA.lon - 0.02, KAPA.lat - 0.065);
-      const p = toLocal(KAPA.lon - 0.02, KAPA.lat - 0.065, e + 280);
+      const e = sampleElev(hm, ORIGIN.lon - 0.02, ORIGIN.lat - 0.065);
+      const p = toLocal(ORIGIN.lon - 0.02, ORIGIN.lat - 0.065, e + 280);
       pathPts.push(new THREE.Vector3(p.x, p.y, p.z));
     }
     for (const wp of gateWaypoints) {
@@ -517,7 +454,8 @@ export function mountSynth3d(canvas, gateState) {
     }
 
     // Aircraft — full airframe, ~1/3 hero width, centered lower-middle
-    aircraft = makeDa40();
+    aircraft = buildAircraft(new URLSearchParams(location.search).get('aircraft') || aircraftType, { style: 'wire' });
+    { const l = new THREE.PointLight(0x22d3ee, 2.4, 900, 2); l.position.set(0, 0.4, 0); aircraft.add(l); }
     const planeU = 0.05;
     const pos = curve.getPoint(planeU);
     const tangent = curve.getTangent(planeU).normalize();
@@ -525,7 +463,7 @@ export function mountSynth3d(canvas, gateState) {
     aircraft.lookAt(pos.clone().add(tangent));
     aircraft.rotateY(-Math.PI / 2);
     // Slightly smaller so full wingspan stays inside frame on desktop + mobile
-    aircraft.scale.setScalar(mobile ? 52 : 68);
+    aircraft.scale.setScalar(mobile ? 25 : 32); // models are ~12 m span (old hero model was ~5.6)
     scene.add(aircraft);
 
     camera = new THREE.PerspectiveCamera(mobile ? 40 : 36, 1, 2, 140000);

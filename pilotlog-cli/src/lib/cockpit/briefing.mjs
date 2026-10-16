@@ -27,9 +27,9 @@ export function weakestAcsFocus(cr, limit = 3) {
   return items.slice(0, limit);
 }
 
-export function instructorBriefing(cr, { updatedAt = null } = {}) {
+export function instructorBriefing(cr, { updatedAt = null, instructorName = '' } = {}) {
   const focus = weakestAcsFocus(cr);
-  const text = briefText(focus);
+  const text = briefText(focus, { name: instructorName });
   const spoken = focus.length
     ? `For your next lesson, focus on ${focus.map((f) => f.text).join(', ')}. ${focus[0]?.sub || ''}`
     : text;

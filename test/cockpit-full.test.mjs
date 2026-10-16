@@ -34,10 +34,10 @@ import { renderNav } from '../pilotlog-cli/src/lib/cockpit/chrome.mjs';
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-test('concept nav has Dashboard through Resources', () => {
+test('concept nav has Dashboard through Settings', () => {
   assert.deepEqual(
     COCKPIT_NAV.map((n) => n.label),
-    ['Dashboard', 'Flight Plan', 'Logbook', 'Training', 'ACS', 'Resources']
+    ['Dashboard', 'Replay', 'Flight Plan', 'Logbook', 'Training', 'ACS', 'Resources', 'Settings']
   );
 });
 
@@ -83,9 +83,14 @@ test('secondary pages render glass content (no placeholders)', () => {
   const briefing = instructorBriefing(cr);
   const wx = { goNoGo: { decision: 'GO', reasons: ['ok'] }, metar: { raw: 'METAR' }, taf: { raw: 'TAF' } };
   const fp = renderFlightPlanPage(esc, { demo: true, weather: wx });
-  assert.match(fp, /Centennial local/);
-  assert.match(fp, /Practice area SE/);
-  assert.match(fp, /ATIS/);
+  assert.match(fp, /Local training plan/);
+  assert.match(fp, /Practice area/);
+  assert.match(fp, /Set your home airport/);
+  assert.doesNotMatch(fp, /KAPA|Centennial|KBJC|DEN App/);
+  const fp2 = renderFlightPlanPage(esc, { weather: { ...wx, station: { icao: 'KPAO', name: 'PALO ALTO', runways: [{ id: '13/31' }] } }, settings: { aircraftLabel: 'C172S' } });
+  assert.match(fp2, /KPAO/);
+  assert.match(fp2, /Palo Alto training plan/);
+  assert.match(fp2, /C172S/);
   assert.doesNotMatch(fp, /TODO|placeholder|Coming soon/i);
 
   const lb = renderLogbookPage(esc, { demo: true, entries: d.entries });

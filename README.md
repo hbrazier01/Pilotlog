@@ -170,3 +170,11 @@ Long-term vision includes:
 # Status
 
 PilotLog is currently under active development on Midnight PreProd.
+
+## Photoreal replay ground (optional)
+
+Set `CESIUM_ION_TOKEN` (server env var, see `.env.example`) to drape satellite imagery
+(Bing Maps Aerial via Cesium ion asset 2) on the 3D replay terrain. The token stays on the
+server: the browser only requests `/api/imagery/{z}/{x}/{y}.jpg`. Cesium ion's free Community
+tier is for non-commercial use; a commercial launch needs a paid ion plan. Without a token the
+replay falls back to the stylized Terrarium terrain.

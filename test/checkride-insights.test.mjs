@@ -14,7 +14,8 @@ test('demo seed yields live-looking state', () => {
   assert.equal(flightPath(cr, d.entries).points[flightPath(cr, d.entries).current].key, 'soloxc');
   const items = nextLesson(cr);
   assert.ok(items.length >= 2 && items.length <= 3);
-  assert.match(briefText(items), /^Hi Giselle/);
+  assert.match(briefText(items), /^Hi there/);
+  assert.match(briefText(items, { name: 'Sam' }), /^Hi Sam/);
 });
 
 test('empty logbook: no projected date, first waypoint is next', () => {

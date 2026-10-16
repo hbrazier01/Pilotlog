@@ -261,7 +261,7 @@ details.fd{margin-top:14px}details.fd summary{cursor:pointer;color:var(--cy);fon
   <section class="brief glass">
     <div class="slip"><span>NEXT LESSON · BRIEFING</span><span>${esc(cr.costs.rates.aircraftLabel || '')}</span></div>
     ${focus.map((f, i) => `<div class="fi"><span class="n">0${i + 1}</span><div><div>${esc(f.text)}<span class="tag">${esc(f.code)}</span></div><div class="s">${esc(f.sub)}</div></div></div>`).join('') || '<div class="dim">Log a flight to generate your briefing.</div>'}
-    <button class="btn" id="briefBtn" onclick="brief()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span>Brief Giselle</span></button>
+    <button class="btn" id="briefBtn" onclick="brief()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span>Brief instructor</span></button>
   </section>
   <section class="fuelc glass" onclick="tog('cost')" role="button" aria-expanded="false" id="btn-cost">
     <div class="sec-h"><span class="eyebrow">Fuel · training budget</span><span class="mono dim">${Math.round(score.budget * 100)}% burned</span></div>
@@ -290,7 +290,7 @@ function tog(n){const p=document.getElementById('panel-'+n),open=!p.classList.co
   if(open){p.classList.add('open');(n==='req'?['btn-req','btn-end']:['btn-'+n]).forEach(id=>document.getElementById(id).setAttribute('aria-expanded','true'));setTimeout(()=>p.scrollIntoView({behavior:'smooth',block:'nearest'}),120)}}
 async function brief(){const b=document.getElementById('briefBtn');
   try{await navigator.clipboard.writeText(BRIEF)}catch{const t=document.createElement('textarea');t.value=BRIEF;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove()}
-  b.classList.add('ok');b.querySelector('span').textContent='Copied ✓';setTimeout(()=>{b.classList.remove('ok');b.querySelector('span').textContent='Brief Giselle'},1800)}
+  b.classList.add('ok');b.querySelector('span').textContent='Copied ✓';setTimeout(()=>{b.classList.remove('ok');b.querySelector('span').textContent='Brief instructor'},1800)}
 async function put(url,body){const r=await fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));if(!r.ok){alert(j.error||'Save failed');return}toast('SAVED');setTimeout(()=>location.reload(),500)}
 function rowData(el){const o={};el.querySelectorAll('input,select').forEach(i=>{o[i.name]=i.type==='checkbox'?i.checked:i.value});return o}
 function saveEndorsement(b){const r=b.closest('[data-key]');put('/api/checkride/endorsements/'+encodeURIComponent(r.dataset.key),rowData(r))}

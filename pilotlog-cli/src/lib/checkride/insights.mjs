@@ -59,7 +59,7 @@ const FOCUS_HINT = {
   nightTraining: 'Night training block — schedule after sunset',
   instrument: 'Hood work: straight-and-level, climbs, turns by reference',
   nightFullStops: 'Night full-stop landings',
-  soloTowerOps: 'Towered full-stops (KAPA works)',
+  soloTowerOps: 'Towered full-stops (any Class B/C/D field)',
 };
 
 /** 2–3 focus items: in-progress ACS tasks first, then the next untouched task, then a top hour deficit. */
@@ -75,7 +75,8 @@ export function nextLesson(cr) {
   return items.slice(0, 3);
 }
 
-export function briefText(items, { name = 'Giselle' } = {}) {
+export function briefText(items, { name = '' } = {}) {
+  name = String(name || '').trim() || 'there';
   if (!items.length) return `Hi ${name}, for my next lesson I'd like to work toward checkride prep.`;
   return `Hi ${name}! For my next lesson I'd like to focus on: ` +
     items.map((i, n) => `${n + 1}) ${i.text}`).join('; ') + '. Thanks!';
@@ -124,9 +125,9 @@ export function demoData(asOf = new Date()) {
   const store = {
     rates: { aircraftRate: 145, instructorRate: 60, aircraftLabel: 'DA40' },
     endorsements: {
-      preSoloKnowledge: { date: day(28), cfiName: 'Giselle' },
-      preSoloFlightTraining: { date: day(23), cfiName: 'Giselle' },
-      soloFlight: { date: soloEntry.date, cfiName: 'Giselle' },
+      preSoloKnowledge: { date: day(28), cfiName: 'Alex (sample CFI)' },
+      preSoloFlightTraining: { date: day(23), cfiName: 'Alex (sample CFI)' },
+      soloFlight: { date: soloEntry.date, cfiName: 'Alex (sample CFI)' },
     },
     acs: {
       'PA.II.A': p('proficient'), 'PA.II.C': p('proficient'), 'PA.II.D': p('proficient'), 'PA.II.F': p('proficient'),

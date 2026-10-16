@@ -2,11 +2,13 @@
 
 export const COCKPIT_NAV = [
   { href: '/cockpit', id: 'dashboard', label: 'Dashboard' },
+  { href: '/cockpit/replay', id: 'replay', label: 'Replay' },
   { href: '/cockpit/flight-plan', id: 'flight-plan', label: 'Flight Plan' },
   { href: '/cockpit/logbook', id: 'logbook', label: 'Logbook' },
   { href: '/cockpit/training', id: 'training', label: 'Training' },
   { href: '/cockpit/acs', id: 'acs', label: 'ACS' },
   { href: '/cockpit/resources', id: 'resources', label: 'Resources' },
+  { href: '/cockpit/settings', id: 'settings', label: 'Settings' },
 ];
 
 export function demoQ(demo) {
@@ -39,6 +41,7 @@ nav.top a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(180deg,#14324a,#0c2234);color:var(--cy);border:1px solid rgba(34,211,238,.45);border-radius:10px;padding:10px 14px;font:600 12px inherit;cursor:pointer;letter-spacing:.04em}
 .btn:hover{box-shadow:0 0 18px rgba(34,211,238,.25)}.btn.sm{padding:6px 10px;font-size:11px}
 .btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.ghost{background:transparent;color:var(--dim);border-style:dashed}
 input,select,textarea{background:rgba(3,6,15,.7);color:var(--txt);border:1px solid #26314a;border-radius:8px;padding:8px 10px;font:12px var(--mono);width:100%}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--cy);box-shadow:0 0 0 3px rgba(34,211,238,.15)}
 table.grid{width:100%;border-collapse:collapse;font-size:13px}
@@ -51,7 +54,7 @@ table.grid td{padding:10px 6px;border-bottom:1px solid rgba(255,255,255,.05);ver
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}`;
 }
 
-export function renderNav(esc, { active, demo = false, user = null } = {}) {
+export function renderNav(esc, { active, demo = false, user = null, timeZone = '' } = {}) {
   const q = demoQ(demo);
   const links = COCKPIT_NAV.map((n) => {
     const href = n.href === '/cockpit' ? `/cockpit${q}` : `${n.href}${q}`;
@@ -65,7 +68,7 @@ export function renderNav(esc, { active, demo = false, user = null } = {}) {
   ${links}
   <div class="nav-r">
     ${demo ? '<span class="demo">SAMPLE</span>' : '<span class="live">LIVE</span>'}
-    <span class="clock" id="clock">— MT</span>
+    <span class="clock" id="clock" data-tz="${esc(timeZone || '')}">—</span>
     <div class="userchip" title="${esc(u.sample ? 'Sample pilot identity' : u.name)}">
       <span class="av">${esc(u.initials || 'JP')}</span>
       <span><span class="nm">${esc(u.name)}</span><br><span class="role">${esc(u.role)}</span></span>
@@ -76,19 +79,21 @@ export function renderNav(esc, { active, demo = false, user = null } = {}) {
 
 export function clockScript() {
   return `(function(){const c=document.getElementById('clock');if(!c)return;
-function tick(){try{c.textContent=new Date().toLocaleTimeString('en-US',{timeZone:'America/Denver',hour12:false})+' MT';}
+const tz=c.dataset.tz||undefined;
+function tick(){try{const parts=new Intl.DateTimeFormat('en-US',{timeZone:tz,hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZoneName:'short'}).formatToParts(new Date());
+const g=(t)=>(parts.find(p=>p.type===t)||{}).value||'';c.textContent=g('hour')+':'+g('minute')+':'+g('second')+' '+g('timeZoneName');}
 catch{c.textContent=new Date().toISOString().slice(11,19)+' Z';}}
 tick();setInterval(tick,1000);})();`;
 }
 
-export function shellStart({ title, active, demo, escapeHtml: esc, user }) {
+export function shellStart({ title, active, demo, escapeHtml: esc, user, timeZone = '' }) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#03060f">
 <title>${esc(title)} — PilotLog</title>
 <style>${chromeCss()}</style></head><body>
 <div class="page">
-${renderNav(esc, { active, demo, user })}`;
+${renderNav(esc, { active, demo, user, timeZone })}`;
 }
 
 export function shellEnd(extraScript = '') {
