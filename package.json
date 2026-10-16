@@ -7,11 +7,12 @@
     "pilotlog": "./bin/pilotlog.mjs"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test test/",
     "build:cli": "tsc -p pilotlog-cli/tsconfig.build.json",
     "build:contract-bundle": "node scripts/bundle-contract.mjs",
     "build:midnight-sdk": "node scripts/bundle-midnight-sdk.mjs",
-    "cli": "node ./bin/pilotlog.mjs"
+    "cli": "node ./bin/pilotlog.mjs",
+    "start": "node pilotlog-cli/src/readApi.mjs"
   },
   "keywords": [],
   "author": "",
