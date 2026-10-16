@@ -26,6 +26,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
   instructorName: '',
   aircraftLabel: '',
   aircraftType: '',
+  tailNumber: '',
+  towerName: '',
+  runways: '',
   timeZone: '',
   limits: { ...DEFAULT_LIMITS },
 });
@@ -37,6 +40,9 @@ export const DEMO_SETTINGS = Object.freeze({
   instructorName: 'Alex (sample CFI)',
   aircraftLabel: 'DA40',
   aircraftType: 'da40',
+  tailNumber: 'N123PL',
+  towerName: 'Centennial',
+  runways: '',
   timeZone: 'America/Denver',
   limits: { ...DEFAULT_LIMITS },
   sample: true,
@@ -89,6 +95,17 @@ export function sanitizeSettings(input = {}, base = DEFAULT_SETTINGS) {
     const t = str(input.aircraftType, 10).toLowerCase();
     if (t && !AIRCRAFT_TYPE_IDS.includes(t)) throw new Error('unknown aircraft type');
     out.aircraftType = t;
+  }
+  if (input.tailNumber !== undefined) {
+    const t = str(input.tailNumber, 7).toUpperCase().replace(/[\s-]/g, '');
+    if (t && !/^N[1-9][0-9A-Z]{0,4}$|^[A-Z]{1,2}[A-Z0-9]{2,5}$/.test(t)) throw new Error('callsign must look like an N-number (e.g. N12345)');
+    out.tailNumber = t;
+  }
+  if (input.towerName !== undefined) out.towerName = str(input.towerName, 40).replace(/\s*(tower|ground)\s*$/i, '');
+  if (input.runways !== undefined) {
+    const r = str(input.runways, 60).toUpperCase();
+    if (r && !/^\s*\d{1,2}[LRC]?\s*(\/\s*\d{1,2}[LRC]?)?(\s*[,;]\s*\d{1,2}[LRC]?\s*(\/\s*\d{1,2}[LRC]?)?)*\s*$/.test(r)) throw new Error('runways must look like "17L/35R, 10/28"');
+    out.runways = r;
   }
   if (input.timeZone !== undefined) {
     const tz = str(input.timeZone, 64);

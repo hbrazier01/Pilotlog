@@ -3,6 +3,7 @@
  *   GET  /cockpit (+ pages)   glass-cockpit UI (?demo=1 for SAMPLE)
  *   GET  /api/weather         Live METAR+TAF + go/no-go for the user's home airport
  *   GET  /api/weather/kapa    (compat) KAPA weather
+ *   GET  /cockpit/radio       Radio Practice (simulated tower; training only)
  *   GET  /cockpit/settings    Settings UI;  GET/PUT /api/cockpit/settings
  *   CRUD /api/cockpit/entries File-backed logbook (no wallet gate)
  */
@@ -26,6 +27,8 @@ import { demoData } from './lib/checkride/insights.mjs';
 import { getKapaWeather, getStationWeather } from './lib/weather/fetch.mjs';
 import { settingsFor, writeSettings, bookingAction, sanitizeSettings, readSettings } from './lib/cockpit/settings.mjs';
 import { renderSettingsPage } from './lib/cockpit/settingsPage.mjs';
+import { renderRadioPage } from './lib/cockpit/radioPage.mjs';
+import { getRadioAirportData } from './lib/airport/airportData.mjs';
 import { parseTileParams, terrariumUrl } from './lib/weather/terrain.mjs';
 import { imageryEnabled, fetchImageryTile, imageryAttribution } from './lib/weather/imagery.mjs';
 import { createCheckrideStore } from './checkrideRoutes.mjs';
@@ -249,6 +252,20 @@ export function registerCockpitRoutes(app, { dataDir, readEntries, escapeHtml, p
   app.get('/cockpit/training', htmlPage((esc, ctx) => renderTrainingPage(esc, ctx)));
   app.get('/cockpit/acs', htmlPage((esc, ctx) => renderAcsPage(esc, ctx)));
   app.get('/cockpit/resources', htmlPage((esc, ctx) => renderResourcesPage(esc, ctx)));
+  app.get('/cockpit/radio', async (req, res) => {
+    try {
+      const ctx = await loadContext(req);
+      const station = ctx.weather?.station?.lat != null ? ctx.weather.station : null;
+      // Open data is cached server-side; never hold the page more than ~4 s for a cold fetch
+      // (the fetch keeps running and fills the cache for the next load).
+      const pending = getRadioAirportData(station, null, { dataDir }).catch(() => null);
+      const airportData = await Promise.race([pending, new Promise((r) => setTimeout(() => r(null), 4000))]);
+      res.type('html').send(renderRadioPage(escapeHtml, { ...ctx, airportData }));
+    } catch (err) {
+      console.error('[cockpit]', err);
+      res.status(500).type('html').send(`<!doctype html><title>Cockpit error</title><pre>${escapeHtml(String(err.message || err))}</pre>`);
+    }
+  });
   app.get('/cockpit/settings', htmlPage((esc, ctx) =>
     renderSettingsPage(esc, { ...ctx, rates: ctx.demo ? demoData().store.rates : store.read().rates })));
 
