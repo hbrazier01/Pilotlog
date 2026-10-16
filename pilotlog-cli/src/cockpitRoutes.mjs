@@ -6,6 +6,7 @@
  *   GET  /cockpit/radio       Radio Practice (simulated tower; training only)
  *   GET  /cockpit/settings    Settings UI;  GET/PUT /api/cockpit/settings
  *   CRUD /api/cockpit/entries Per-student logbook (session student; signed out = SAMPLE, read-only)
+ *   GET  /cockpit/examiner    AI Examiner (oral exam, see lib/examiner/routes.mjs)
  *   GET/POST /api/cockpit/radio/attempts  Radio Practice history;  GET /api/cockpit/usage  AI coach ledger
  *
  * All student data goes through `data` (lib/accounts/studentData.mjs), scoped to req.student.
@@ -40,13 +41,15 @@ import { buildTrack } from './lib/replay/tracks.mjs';
 import { shortAddress } from './lib/accounts/authRoutes.mjs';
 import { sanitizeRadioAttempt } from './lib/accounts/studentData.mjs';
 import { SCENARIOS } from '../../public/js/atc-engine.js';
+import { registerExaminerRoutes } from './lib/examiner/routes.mjs';
+import { renderExaminerPage } from './lib/examiner/page.mjs';
 import { parseTrack } from './lib/replay/parse.mjs';
 import { detectEvents } from './lib/replay/events.mjs';
 
 const ENTRY_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const SCENARIO_IDS = SCENARIOS.map((x) => x.id);
 
-export function registerCockpitRoutes(app, { dataDir, escapeHtml, data, requireStudent, legacyProfileUser = null }) {
+export function registerCockpitRoutes(app, { dataDir, escapeHtml, data, requireStudent, legacyProfileUser = null, examiner = {} }) {
   const accountOf = (st) => ({ signedIn: !!st, shortAddress: st ? shortAddress(st.walletAddress) : '', walletAddress: st?.walletAddress || '', verified: !!st?.verified });
 
   function studentUser(st) {
@@ -270,6 +273,8 @@ export function registerCockpitRoutes(app, { dataDir, escapeHtml, data, requireS
         .send(`<!doctype html><title>Cockpit error</title><pre>${escapeHtml(String(err.message || err))}</pre>`);
     }
   });
+
+  registerExaminerRoutes(app, { data, loadContext, escapeHtml, renderPage: renderExaminerPage, ...examiner });
 
   app.get('/cockpit/flight-plan', htmlPage((esc, ctx) => renderFlightPlanPage(esc, ctx)));
   app.get('/cockpit/logbook', htmlPage((esc, ctx) => renderLogbookPage(esc, ctx)));

@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isValidStudentId } from './identity.mjs';
 
-export const DOC_KINDS = Object.freeze(['settings', 'checkride', 'tracks', 'entries', 'radio', 'meta']);
+export const DOC_KINDS = Object.freeze(['settings', 'checkride', 'tracks', 'entries', 'radio', 'meta', 'examiner']);
 const MAX_DOC_BYTES = 8 * 1024 * 1024;
 
 function assertId(id) { if (!isValidStudentId(id)) throw new Error('invalid student id'); }
