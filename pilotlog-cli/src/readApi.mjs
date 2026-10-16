@@ -29,6 +29,11 @@ import { computeProgression } from "./lib/progression-engine.mjs";
 import { computePplRequirements, computePplPart61Progress, computePplEngine } from "./lib/faa/pplEngine.mjs";
 import { registerCheckrideRoutes } from "./checkrideRoutes.mjs";
 import { registerCockpitRoutes } from "./cockpitRoutes.mjs";
+import { createStudentStore } from "./lib/accounts/studentStore.mjs";
+import { createStudentData } from "./lib/accounts/studentData.mjs";
+import { registerAuthRoutes, attachStudent, requireStudent, sameOriginWrites } from "./lib/accounts/authRoutes.mjs";
+import { legacyOwnerWallet } from "./lib/accounts/legacyMigration.mjs";
+import { cockpitUser } from "./lib/cockpit/profile.mjs";
 
 const PORT = Number(process.env.PORT || 8788);
 const DATA_DIR = process.env.PILOTLOG_HOME || process.env.PILOTLOG_DIR || path.resolve(process.cwd(), "data");
@@ -1408,33 +1413,22 @@ function safeJsonForScript(value) {
 const app = express();
 app.use(express.json());
 
-registerCheckrideRoutes(app, {
-  dataDir: DATA_DIR, readEntries, escapeHtml, safeJsonForScript,
-  // pg mode: wallet-scoped cache backed by pilot_profiles.checkride_json (same pattern as identity)
-  pg: {
-    enabled: () => !!getPool(),
-    read: () => (pgCache.walletAddress ? pgCache.checkride : null),
-    write: (store) => {
-      const wa = pgCache.walletAddress;
-      if (!wa) throw new Error("connect your wallet first");
-      pgCache.checkride = store;
-      pgSaveCheckride(wa, store).catch(err => console.error("[db] saveCheckride error:", err.message));
-    },
-  },
+// ── Student accounts: every cockpit/checkride API is scoped to the signed-in student ──
+const studentStore = createStudentStore({ dataDir: DATA_DIR, pool: getPool() });
+const studentData = createStudentData(studentStore, {
+  pgReadCheckride: getPool() ? pgReadCheckride : null,
+  pgReadEntries: getPool() ? (wa) => pgReadEntries(wa) : null,
 });
+app.use(attachStudent());
+app.use(["/api/auth", "/api/cockpit", "/api/checkride"], sameOriginWrites());
+registerAuthRoutes(app, { store: studentStore, dataDir: DATA_DIR });
+
+registerCheckrideRoutes(app, { escapeHtml, data: studentData, requireStudent });
 
 registerCockpitRoutes(app, {
-  dataDir: DATA_DIR, readEntries, escapeHtml,
-  pg: {
-    enabled: () => !!getPool(),
-    read: () => (pgCache.walletAddress ? pgCache.checkride : null),
-    write: (store) => {
-      const wa = pgCache.walletAddress;
-      if (!wa) throw new Error("connect your wallet first");
-      pgCache.checkride = store;
-      pgSaveCheckride(wa, store).catch(err => console.error("[db] saveCheckride error:", err.message));
-    },
-  },
+  dataDir: DATA_DIR, escapeHtml, data: studentData, requireStudent,
+  // Only the configured legacy owner sees the old shared profile.json name on their chip.
+  legacyProfileUser: (st) => (legacyOwnerWallet() && st.walletAddress === legacyOwnerWallet()) ? cockpitUser({ dataDir: DATA_DIR }) : null,
 });
 
 app.get("/health", (_req, res) => {

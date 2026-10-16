@@ -4,7 +4,7 @@
  */
 import { readinessScore, projectCheckride } from './lib/checkride/insights.mjs';
 import { cockpitGates, acsTiles, logbookTimeline, progressBars } from './lib/checkride/cockpit.mjs';
-import { chromeCss, renderNav, clockScript } from './lib/cockpit/chrome.mjs';
+import { chromeCss, renderNav, clockScript, accountCss } from './lib/cockpit/chrome.mjs';
 import { instructorBriefing, minutesAgoLabel } from './lib/cockpit/briefing.mjs';
 
 const usd = (v) => '$' + Math.round(Number(v || 0)).toLocaleString('en-US');
@@ -502,6 +502,7 @@ nav a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 0 0 
 .userchip .nm{font:600 10px var(--mono);letter-spacing:.08em;color:var(--txt);line-height:1.2}
 .userchip .role{font:600 8px var(--mono);letter-spacing:.12em;color:var(--dim)}
 .demo{color:var(--mg);border:1px solid rgba(244,114,208,.45);padding:3px 8px;border-radius:999px}
+${accountCss()}
 nav.top{display:flex;align-items:center;gap:2px;margin-bottom:16px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
 nav.top .brand{font-family:var(--mono);font-size:12px;letter-spacing:.22em;color:var(--cy);margin-right:12px;white-space:nowrap;display:flex;align-items:center;gap:8px}
 nav.top .brand:before{content:"";width:18px;height:18px;background:conic-gradient(from 210deg,var(--cy),var(--mg),var(--am),var(--cy));border-radius:50%;box-shadow:0 0 12px rgba(34,211,238,.5)}

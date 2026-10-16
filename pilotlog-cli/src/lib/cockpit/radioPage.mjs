@@ -8,6 +8,7 @@ import { SCENARIOS, DISCLAIMER } from '../../../../public/js/atc-engine.js';
 export function renderRadioPage(esc, { demo = false, user = null, settings = {}, weather = null, airportData = null } = {}) {
   const boot = {
     demo,
+    signedIn: !demo && !!user?.account?.signedIn,
     settings: { homeAirport: settings.homeAirport || '', towerName: settings.towerName || '', runways: settings.runways || '', tailNumber: settings.tailNumber || '', aircraftType: settings.aircraftType || '' },
     airportData: airportData ? { taxi: airportData.taxi || null, atis: airportData.atis || null, freqs: airportData.freqs ? { tower: airportData.freqs.tower, ground: airportData.freqs.ground, atis: airportData.freqs.atis, source: airportData.freqs.source } : null } : null,
     weather: weather && weather.metar ? { metar: { wdir: weather.metar.wdir ?? null, wspd: weather.metar.wspd ?? null, altim: weather.metar.altim ?? null, obsTime: weather.metar.obsTime ?? null }, station: { runways: weather.station?.runways || [] } } : null,

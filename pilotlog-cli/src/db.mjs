@@ -91,6 +91,34 @@ export async function migrate() {
       source_flight_id TEXT,
       UNIQUE (wallet_address, milestone_key)
     );
+
+    -- Student accounts (feature/student-accounts). Additive only: no existing table is altered.
+    CREATE TABLE IF NOT EXISTS students (
+      id             TEXT        PRIMARY KEY,          -- st_<sha256(wallet)[:24]>
+      wallet_address TEXT        UNIQUE NOT NULL,      -- canonical mn_addr_… (same key as flights)
+      provider       TEXT        NOT NULL DEFAULT 'midnight-1am',
+      created_at     TIMESTAMPTZ DEFAULT NOW(),
+      last_seen_at   TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS student_docs (
+      student_id TEXT        NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+      kind       TEXT        NOT NULL,                 -- settings | checkride | tracks | entries | radio | meta
+      doc        JSONB       NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (student_id, kind)
+    );
+
+    CREATE TABLE IF NOT EXISTS student_usage (
+      student_id    TEXT        NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+      month         TEXT        NOT NULL,              -- YYYY-MM (UTC)
+      input_tokens  BIGINT      NOT NULL DEFAULT 0,
+      output_tokens BIGINT      NOT NULL DEFAULT 0,
+      usd_micros    BIGINT      NOT NULL DEFAULT 0,
+      requests      INT         NOT NULL DEFAULT 0,
+      updated_at    TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (student_id, month)
+    );
   `);
   console.log("[db] Migrations complete.");
 }

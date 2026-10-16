@@ -51,8 +51,27 @@ table.grid td{padding:10px 6px;border-bottom:1px solid rgba(255,255,255,.05);ver
 .pill{font:700 8px var(--mono);letter-spacing:.1em;padding:2px 7px;border-radius:999px;display:inline-block}
 .pill.go{background:var(--gr);color:#06281c}.pill.caut{background:var(--am);color:#1a1200}.pill.nogo{background:#fb7185;color:#1a0505}
 .pill.ok{background:var(--gr);color:#06281c}.pill.warn{background:var(--am);color:#1a1200}.pill.dim{background:rgba(255,255,255,.08);color:var(--dim)}
+${accountCss()}
 @media(max-width:720px){.page{padding:12px 10px 40px}.userchip .role,.nav-r .clock{display:none}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}`;
+}
+
+/** Sign-in chip + banner styles (shared with cockpitView's own stylesheet). */
+export function accountCss() {
+  return `.acct{display:inline-flex;align-items:center;gap:7px;padding:5px 6px 5px 11px;border-radius:999px;border:1px solid rgba(34,211,238,.35);background:linear-gradient(180deg,rgba(20,50,74,.55),rgba(12,34,52,.4));backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);font:600 10px var(--mono);letter-spacing:.08em;color:var(--txt);white-space:nowrap}
+.acct .dot{width:7px;height:7px;border-radius:50%;background:var(--gr);box-shadow:0 0 8px var(--gr)}
+.acct .dot.unv{background:var(--am);box-shadow:0 0 8px var(--am)}
+.acct button{font:600 9px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:999px;padding:4px 8px;cursor:pointer}
+.acct button:hover{color:var(--txt);border-color:rgba(34,211,238,.5)}
+.acct.out{padding:0;border:0;background:none}
+.acct.out button{color:#031018;background:linear-gradient(90deg,var(--cy),#7ff3ff);border:0;padding:7px 13px;font-size:10px;box-shadow:0 0 16px rgba(34,211,238,.35)}
+.acct-msg{position:fixed;right:14px;top:62px;z-index:50;max-width:340px;padding:10px 12px;border-radius:12px;font:12px/1.4 var(--mono);color:#fde68a;background:rgba(26,18,0,.92);border:1px solid rgba(251,191,36,.45);display:none}
+.signin-banner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:-4px 0 14px;padding:10px 14px;border-radius:14px;border:1px solid rgba(34,211,238,.3);background:linear-gradient(90deg,rgba(34,211,238,.12),rgba(244,114,208,.06));font:600 12px/1.4 var(--mono);color:var(--txt)}
+.signin-banner b{color:var(--cy)}
+.nav-r:has(.acct){position:sticky;right:0;padding-left:14px;background:linear-gradient(90deg,transparent,var(--bg) 14px)}
+@media(max-width:1440px){.nav-r:has(.acct) .userchip{display:none}}
+@media(max-width:1180px){.nav-r:has(.acct) .clock{display:none}}
+@media(max-width:720px){.nav-r:has(.acct) .live{display:none}.acct .addr{max-width:84px;overflow:hidden;text-overflow:ellipsis}.signin-banner{font-size:11px;padding:9px 12px}}`;
 }
 
 export function renderNav(esc, { active, demo = false, user = null, timeZone = '' } = {}) {
@@ -74,8 +93,19 @@ export function renderNav(esc, { active, demo = false, user = null, timeZone = '
       <span class="av">${esc(u.initials || 'JP')}</span>
       <span><span class="nm">${esc(u.name)}</span><br><span class="role">${esc(u.role)}</span></span>
     </div>
+    ${renderAccountChip(esc, u.account)}
   </div>
-</nav>`;
+</nav>${u.account && !u.account.signedIn ? `
+<div class="signin-banner" role="note"><span>You're viewing <b>SAMPLE</b> data.</span><span class="dim">Connect your Midnight wallet to see and save your own logbook, settings and replays.</span></div>` : ''}`;
+}
+
+/** Sign-in chip: Connect wallet / short address + Sign out. `account` undefined = legacy pages (no chip). */
+export function renderAccountChip(esc, account) {
+  if (!account) return '';
+  const js = '<div class="acct-msg" id="acctMsg" role="status"></div><script type="module" src="/js/accounts.js"></script>';
+  if (!account.signedIn) return `<span class="acct out" id="acct"><button type="button" data-acct="connect">Connect wallet</button></span>${js}`;
+  const unv = account.verified ? '' : ' unv';
+  return `<span class="acct" id="acct" title="${esc((account.walletAddress ? account.walletAddress + ' · ' : '') + (account.verified ? 'wallet signature verified' : 'wallet NOT signature-verified'))}"><span class="dot${unv}"></span><span class="addr">${esc(account.shortAddress)}</span><button type="button" data-acct="signout">Sign out</button></span>${js}`;
 }
 
 export function clockScript() {
