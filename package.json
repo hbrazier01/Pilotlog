@@ -23,6 +23,7 @@
     "express": "^5.2.1",
     "pg": "^8.21.0",
     "puppeteer": "^24.40.0",
+    "three": "^0.170.0",
     "ws": "^8.20.1"
   },
   "devDependencies": {

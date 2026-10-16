@@ -81,24 +81,58 @@ export function briefText(items, { name = 'Giselle' } = {}) {
     items.map((i, n) => `${n + 1}) ${i.text}`).join('; ') + '. Thanks!';
 }
 
-/** Demo seed (never persisted): ~20 hrs over ~9 weeks, a few ACS tasks, ~$4k spent. */
+/** Demo seed (never persisted): coherent Solo → XC progression, ~20 hrs, ~$4k spent. */
 export function demoData(asOf = new Date()) {
-  const base = new Date(asOf).getTime();
-  const plan = [1.3,1.2,1.4,1.3,1.2,1.5,1.3,1.4,1.2,1.3,1.4,1.3,1.5,1.0,1.1];
-  const entries = plan.map((h, i) => {
-    const date = new Date(base - (63 - i * 4.3) * DAY).toISOString().slice(0, 10);
-    const solo = i === 13 || i === 14;
-    return { id: `demo${i}`, date, from: 'KAPA', to: i === 11 ? 'KCOS' : 'KAPA', totalTime: h,
-      dual: solo ? 0 : h, solo: solo ? h : 0, xc: i === 11 ? h : 0, simulatedInstrument: i % 4 === 2 ? 0.4 : 0,
-      xcDistanceNm: i === 11 ? 52 : 0, towerFullStops: solo ? 3 : 0 };
-  });
+  const base = new Date(asOf);
+  const day = (ago) => new Date(base.getTime() - ago * DAY).toISOString().slice(0, 10);
+  // Chronological dual → first solo → more solo → dual XC (short) → dual. No night yet.
+  // Totals ~19.5 hrs; solo ~3.2 hrs; first solo after ~14 dual hrs.
+  const raw = [
+    { ago: 68, h: 1.4, dual: 1.4 },
+    { ago: 64, h: 1.3, dual: 1.3 },
+    { ago: 60, h: 1.5, dual: 1.5, instrument: 0.4 },
+    { ago: 55, h: 1.2, dual: 1.2 },
+    { ago: 50, h: 1.4, dual: 1.4 },
+    { ago: 45, h: 1.3, dual: 1.3 },
+    { ago: 40, h: 1.5, dual: 1.5, instrument: 0.4 },
+    { ago: 35, h: 1.2, dual: 1.2 },
+    { ago: 30, h: 1.4, dual: 1.4 },
+    { ago: 26, h: 1.3, dual: 1.3 },
+    // first solo (~14.5 hrs total)
+    { ago: 22, h: 1.2, solo: 1.2, tower: 3 },
+    { ago: 18, h: 1.0, solo: 1.0 },
+    { ago: 14, h: 1.0, solo: 1.0 },
+    // dual XC after solo (does not meet long solo XC — keeps flightPath on soloxc)
+    { ago: 10, h: 1.6, dual: 1.6, xc: 1.6, to: 'KCOS', nm: 52 },
+    { ago: 5, h: 1.2, dual: 1.2 },
+  ];
+  const entries = raw.map((r, i) => ({
+    id: `demo${i}`,
+    date: day(r.ago),
+    from: 'KAPA',
+    to: r.to || 'KAPA',
+    totalTime: r.h,
+    dual: r.dual || 0,
+    solo: r.solo || 0,
+    xc: r.xc || 0,
+    simulatedInstrument: r.instrument || 0,
+    xcDistanceNm: r.nm || 0,
+    towerFullStops: r.tower || 0,
+  }));
+  const soloEntry = entries.find(e => e.solo > 0);
   const p = (s) => ({ status: s });
   const store = {
     rates: { aircraftRate: 145, instructorRate: 60, aircraftLabel: 'DA40' },
-    endorsements: { preSoloKnowledge: { date: entries[10].date, cfiName: 'Giselle' }, preSoloFlightTraining: { date: entries[12].date, cfiName: 'Giselle' }, soloFlight: { date: entries[12].date, cfiName: 'Giselle' } },
-    acs: { 'PA.II.A': p('proficient'), 'PA.II.C': p('proficient'), 'PA.II.D': p('proficient'), 'PA.II.F': p('proficient'),
+    endorsements: {
+      preSoloKnowledge: { date: day(28), cfiName: 'Giselle' },
+      preSoloFlightTraining: { date: day(23), cfiName: 'Giselle' },
+      soloFlight: { date: soloEntry.date, cfiName: 'Giselle' },
+    },
+    acs: {
+      'PA.II.A': p('proficient'), 'PA.II.C': p('proficient'), 'PA.II.D': p('proficient'), 'PA.II.F': p('proficient'),
       'PA.IV.A': p('proficient'), 'PA.IV.B': p('proficient'), 'PA.IV.C': p('introduced'), 'PA.IV.D': p('introduced'),
-      'PA.V.A': p('introduced'), 'PA.VII.A': p('introduced'), 'PA.III.A': p('proficient'), 'PA.I.C': p('introduced') },
+      'PA.V.A': p('introduced'), 'PA.VII.A': p('introduced'), 'PA.III.A': p('proficient'), 'PA.I.C': p('introduced'),
+    },
     flights: {}, testDate: null,
   };
   return { entries, store };

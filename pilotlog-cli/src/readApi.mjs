@@ -28,6 +28,7 @@ import { computeReadiness, PILOT_PHASES } from "./lib/readiness.mjs";
 import { computeProgression } from "./lib/progression-engine.mjs";
 import { computePplRequirements, computePplPart61Progress, computePplEngine } from "./lib/faa/pplEngine.mjs";
 import { registerCheckrideRoutes } from "./checkrideRoutes.mjs";
+import { registerCockpitRoutes } from "./cockpitRoutes.mjs";
 
 const PORT = Number(process.env.PORT || 8788);
 const DATA_DIR = process.env.PILOTLOG_HOME || process.env.PILOTLOG_DIR || path.resolve(process.cwd(), "data");
@@ -1410,6 +1411,20 @@ app.use(express.json());
 registerCheckrideRoutes(app, {
   dataDir: DATA_DIR, readEntries, escapeHtml, safeJsonForScript,
   // pg mode: wallet-scoped cache backed by pilot_profiles.checkride_json (same pattern as identity)
+  pg: {
+    enabled: () => !!getPool(),
+    read: () => (pgCache.walletAddress ? pgCache.checkride : null),
+    write: (store) => {
+      const wa = pgCache.walletAddress;
+      if (!wa) throw new Error("connect your wallet first");
+      pgCache.checkride = store;
+      pgSaveCheckride(wa, store).catch(err => console.error("[db] saveCheckride error:", err.message));
+    },
+  },
+});
+
+registerCockpitRoutes(app, {
+  dataDir: DATA_DIR, readEntries, escapeHtml,
   pg: {
     enabled: () => !!getPool(),
     read: () => (pgCache.walletAddress ? pgCache.checkride : null),
