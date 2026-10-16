@@ -21,6 +21,7 @@
     "@midnames/sdk": "^2.0.0",
     "@midnight-ntwrk/ledger-v8": "8.0.3",
     "@midnight-ntwrk/wallet-sdk-address-format": "3.1.0",
+    "ai": "^7.0.142",
     "buffer": "^6.0.3",
     "express": "^5.2.1",
     "pg": "^8.21.0",

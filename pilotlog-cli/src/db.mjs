@@ -103,7 +103,7 @@ export async function migrate() {
 
     CREATE TABLE IF NOT EXISTS student_docs (
       student_id TEXT        NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-      kind       TEXT        NOT NULL,                 -- settings | checkride | tracks | entries | radio | meta
+      kind       TEXT        NOT NULL,                 -- settings | checkride | tracks | entries | radio | meta | examiner
       doc        JSONB       NOT NULL,
       updated_at TIMESTAMPTZ DEFAULT NOW(),
       PRIMARY KEY (student_id, kind)
