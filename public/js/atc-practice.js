@@ -55,6 +55,10 @@ function renderFreq() {
 function renderCue() {
   if (session.done) {
     const sc = sessionScore(session);
+    if (boot.signedIn && !session.saved) {
+      session.saved = true; // per-student Radio Practice history
+      fetch('/api/cockpit/radio/attempts', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scenario, score: sc, steps: session.steps?.length ?? null, airport: boot.settings?.homeAirport || '' }) }).catch(() => {});
+    }
     $('cue').innerHTML = `<span class="eyebrow">Scenario complete · ${sc}%</span>Pick another scenario or restart to try for 100%.`;
     return;
   }

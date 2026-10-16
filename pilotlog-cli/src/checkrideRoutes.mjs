@@ -8,9 +8,9 @@
  *   PUT  /api/checkride/acs/:taskId       { status }
  *   PUT  /api/checkride/flights/:entryId  per-flight details
  *
- * Persistence: when DATABASE_URL is set, store is wallet-scoped in
- * pilot_profiles.checkride_json (same pattern as identity_json). Otherwise
- * falls back to <DATA_DIR>/checkride.json.
+ * Persistence: per student (lib/accounts/studentData.mjs). Postgres student_docs when DATABASE_URL
+ * is set (falls back to legacy pilot_profiles.checkride_json for the wallet), otherwise
+ * <DATA_DIR>/students/<id>/checkride.json. createCheckrideStore() is kept for the legacy file.
  */
 import fs from 'node:fs';
 import { renderCheckridePage } from './checkrideView.mjs';
@@ -66,51 +66,64 @@ function usd(v) {
   return '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
-export function registerCheckrideRoutes(app, { dataDir, readEntries, escapeHtml, safeJsonForScript, pg = null }) {
-  const store = createCheckrideStore(dataDir, pg);
-  const state = (asOf) => computeCheckride(readEntries(), store.read(), { asOf });
-  const update = (res, fn) => {
-    try { const s = store.read(); fn(s); store.write(s); res.json({ ok: true }); }
-    catch (err) { res.status(400).json({ ok: false, error: err.message }); }
-  };
+/**
+ * Per-student routes. `data` is createStudentData(); every read/write is scoped to req.student
+ * (set by attachStudent). Signed-out visitors get the read-only SAMPLE state; writes return 401.
+ */
+export function registerCheckrideRoutes(app, { escapeHtml, data, requireStudent }) {
+  const state = async (st, asOf) => computeCheckride(await data.entries(st), await data.checkride(st), { asOf });
+  const update = (fn) => [requireStudent, async (req, res) => {
+    try {
+      const st = req.student;
+      const s = await data.checkride(st);
+      await fn(req, s, st);
+      await data.saveCheckride(st, s);
+      res.json({ ok: true });
+    } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
+  }];
+  const demoState = () => { const d = demoData(); return computeCheckride(d.entries, d.store); };
 
-  app.get('/api/checkride', (req, res) => res.json(state(req.query.asOf ? String(req.query.asOf) : undefined)));
+  app.get('/api/checkride', async (req, res) => {
+    if (!req.student || req.query.demo === '1') return res.json({ ...demoState(), demo: true, signedIn: !!req.student });
+    try { res.json(await state(req.student, req.query.asOf ? String(req.query.asOf) : undefined)); }
+    catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+  });
 
-  app.put('/api/checkride/rates', (req, res) => update(res, s => {
+  app.put('/api/checkride/rates', ...update((req, s) => {
     const a = Number(req.body?.aircraftRate), i = Number(req.body?.instructorRate);
     if (!(a >= 0 && a < 10000) || !(i >= 0 && i < 10000)) throw new Error('rates must be numbers between 0 and 10000');
     s.rates = { aircraftRate: a, instructorRate: i, aircraftLabel: String(req.body?.aircraftLabel ?? s.rates?.aircraftLabel ?? '').slice(0, 40) };
   }));
 
-  app.put('/api/checkride/test-date', (req, res) => update(res, s => {
+  app.put('/api/checkride/test-date', ...update((req, s) => {
     const d = req.body?.testDate;
     if (d && !/^\d{4}-\d{2}-\d{2}$/.test(String(d))) throw new Error('testDate must be YYYY-MM-DD');
     s.testDate = d || null;
   }));
 
-  app.put('/api/checkride/endorsements/:key', (req, res) => update(res, s => {
+  app.put('/api/checkride/endorsements/:key', ...update((req, s) => {
     if (!ENDORSEMENT_CATALOG.some(c => c.key === req.params.key)) throw new Error('unknown endorsement');
     s.endorsements[req.params.key] = sanitizeEndorsement(req.body);
   }));
 
-  app.put('/api/checkride/acs/:taskId', (req, res) => update(res, s => {
+  app.put('/api/checkride/acs/:taskId', ...update((req, s) => {
     if (!isValidAcsTask(req.params.taskId)) throw new Error('unknown ACS task');
     if (!ACS_STATUSES.includes(req.body?.status)) throw new Error('invalid status');
     s.acs[req.params.taskId] = { status: req.body.status, updatedAt: new Date().toISOString() };
   }));
 
-  app.put('/api/checkride/flights/:entryId', (req, res) => update(res, s => {
-    if (!readEntries().some(e => e.id === req.params.entryId)) throw new Error('unknown flight');
+  app.put('/api/checkride/flights/:entryId', ...update(async (req, s, st) => {
+    if (!(await data.entries(st)).some(e => e.id === req.params.entryId)) throw new Error('unknown flight');
     s.flights[req.params.entryId] = sanitizeFlightDetails(req.body);
   }));
 
-  // ?demo=1 renders seeded sample state in memory only; never touches the store.
-  app.get('/checkride', (req, res) => {
-    const demo = req.query.demo === '1';
-    if (demo) {
+  // ?demo=1 (or signed out) renders seeded sample state in memory only; never touches any store.
+  app.get('/checkride', async (req, res) => {
+    if (req.query.demo === '1' || !req.student) {
       const d = demoData();
       return res.type('html').send(renderCheckridePage(computeCheckride(d.entries, d.store), escapeHtml, { entries: d.entries, demo: true }));
     }
-    res.type('html').send(renderCheckridePage(state(), escapeHtml, { entries: readEntries() }));
+    try { res.type('html').send(renderCheckridePage(await state(req.student), escapeHtml, { entries: await data.entries(req.student) })); }
+    catch (err) { res.status(500).type('text').send(String(err.message || err)); }
   });
 }
