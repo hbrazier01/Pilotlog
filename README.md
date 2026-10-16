@@ -1,180 +1,47 @@
 # PilotLog
 
-PilotLog is a next-generation aviation logbook and pilot identity platform built on Midnight.
+**The flight-training cockpit for student pilots.** Replay every lesson in 3D, practice your radio calls with an AI tower, and always know exactly how close you are to your checkride.
 
-The platform combines:
+PilotLog works for any student at any airport, in any trainer. Set your home field, aircraft, instructor and scheduler once, and the whole app adapts.
 
-* digital flight logging
-* pilot progression tracking
-* aircraft-linked records
-* Midnames identity integration
-* verifiable aviation data
+## Try it
+- [Cockpit dashboard (demo)](https://pilotlog.digitalaviationpool.com/cockpit?demo=1)
+- [3D flight replay (demo)](https://pilotlog.digitalaviationpool.com/cockpit/replay?demo=1)
+- [Radio Practice (demo)](https://pilotlog.digitalaviationpool.com/cockpit/radio?demo=1)
 
-PilotLog transforms fragmented aviation records into structured, portable, and verifiable digital identity.
+Demo mode uses a labeled SAMPLE student, flight and weather.
 
----
+![PilotLog 3D replay](docs/replay.png)
 
-# Live Demo
+## What it does
+- **3D flight replay.** Import a GPX, KML or ForeFlight/Garmin CSV track and fly it again over real terrain. A scrubber, orbit, focus and chase cameras, and live ALT/GS/HDG readouts let you step through it. Steep turns, slow flight, touch-and-goes and bounced landings are detected automatically.
+- **Radio Practice.** Five Class D scenarios: taxi, takeoff, pattern entry, touch-and-go and full stop. Speak or type your calls and an AI tower replies in standard phraseology, using your airport's real runways, taxiways and frequencies. It then grades your readback against the AIM and 7110.65. Training only; this is not real ATC.
+- **Today's Call.** GO / CAUTION / NO-GO from live METAR/TAF measured against your personal minimums, plus a suggested focus for the lesson and a button to book in your own scheduler (FlightCircle, Flight Schedule Pro, Schedule Master, myFBO or any link).
+- **Mission Map.** Every 14 CFR 61.109(a) private pilot requirement, tracked from your logbook.
+- **Checkride Tracker.** Readiness, endorsements, ACS progress and a training cost forecast.
+- **Lesson Debrief.** A shareable card for each flight with a PNG export.
+- **Logbook.** Create, edit and review your flight entries.
 
-Production deployment:
+## Run it locally
+Requires Node.js 22+.
 
-https://pilotlog-production-6c21.up.railway.app/
+    git clone https://github.com/hbrazier01/Pilotlog.git
+    cd Pilotlog
+    npm install
+    node pilotlog-cli/src/readApi.mjs   # http://localhost:8788
+    npm test
 
-GitHub repository:
+### Optional: satellite ground on the replay
+Set `CESIUM_ION_TOKEN` as a server environment variable (see `.env.example`). The token stays on the server; the browser only calls `/api/imagery/...`. Cesium ion's free tier is non-commercial. Without a token the replay uses stylized terrain.
 
-https://github.com/hbrazier01/Pilotlog
+## Data sources
+aviationweather.gov (METAR, TAF, airports), OpenStreetMap (taxiways, attribution required), OurAirports (frequencies), AWS Terrain Tiles, and Cesium ion / Bing Maps (imagery). Always verify against official sources and your CFI.
 
----
+## Built on Midnight
+PilotLog's longer-term vision is a portable, verifiable pilot identity: a Pilot Passport (e.g. `hbrazier.night` via Midnames), chain-linked flight records and privacy-preserving attestations, built with Midnight Compact contracts, the Midnight SDK and the 1AM wallet on PreProd. To try the wallet features, install the 1AM Wallet extension, switch it to Midnight PreProd, and click **Connect Wallet**.
 
-# Core Features
+## Status
+In active development. Not a substitute for an official weather briefing, ATC or your instructor's judgment.
 
-## Pilot Identity
-
-* Midnight wallet connection
-* Midnames `.night` identity resolution
-* Canonical pilot identity system
-* Persistent Pilot Passport profile
-
-## Flight Logging
-
-* Structured flight entries
-* Aircraft-linked flight history
-* FAA progression tracking
-* Flight readiness calculations
-
-## Verification
-
-* Midnight-powered proof infrastructure
-* Verifiable aviation submissions
-* Chain-linked flight records
-* Request verification workflow
-
-## Dashboard
-
-* Pilot progression tracking
-* FAA requirement monitoring
-* Aircraft utilization overview
-* Recent flight activity
-
----
-
-# Pilot Passport
-
-Pilot Passport acts as the identity layer of PilotLog.
-
-Features include:
-
-* verified pilot identity
-* Midnames integration
-* portable pilot profile
-* progression tracking
-* future attestations and certifications
-
-Example identity:
-
-`hbrazier.night`
-
----
-
-# Midnight Integration
-
-PilotLog integrates directly with the Midnight ecosystem:
-
-* Midnight Compact contracts
-* Midnight browser SDK
-* 1AM wallet integration
-* Midnames identity resolution
-* Zero-knowledge proof infrastructure
-
----
-
-# Tech Stack
-
-* Node.js
-* Express
-* Midnight SDK
-* Compact smart contracts
-* Railway deployment
-* Vanilla JavaScript frontend
-
----
-
-# Local Development
-
-## Requirements
-
-* Node.js 22+
-* npm
-* Google Chrome
-* 1AM Wallet extension
-* Midnight PreProd network access
-
----
-
-## Clone Repository
-
-```bash
-git clone https://github.com/hbrazier01/Pilotlog.git
-cd Pilotlog
-```
-
----
-
-## Install Dependencies
-
-```bash
-npm install
-```
-
----
-
-## Start Local Server
-
-```bash
-node pilotlog-cli/src/readApi.mjs
-```
-
-Local app:
-
-```text
-http://localhost:8788
-```
-
----
-
-# Wallet Connection
-
-1. Install the 1AM Wallet browser extension
-2. Switch wallet network to Midnight PreProd
-3. Open PilotLog locally or in production
-4. Click Connect Wallet
-5. Approve wallet connection
-
----
-
-# Current Product Direction
-
-PilotLog is evolving from a simple aviation logbook into a verifiable aviation identity and record platform.
-
-Long-term vision includes:
-
-* portable pilot identity
-* verifiable flight history
-* aviation attestations
-* aircraft record verification
-* privacy-preserving aviation data
-* resale-ready aircraft history
-
----
-
-# Status
-
-PilotLog is currently under active development on Midnight PreProd.
-
-## Photoreal replay ground (optional)
-
-Set `CESIUM_ION_TOKEN` (server env var, see `.env.example`) to drape satellite imagery
-(Bing Maps Aerial via Cesium ion asset 2) on the 3D replay terrain. The token stays on the
-server: the browser only requests `/api/imagery/{z}/{x}/{y}.jpg`. Cesium ion's free Community
-tier is for non-commercial use; a commercial launch needs a paid ion plan. Without a token the
-replay falls back to the stylized Terrarium terrain.
+## Stack
+Node.js, Express, vanilla JS, three.js, the Web Speech API, the Midnight SDK and Compact. Deployed on Railway.
