@@ -5,6 +5,10 @@
  *   - midnight-1am  (current): Midnight DApp connector `signData` over a server-issued nonce,
  *                   verified server-side with @midnight-ntwrk/ledger-v8 `verifySignature`, and the
  *                   verifying key is bound to the claimed mn_addr_… address via `addressFromKey`.
+ *   - midnight-lace (current): Lace (Midnight) implements the same DApp connector v4 `signData`
+ *                   (official docs: docs.midnight.network › community wallets reference), so it is held to
+ *                   exactly the same verification. Lace is discovered by rdns `io.lace.wallet` (current
+ *                   builds install under a random UUID key; `mnLace` is only a legacy alias).
  *   - midnight-passport (future): placeholder; not available yet. When Passport ships it implements
  *                   the same `verify()` contract and student data does not move (studentId is derived
  *                   from the canonical wallet address, not from the provider).
@@ -90,20 +94,39 @@ export async function verifyWalletSignature({ address, message, signature }) {
   return true;
 }
 
+/** Every wallet provider goes through the same verification: no provider can skip signData. */
+async function verifyWalletProof({ address, message, signature }) {
+  await verifyWalletSignature({ address, message, signature });
+  // studentId depends ONLY on the address, so the same mn_addr is the same student in any wallet.
+  return { studentId: studentIdFor(address), walletAddress: address, verified: true };
+}
+
 export const PROVIDERS = {
   'midnight-1am': {
     id: 'midnight-1am',
-    label: 'Midnight wallet (1AM)',
+    label: '1AM',
+    kind: 'wallet',
+    rdns: ['com.midnight.1am'],
+    legacyKeys: ['1am', '1AM'],
     available: true,
     /** proof: { address, message, signature } — message must be the server-issued challenge. */
-    async verify({ address, message, signature }) {
-      await verifyWalletSignature({ address, message, signature });
-      return { studentId: studentIdFor(address), walletAddress: address, verified: true };
-    },
+    verify: verifyWalletProof,
+  },
+  'midnight-lace': {
+    id: 'midnight-lace',
+    label: 'Lace',
+    kind: 'wallet',
+    rdns: ['io.lace.wallet'],
+    legacyKeys: ['mnLace'],
+    available: true,
+    verify: verifyWalletProof,
   },
   'midnight-passport': {
     id: 'midnight-passport',
     label: 'Midnight Passport',
+    kind: 'passport',
+    rdns: [],
+    legacyKeys: [],
     available: false,
     async verify() { throw new Error('Midnight Passport is not available yet'); },
   },

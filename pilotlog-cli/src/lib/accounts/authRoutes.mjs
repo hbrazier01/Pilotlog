@@ -66,7 +66,7 @@ export function registerAuthRoutes(app, { store, dataDir, nonces = createNonceSt
     res.json({
       signedIn: !!req.student,
       student: publicStudent(req.student),
-      providers: Object.values(PROVIDERS).map((p) => ({ id: p.id, label: p.label, available: p.available })),
+      providers: Object.values(PROVIDERS).map((p) => ({ id: p.id, label: p.label, kind: p.kind, rdns: p.rdns, legacyKeys: p.legacyKeys, available: p.available })),
       unverifiedFallback: process.env.ALLOW_UNVERIFIED_WALLET_LOGIN === '1',
     });
   });
@@ -100,9 +100,12 @@ export function registerAuthRoutes(app, { store, dataDir, nonces = createNonceSt
   app.post('/api/auth/connect', async (req, res) => {
     if (process.env.ALLOW_UNVERIFIED_WALLET_LOGIN !== '1') return res.status(403).json({ ok: false, error: 'This wallet must sign a message to sign in (signData). Unverified sign-in is disabled.' });
     const address = String(req.body?.address || '').trim();
+    let prov;
+    try { prov = getProvider(req.body?.provider || 'midnight-1am'); } catch (err) { return res.status(400).json({ ok: false, error: err.message }); }
+    if (prov.kind !== 'wallet') return res.status(400).json({ ok: false, error: 'unverified sign-in is only for wallets' });
     if (!looksLikeWalletAddress(address)) return res.status(400).json({ ok: false, error: 'invalid Midnight address' });
     try { await decodeUnshieldedAddress(address); } catch (err) { return res.status(400).json({ ok: false, error: err.message }); }
-    await startSession(req, res, { address, provider: 'midnight-1am', verified: false });
+    await startSession(req, res, { address, provider: prov.id, verified: false });
   });
 
   app.post('/api/auth/signout', (req, res) => {

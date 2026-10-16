@@ -65,6 +65,15 @@ export function accountCss() {
 .acct button:hover{color:var(--txt);border-color:rgba(34,211,238,.5)}
 .acct.out{padding:0;border:0;background:none}
 .acct.out button{color:#031018;background:linear-gradient(90deg,var(--cy),#7ff3ff);border:0;padding:7px 13px;font-size:10px;box-shadow:0 0 16px rgba(34,211,238,.35)}
+.wallet-picker{position:fixed;right:14px;top:62px;z-index:60;width:min(340px,calc(100vw - 28px));padding:14px;border-radius:16px;border:1px solid rgba(34,211,238,.4);background:linear-gradient(180deg,rgba(10,22,40,.97),rgba(4,10,22,.97));box-shadow:0 18px 50px rgba(0,0,0,.6),0 0 30px rgba(34,211,238,.15);font:12px/1.4 var(--mono);color:var(--txt)}
+.wallet-picker .wp-h{font:700 10px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--cy);margin:0 2px 10px}
+.wallet-picker .wp-opt{display:flex;align-items:center;gap:12px;width:100%;margin:0 0 8px;padding:11px 12px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.035);color:var(--txt);cursor:pointer;text-align:left;font:inherit}
+.wallet-picker .wp-opt:hover,.wallet-picker .wp-opt:focus-visible{border-color:rgba(34,211,238,.6);background:rgba(34,211,238,.08);outline:0}
+.wallet-picker .wp-opt img,.wallet-picker .wp-mono{width:34px;height:34px;border-radius:10px;flex:none}
+.wallet-picker .wp-mono{display:grid;place-items:center;font:800 12px var(--mono);color:#031018;background:linear-gradient(135deg,var(--cy),#a78bfa)}
+.wallet-picker .wp-t{display:flex;flex-direction:column}.wallet-picker .wp-t b{font-size:14px;letter-spacing:.02em}.wallet-picker .wp-t small{color:var(--gr);font-size:10px;letter-spacing:.08em}
+@media(max-width:600px){.wallet-picker{left:12px;right:auto;width:min(340px,calc(100% - 24px))}}
+.wallet-picker .wp-f{margin:4px 2px 0;color:var(--dim);font-size:10.5px}
 .acct-msg{position:fixed;right:14px;top:62px;z-index:50;max-width:340px;padding:10px 12px;border-radius:12px;font:12px/1.4 var(--mono);color:#fde68a;background:rgba(26,18,0,.92);border:1px solid rgba(251,191,36,.45);display:none}
 .signin-banner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:-4px 0 14px;padding:10px 14px;border-radius:14px;border:1px solid rgba(34,211,238,.3);background:linear-gradient(90deg,rgba(34,211,238,.12),rgba(244,114,208,.06));font:600 12px/1.4 var(--mono);color:var(--txt)}
 .signin-banner b{color:var(--cy)}
