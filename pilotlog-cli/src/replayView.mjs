@@ -118,6 +118,7 @@ ${chromeCss()}
 .hero-stage{position:absolute;inset:0;background:#05070f}
 .replay3d{position:absolute;inset:0;width:100%;height:100%;opacity:0;transition:opacity .5s;z-index:2}
 .replay3d.on{opacity:1}
+.hero-vignette{position:absolute;inset:0;z-index:2;pointer-events:none;background:radial-gradient(ellipse 85% 75% at 50% 52%,transparent 55%,rgba(3,4,12,.62) 100%),linear-gradient(180deg,rgba(3,4,12,.35),transparent 18%,transparent 78%,rgba(3,4,12,.5))}
 .replay2d{position:absolute;inset:0;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:80px 40px 130px;background:radial-gradient(ellipse at 50% 60%,#14203a,#05070f)}
 .replay2d svg{width:100%;max-width:640px;height:auto;flex:1;min-height:0}
 .replay2d svg path{stroke:#4fe3ff;stroke-width:2.5;fill:none;filter:drop-shadow(0 0 6px #4fe3ff)}
@@ -206,6 +207,7 @@ ${renderNav(esc, { active: 'replay', demo, user, timeZone: tz })}
       <div class="hero-stage">
         <div class="replay2d" id="replay2d">${miniTrackSvg(points, 640, 360)}<div class="r3d-status" id="r3dStatus" role="status">Loading 3D replay…</div></div>
         <canvas class="replay3d" id="replay3d" aria-label="3D flight replay"></canvas>
+        <div class="hero-vignette" aria-hidden="true"></div>
         <div class="img-attrib" id="imgAttrib" hidden></div>
         <div class="hero-hud">
           <div class="chip chip-tl">

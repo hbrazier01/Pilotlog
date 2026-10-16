@@ -201,10 +201,18 @@ void main(){
     img = mix(img, texture2D(uImgM, vUvM).rgb, uHasM * inside(vUvM, 0.15));
     img = mix(img, texture2D(uImgD, vUvD).rgb, uHasD * inside(vUvD, 0.15));
     float ndl2 = max(dot(normalize(vN), uSun), 0.0);
-    img = pow(img, vec3(0.92)) * 1.18; // lift Bing's dark mid-tones a touch
-    vec3 pc = img * (0.86 + 0.32 * ndl2) * mix(vec3(1.0), uSunCol, 0.25 * ndl2);
-    float fogP = 1.0 - exp(-pow(vDist * uFog * 0.55, 1.5));
-    pc = mix(pc, mix(vec3(0.30,0.33,0.42), vec3(0.62,0.42,0.32), sunScat * 0.5), clamp(fogP, 0.0, 0.8));
+    // cinematic grade: contrast S-curve, saturation, dusk split-tone (cool shadows, warm highlights)
+    float lum = dot(img, vec3(0.2126,0.7152,0.0722));
+    img = mix(vec3(lum), img, 1.28);
+    img = clamp((img - 0.045) * 1.32, 0.0, 1.0);
+    img = img * img * (3.0 - 2.0 * img) * 0.55 + img * 0.45;
+    float l2 = dot(img, vec3(0.2126,0.7152,0.0722));
+    img *= mix(vec3(0.70,0.78,1.0), vec3(1.06,0.94,0.82), smoothstep(0.05, 0.5, l2));
+    vec3 pc = img * (0.52 + 0.5 * ndl2) * mix(vec3(1.0), uSunCol, 0.35 * ndl2);
+    // atmospheric perspective: cool blue-violet haze, warm toward the sun, thicker with distance
+    float fogP = 1.0 - exp(-pow(vDist * uFog * 0.75, 2.2));
+    vec3 hz = mix(vec3(0.20,0.16,0.26), vec3(0.85,0.40,0.16), pow(sunScat, 1.5) * 0.9);
+    pc = mix(pc, hz, clamp(fogP, 0.0, 0.97));
     col = pc;
   }
   gl_FragColor = vec4(col, 1.0);
@@ -251,6 +259,23 @@ function buildTerrainMesh(hm, imagery = null) {
   });
   mat.extensions = { derivatives: true };
   return new THREE.Mesh(geo, mat);
+}
+
+/** Flat horizon skirt beyond the terrain tiles, shaded like the sky's horizon band so the edge disappears. */
+function makeSkirt(y) {
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uSun: { value: SUN_DIR } }, depthWrite: true,
+    vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix*vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix*viewMatrix*w; }`,
+    fragmentShader: `uniform vec3 uSun; varying vec3 vW;
+      void main(){ vec3 d = normalize(vW - cameraPosition); float s = max(dot(normalize(vec3(d.x,0.0,d.z)), normalize(vec3(uSun.x,0.0,uSun.z))), 0.0);
+        vec3 col = mix(vec3(0.20,0.16,0.26), vec3(0.85,0.40,0.16), pow(s, 9.0) * 0.9);
+        gl_FragColor = vec4(col, 1.0);
+        #include <colorspace_fragment>
+      }`,
+  });
+  const m = new THREE.Mesh(new THREE.RingGeometry(1000, 400000, 64, 1), mat);
+  m.rotation.x = -Math.PI / 2; m.position.y = y; m.renderOrder = -5;
+  return m;
 }
 
 function makeSky() {
@@ -302,7 +327,7 @@ function labelSprite(text, sub, color) {
   const c = document.createElement('canvas');
   const W = 360, H = 96; c.width = W; c.height = H;
   const x = c.getContext('2d');
-  x.fillStyle = 'rgba(4,8,18,0.78)';
+  x.shadowColor = 'rgba(0,0,0,0.85)'; x.shadowBlur = 0; x.fillStyle = 'rgba(3,6,14,0.92)';
   x.strokeStyle = color; x.lineWidth = 3;
   const r = 18;
   x.beginPath(); x.roundRect ? x.roundRect(4, 4, W - 8, H - 8, r) : x.rect(4, 4, W - 8, H - 8); x.fill(); x.stroke();
@@ -367,7 +392,7 @@ function makeCurtain(samples, prog) {
       void main(){ vU=aU; vV=aV; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
     fragmentShader: `uniform float uProg; varying float vU; varying float vV;
       void main(){ float flown = step(vU, uProg);
-        float a = pow(vV, 1.6) * mix(0.0, 0.05, flown);
+        float a = pow(vV, 1.3) * mix(0.025, 0.22, flown);
         gl_FragColor = vec4(0.13,0.83,0.93, a); }`,
   });
   const g = new THREE.Group();
@@ -375,10 +400,10 @@ function makeCurtain(samples, prog) {
   const lp = [];
   for (let i = 0; i < n; i += 30) { const s = samples[i]; lp.push(s.p.x, s.p.y, s.p.z, s.p.x, s.g, s.p.z); }
   const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
-  g.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.10, depthWrite: false, blending: THREE.AdditiveBlending })));
+  g.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.32, depthWrite: false, blending: THREE.AdditiveBlending })));
   // ground shadow trace
   const sp = samples.map((s) => new THREE.Vector3(s.p.x, s.g + 4, s.p.z));
-  g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(sp), new THREE.LineBasicMaterial({ color: 0x0b5c6a, transparent: true, opacity: 0.7, depthWrite: false })));
+  g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(sp), new THREE.LineBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.45, depthWrite: false })));
   return g;
 }
 
@@ -493,6 +518,7 @@ export function mountReplay3d(canvas, track) {
     photo = imagery ? { attribution: imagery.attribution } : null;
     const terrain = buildTerrainMesh(hm, imagery);
     scene.add(terrain);
+    { let mn = Infinity; for (const e of hm.elev) if (e < mn) mn = e; scene.add(makeSkirt(toLocal(ORIGIN.lon, ORIGIN.lat, mn).y - 60)); }
 
     // track samples with ground under each point
     const vecs = points.map((p) => {
@@ -513,14 +539,14 @@ export function mountReplay3d(canvas, track) {
 
     // ribbon: thin hot core + soft glow
     const ribbon = new THREE.Group();
-    ribbon.add(new THREE.Mesh(tubeWithU(curve, N, mobile ? 16 : 12, 6), ribbonMat(0x7ff3ff, 1.0, prog)));
-    const glowTube = new THREE.Mesh(tubeWithU(curve, Math.round(N / 2), mobile ? 48 : 38, 8), ribbonMat(0x22d3ee, 0.2, prog));
+    ribbon.add(new THREE.Mesh(tubeWithU(curve, N, mobile ? 30 : 24, 8), ribbonMat(0x9ff8ff, 1.0, prog)));
+    const glowTube = new THREE.Mesh(tubeWithU(curve, Math.round(N / 2), mobile ? 95 : 80, 10), ribbonMat(0x22d3ee, 0.32, prog));
     ribbon.add(glowTube);
     const chaseTube = new THREE.Mesh(tubeWithU(curve, N, 1.4, 5), ribbonMat(0x7ff3ff, 0.55, prog));
     ribbon.add(chaseTube);
     const coreTube = ribbon.children[0];
     scene.add(ribbon);
-    scene.add(makeCurtain(samples, prog));
+    const curtain = makeCurtain(samples, prog); scene.add(curtain);
 
     // airport runway if the track starts on the ground
     const p0 = points[0];
@@ -631,22 +657,25 @@ export function mountReplay3d(canvas, track) {
       for (const c of pts) { const v = c.clone().sub(look); const vf = v.dot(f); D = Math.max(D, Math.abs(v.dot(r)) / tanX - vf, Math.abs(v.dot(uu)) / tanY - vf); }
       const availX = 2 - pad.l - pad.r, availY = 2 - pad.t - pad.b;
       const cx = (pad.l - pad.r) / 2, cy = (pad.b - pad.t) / 2; // desired NDC centre of content
-      for (let it = 0; it < 16; it++) {
+      for (let it = 0; it < 48; it++) {
         fitCam.position.copy(look).addScaledVector(d, D); fitCam.lookAt(look); fitCam.updateMatrixWorld();
-        let x0 = 9, x1 = -9, y0 = 9, y1 = -9;
-        for (const c of pts) { _v.copy(c).project(fitCam); if (_v.z > 1) { x0 = -9; continue; } x0 = Math.min(x0, _v.x); x1 = Math.max(x1, _v.x); y0 = Math.min(y0, _v.y); y1 = Math.max(y1, _v.y); }
+        let x0 = 9, x1 = -9, y0 = 9, y1 = -9, behind = false;
+        for (const c of pts) { _v.copy(c).project(fitCam); if (_v.z > 1 || _v.z < -1) { behind = true; break; } x0 = Math.min(x0, _v.x); x1 = Math.max(x1, _v.x); y0 = Math.min(y0, _v.y); y1 = Math.max(y1, _v.y); }
+        if (behind) { D *= 1.5; continue; } // low oblique: some points behind/near the camera — back off, don't shift
         const k = Math.max((x1 - x0) / availX, (y1 - y0) / availY, 0.05);
         // shift look so content centre sits at desired centre, then scale distance
-        look.addScaledVector(r, (((x0 + x1) / 2) - cx) * D * tanX).addScaledVector(uu, (((y0 + y1) / 2) - cy) * D * tanY);
-        D = Math.max(300, D * k);
+        // damped update: low oblique views are strongly non-linear, full steps oscillate
+        look.addScaledVector(r, (((x0 + x1) / 2) - cx) * D * tanX * 0.6).addScaledVector(uu, (((y0 + y1) / 2) - cy) * D * tanY * 0.6);
+        D = Math.min(300000, Math.max(300, D * Math.pow(k, 0.7)));
         if (Math.abs(k - 1) < 0.01 && Math.abs((x0 + x1) / 2 - cx) < 0.01 && Math.abs((y0 + y1) / 2 - cy) < 0.01) break;
       }
+      if (!Number.isFinite(D) || !Number.isFinite(look.x + look.y + look.z)) { look.copy(bb.getCenter(new THREE.Vector3())); D = Math.max(bb.getSize(_v).length() * 1.6, 2000); }
       return { pos: look.clone().addScaledVector(d, D), look, D };
     }
     const portrait = () => aspect < 0.9;
     function padFor() {
       // top: room for labels that sit above pins; bottom: scrubber overlay (desktop) / compass chip (mobile)
-      return portrait() ? { l: 0.1, r: 0.1, t: 0.3, b: 0.3 } : { l: 0.08, r: 0.08, t: 0.22, b: mobile ? 0.3 : 0.34 };
+      return portrait() ? { l: 0.06, r: 0.06, t: 0.42, b: 0.24 } : { l: 0.06, r: 0.06, t: 0.62, b: mobile ? 0.3 : 0.3 };
     }
     // Airport-biased set: the ground half of the flight (pattern work) gets duplicated weight
     const fitPts = samplesPts();
@@ -656,7 +685,7 @@ export function mountReplay3d(canvas, track) {
     function orbitTarget() {
       const az0 = portrait() ? axisAz : baseAz;
       const az = az0 + Math.sin(orbitT * 0.05) * 0.12;
-      const el = (portrait() ? 58 : 47) * DEG; // portrait: look more top-down so the long track fits the tall frame
+      const el = (portrait() ? 28 : 19) * DEG; // portrait: look more top-down so the long track fits the tall frame
       const key = `${aspect.toFixed(3)}|${az.toFixed(3)}`;
       if (!orbitCache || orbitCache.key !== key) orbitCache = { key, ...fitView(fitPts, az, el, padFor()) };
       orbitD = orbitCache.D;
@@ -741,11 +770,11 @@ export function mountReplay3d(canvas, track) {
       prog.value = param;
 
       const chase = view === 'chase';
-      const orbitSc = Math.max(acScale, orbitD * (view === 'focus' ? 0.011 : 0.014)); // readable at full-flight zoom
+      const orbitSc = Math.max(acScale, orbitD * (view === 'focus' ? 0.013 : 0.017)); // readable at full-flight zoom
       const sc = THREE.MathUtils.lerp(aircraft.scale.x, chase ? 6 : orbitSc, snap ? 1 : Math.min(1, dt * 3));
-      aircraft.scale.setScalar(sc); acGlow.scale.setScalar(sc * (chase ? 5 : 9)); acGlow.material.opacity = chase ? 0.08 : 0.5;
+      aircraft.scale.setScalar(sc); acGlow.scale.setScalar(sc * (chase ? 5 : 5)); acGlow.material.opacity = chase ? 0.0 : 0.55;
       marker.visible = !chase; marker.position.copy(pos); marker.material.rotation = performance.now() / 900;
-      glowTube.visible = coreTube.visible = !chase; chaseTube.visible = chase;
+      glowTube.visible = coreTube.visible = !chase; curtain.children[0].visible = !chase; chaseTube.visible = chase;
       for (const pin of pins) pin.userData.halo.visible = !chase;
       const tgt = view === 'chase' ? chaseTarget(pos, tan) : view === 'focus' ? focusTarget(uu) : orbitTarget();
       const k = snap || !camInit ? 1 : 1 - Math.exp(-dt * (view === 'chase' ? 2.2 : view === 'focus' ? 1.0 : 1.4));
