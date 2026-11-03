@@ -29,6 +29,7 @@ import { computeProgression } from "./lib/progression-engine.mjs";
 import { computePplRequirements, computePplPart61Progress, computePplEngine } from "./lib/faa/pplEngine.mjs";
 import { registerCheckrideRoutes } from "./checkrideRoutes.mjs";
 import { registerCockpitRoutes } from "./cockpitRoutes.mjs";
+import { registerAccountsV2 } from "./lib/accounts/http.mjs";
 
 const PORT = Number(process.env.PORT || 8788);
 const DATA_DIR = process.env.PILOTLOG_HOME || process.env.PILOTLOG_DIR || path.resolve(process.cwd(), "data");
@@ -1407,6 +1408,8 @@ function safeJsonForScript(value) {
 
 const app = express();
 app.use(express.json());
+// Accounts v2 sessions (PR-2): no-op unless PILOTLOG_ACCOUNTS_V2=true and DATABASE_URL is set.
+registerAccountsV2(app, { pool: getPool() });
 
 registerCheckrideRoutes(app, {
   dataDir: DATA_DIR, readEntries, escapeHtml, safeJsonForScript,

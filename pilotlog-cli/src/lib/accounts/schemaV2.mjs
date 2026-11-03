@@ -11,6 +11,7 @@
 import { IDENTITY_TYPES, WALLET_IDENTITY_TYPES } from "./ids.mjs";
 
 export const ACCOUNTS_V2_MIGRATION = "accounts_v2_001_students_identities";
+export const ACCOUNTS_V2_SESSIONS_MIGRATION = "accounts_v2_002_sessions_challenges";
 const LOCK_KEY = 727001; // arbitrary constant for pg_advisory_xact_lock
 
 const q = (s) => `'${s.replace(/'/g, "''")}'`;
@@ -101,6 +102,41 @@ ${WALLET_KEYED_TABLES.map((t) => `ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS stud
 CREATE INDEX IF NOT EXISTS ${t}_student_idx ON ${t} (student_id);`).join("\n")}
 `;
 
+/** Challenge purposes accepted by auth_challenges.purpose (scoping doc §2.3 / PR-2). */
+export const CHALLENGE_PURPOSES = Object.freeze([
+  "sign-in", "link-wallet", "merge", "email-magic-link", "webauthn-register", "webauthn-auth",
+]);
+
+// PR-2: server-side sessions + single-use challenges. Only hashes of tokens/nonces are stored.
+export const ACCOUNTS_V2_SESSIONS_SQL = `
+CREATE TABLE IF NOT EXISTS sessions (
+  id_hash       TEXT        PRIMARY KEY CHECK (id_hash ~ '^[0-9a-f]{64}$'),  -- sha256(token) hex
+  student_id    TEXT        NOT NULL REFERENCES students(id),
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at    TIMESTAMPTZ NOT NULL,                                          -- absolute expiry
+  revoked_at    TIMESTAMPTZ,
+  revoke_reason TEXT,
+  rotated_to    TEXT,                                                          -- id_hash of successor
+  ua            TEXT,
+  ip_hash       TEXT
+);
+CREATE INDEX IF NOT EXISTS sessions_student_idx ON sessions (student_id) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS sessions_expires_idx ON sessions (expires_at);
+
+CREATE TABLE IF NOT EXISTS auth_challenges (
+  id_hash       TEXT        PRIMARY KEY CHECK (id_hash ~ '^[0-9a-f]{64}$'),  -- sha256(nonce) hex
+  purpose       TEXT        NOT NULL CHECK (purpose IN (${CHALLENGE_PURPOSES.map(q).join(", ")})),
+  subject       TEXT        NOT NULL,                                          -- bound subject (address, email, student id…)
+  student_id    TEXT        REFERENCES students(id),                           -- bound student for link/merge intents
+  payload       JSONB       NOT NULL DEFAULT '{}',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at    TIMESTAMPTZ NOT NULL,
+  consumed_at   TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS auth_challenges_expires_idx ON auth_challenges (expires_at);
+`;
+
 /**
  * Apply the accounts v2 DDL using the given pg Pool/Client. The base wallet-keyed tables
  * must already exist (db.mjs migrate() creates them first).
@@ -115,13 +151,18 @@ export async function migrateAccountsV2(db) {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock($1)", [LOCK_KEY]);
     await client.query(ACCOUNTS_V2_SQL);
-    const r = await client.query(
-      `INSERT INTO accounts_migration_log (kind, name, mode, detail)
-       VALUES ('ddl', $1, 'apply', '{}') ON CONFLICT (name) WHERE kind = 'ddl' DO NOTHING`,
-      [ACCOUNTS_V2_MIGRATION]
-    );
+    await client.query(ACCOUNTS_V2_SESSIONS_SQL);
+    let applied = 0;
+    for (const name of [ACCOUNTS_V2_MIGRATION, ACCOUNTS_V2_SESSIONS_MIGRATION]) {
+      const r = await client.query(
+        `INSERT INTO accounts_migration_log (kind, name, mode, detail)
+         VALUES ('ddl', $1, 'apply', '{}') ON CONFLICT (name) WHERE kind = 'ddl' DO NOTHING`,
+        [name]
+      );
+      applied += r.rowCount;
+    }
     await client.query("COMMIT");
-    return { applied: r.rowCount === 1 };
+    return { applied: applied > 0 };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     throw err;
