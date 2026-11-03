@@ -70,7 +70,40 @@ Flag on in JSON-file mode: logs a notice and registers nothing.
 `PILOTLOG_ALLOWED_ORIGINS`; missing or `null` origin → 403; (3) v2 writes are JSON POSTs, never GET.
 Legacy routes are not covered yet (PR-13); PR-5 should extend the guard to every state-changing route.
 
+## PR-3: email magic-link sign-in
+Files: `lib/accounts/email/{index,postmark,console,test}.mjs`, `lib/accounts/magicLink.mjs`, `lib/accounts/emailRoutes.mjs`.
+
+**Email adapter** (`PILOTLOG_EMAIL_PROVIDER` = `postmark` | `console` | `test`):
+- Outside production the default is `console`, which prints the message *including the link* to stdout (dev only).
+  `postmark` without `POSTMARK_SERVER_TOKEN` falls back to console with a warning. `test` records sends in memory.
+- In production it is Postmark only. A missing token, or `console`/`test`, **fails closed**: `/start` answers 503 and nothing is
+  issued, sent, or logged.
+- Postmark: `POST https://api.postmarkapp.com/email` via `fetch`, header `X-Postmark-Server-Token` from
+  `POSTMARK_SERVER_TOKEN`, `From` = `PILOTLOG_EMAIL_FROM` or `support@digitalaviationpool.com`, `MessageStream: outbound`.
+  Errors carry only HTTP status + Postmark `ErrorCode`. The token, recipient, and link are never logged.
+  Postmark needs a verified sender signature/domain (SPF/DKIM) for `digitalaviationpool.com` before go-live.
+
+**Flow**
+1. `POST /api/v2/auth/email/start {email}`: normalize (trim, NFC, lowercase; no gmail-dot rewriting), then rate-limit
+   per email (`PILOTLOG_MAGIC_LINK_MAX_PER_EMAIL`, default 3/15 min) and per IP (`PILOTLOG_MAGIC_LINK_MAX_PER_IP`,
+   default 10/15 min). Limits are counted from `auth_challenges`, so they're multi-instance safe. Then issue an `email-magic-link`
+   challenge (`PILOTLOG_MAGIC_LINK_TTL_MS`, default 15 min, single-use, sha256 stored) and send the link.
+   The response is **always the same 202** for new, existing, and rate-limited addresses. Account lookup never happens
+   here, and delivery runs after the response, so neither status, body, nor timing enumerates accounts. A malformed address gets 400.
+2. `GET /api/v2/auth/email/verify?token=…` renders a confirm page (no-store, no-referrer, strict CSP) whose button POSTs.
+   **GET never consumes**, so mail scanners and link previews can't burn the link.
+3. `POST /api/v2/auth/email/verify` (form or JSON `{token}`) consumes the token atomically and finds or creates the student plus a verified
+   `email` identity (transaction + per-email advisory lock). It revokes any current session, sets a fresh `__Host-pl_sid`, and
+   writes `signup`/`signin` audit rows. Forms get a 303 redirect to `PILOTLOG_POST_LOGIN_PATH` (default `/cockpit`, relative paths only).
+   Replayed, wrong, or expired tokens all get one generic 400.
+4. If you are already signed in as student A and the link's email belongs to someone else (or no one), the request is **409, blocked**.
+   Linking and merging are PR-12 and never implicit.
+
+**Links** use `PILOTLOG_PUBLIC_URL` (must be https; **required in production**). The Host header is never trusted for links
+in production, which prevents Host-header link poisoning. In dev it falls back to the request host.
+CSRF: both POSTs sit under the PR-2 `/api/v2` same-origin guard.
+
 ## Not included (later PRs)
-Magic link (PR-3), passkeys (PR-4), PR #11 rework onto this schema
+Passkeys (PR-4), PR #11 rework onto this schema
 (PR-5), link/merge (PR-12), legacy cutover (PR-13), any runtime read/write of `student_id`,
 any production migration or backfill run.

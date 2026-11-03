@@ -13,6 +13,8 @@
 import { accountsV2Enabled } from "./flag.mjs";
 import { loadSession, revokeSession, revokeAllSessions, cleanupSessions } from "./sessions.mjs";
 import { cleanupChallenges } from "./challenges.mjs";
+import { selectEmailProvider } from "./email/index.mjs";
+import { registerEmailAuthRoutes } from "./emailRoutes.mjs";
 
 export function cookieConfig(env = process.env) {
   const secure = String(env.PILOTLOG_COOKIE_SECURE ?? "true").trim().toLowerCase() !== "false";
@@ -91,7 +93,7 @@ export function sameOriginWritesV2({ env = process.env } = {}) {
  * Register v2 session middleware + internal routes on an Express app.
  * Returns { enabled, reason? }. No-op unless the flag is on and a pg pool exists.
  */
-export function registerAccountsV2(app, { pool, env = process.env, cleanupEveryMs = 60 * 60 * 1000 } = {}) {
+export function registerAccountsV2(app, { pool, env = process.env, cleanupEveryMs = 60 * 60 * 1000, emailProvider, onMagicLinkStart } = {}) {
   if (!accountsV2Enabled(env)) return { enabled: false, reason: "flag-off" };
   if (!pool) {
     console.log("[accounts] PILOTLOG_ACCOUNTS_V2 is on but DATABASE_URL is not set — v2 sessions disabled in JSON-file mode");
@@ -124,6 +126,14 @@ export function registerAccountsV2(app, { pool, env = process.env, cleanupEveryM
       res.status(500).json({ error: "revoke failed" });
     }
   });
+
+  // PR-3: email magic link. Provider misconfiguration (e.g. production without POSTMARK_SERVER_TOKEN)
+  // fails closed: routes exist but /start answers 503 and nothing is sent or logged.
+  let provider = emailProvider ?? null, providerError = null;
+  if (!provider) {
+    try { provider = selectEmailProvider(env); } catch (err) { providerError = err.message; console.error(`[accounts] ${err.message}`); }
+  }
+  registerEmailAuthRoutes(app, { pool, env, provider, providerError, onStart: onMagicLinkStart });
 
   if (cleanupEveryMs > 0) {
     const t = setInterval(() => {

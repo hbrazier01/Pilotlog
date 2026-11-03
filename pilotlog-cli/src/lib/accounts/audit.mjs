@@ -8,6 +8,8 @@ import { sha256Hex } from "./crypto.mjs";
 export const AUDIT_EVENTS = Object.freeze([
   "session_create", "session_rotate", "session_revoke", "session_revoke_all",
   "challenge_issue", "challenge_consume", "challenge_fail",
+  // PR-3 email magic link
+  "magic_link_request", "magic_link_rate_limited", "magic_link_send_fail", "signup", "signin", "signin_blocked",
 ]);
 
 const SALT = () => process.env.PILOTLOG_AUDIT_SALT || "pilotlog-audit-v1";
