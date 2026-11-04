@@ -1,6 +1,3 @@
-# PENDING: move to .github/workflows/ci.yml to activate.
-# It sits here because the token that pushed this branch lacks the GitHub `workflow` scope,
-# and GitHub refuses workflow-file pushes without it. Contents are final.
 name: CI
 
 on:
@@ -39,8 +36,8 @@ jobs:
       PUPPETEER_SKIP_DOWNLOAD: "true"
       PILOTLOG_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/pilotlog_test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: npm
