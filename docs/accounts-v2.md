@@ -128,3 +128,21 @@ Library: `@simplewebauthn/server` **14.0.3** (pinned exactly; Node ≥ 20). Only
 - **CSRF:** all writes go through the PR-2 `/api/v2` same-origin guard.
 - **Audit events:** `passkey_register`, `passkey_register_fail`, `signin` (identity_type `passkey`), `passkey_signin_fail`, `passkey_counter_regression`, `passkey_delete`, `passkey_delete_blocked`. Credential ids are stored only as salted hashes.
 - **Not in this PR:** sign-up with a passkey (a student must already exist via email), renaming, linking or merging, attestation/AAGUID allow-lists, and front-end UI.
+
+## PR-5: Midnight wallets as identities (rework of PR #11)
+Files: `lib/accounts/walletVerify.mjs` (ported from PR #11 `identity.mjs`), `lib/accounts/walletIdentity.mjs`, `lib/accounts/walletRoutes.mjs`.
+Supersedes #11. Ledger pins are unchanged from main: `@midnight-ntwrk/ledger-v8` **8.0.3** and `@midnight-ntwrk/wallet-sdk-address-format` **3.1.0**. Both are now also listed in the root `package.json`, because CI installs from the root.
+
+| Route | Auth | Notes |
+|---|---|---|
+| `POST /api/v2/auth/wallet/challenge` `{address, intent: login\|link, provider?}` | link needs session | `login` → PR-2 purpose `sign-in`; `link` → `link-wallet`, bound to the student. The message names the domain, intent, account (link only), address, nonce, and time. It's stored in the challenge payload. |
+| `POST /api/v2/auth/wallet/verify-login` `{address, nonce, signature}` | none | Single-use nonce bound to the address, then `verifySignature` + `addressFromKey` (unchanged from #11). A known wallet gets a session; **an unknown wallet creates a new random `st_` student** (scoping doc rev 2: "wallet-only sign-up still works"). |
+| `POST /api/v2/auth/wallet/link` `{address, nonce, signature}` | session | Adds a wallet identity. A wallet on another student → **409** (merge is PR-12). Relinking your own wallet is a no-op. |
+
+- **Identity model:** a wallet is an `identities` row with type `midnight-1am` or `midnight-lace` (PR-1's "wallet provider + subtype") and subject = canonical `mn_addr_…`. Because of the wallet-subject unique index, the same address in 1AM and in Lace is **one** identity; the first type is kept.
+- **Legacy claim:** a `midnight-legacy` identity (backfilled from the client-trusted `/wallet/connect`) is upgraded to the signing wallet's type with `verified_at = now()` on its first verified signature, for either login or link. This is §2.4 M3.
+- **Not ported from #11:** `studentIdFor(address)`, the HMAC cookie, the in-memory nonce map, and the unverified `/api/auth/connect` fallback. None of the unverified paths can create or link identities.
+- **Untouched:** legacy `/wallet/connect` (it's cut over in PR-13).
+- **PR #11 compatibility:** `mapPr11Students(pool, {apply})` keeps PR #11's `st_<sha(addr)>` ids and adds a `midnight-legacy` identity per `students.wallet_address`. It's a dry run by default, reports counts only, and is idempotent.
+- **Audit events:** `wallet_signin_fail`, `wallet_link`, `wallet_link_fail`, `wallet_link_conflict`, `wallet_claim_legacy`, plus `signup` and `signin` with identity_type `midnight-*`.
+- **Config:** `MIDNIGHT_NETWORK` (default `preprod`) selects the accepted `mn_addr_<network>1…` prefix. `PILOTLOG_PUBLIC_URL`'s host is used as the signed `Domain:`.
