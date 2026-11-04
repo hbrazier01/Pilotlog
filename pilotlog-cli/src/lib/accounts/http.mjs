@@ -15,6 +15,7 @@ import { loadSession, revokeSession, revokeAllSessions, cleanupSessions } from "
 import { cleanupChallenges } from "./challenges.mjs";
 import { selectEmailProvider } from "./email/index.mjs";
 import { registerEmailAuthRoutes } from "./emailRoutes.mjs";
+import { registerPasskeyRoutes } from "./passkeyRoutes.mjs";
 
 export function cookieConfig(env = process.env) {
   const secure = String(env.PILOTLOG_COOKIE_SECURE ?? "true").trim().toLowerCase() !== "false";
@@ -134,6 +135,8 @@ export function registerAccountsV2(app, { pool, env = process.env, cleanupEveryM
     try { provider = selectEmailProvider(env); } catch (err) { providerError = err.message; console.error(`[accounts] ${err.message}`); }
   }
   registerEmailAuthRoutes(app, { pool, env, provider, providerError, onStart: onMagicLinkStart });
+  // PR-4: passkeys (WebAuthn). RP ID / origin misconfiguration fails closed per request (503).
+  registerPasskeyRoutes(app, { pool, env });
 
   if (cleanupEveryMs > 0) {
     const t = setInterval(() => {

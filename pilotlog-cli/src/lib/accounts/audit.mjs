@@ -10,6 +10,9 @@ export const AUDIT_EVENTS = Object.freeze([
   "challenge_issue", "challenge_consume", "challenge_fail",
   // PR-3 email magic link
   "magic_link_request", "magic_link_rate_limited", "magic_link_send_fail", "signup", "signin", "signin_blocked",
+  // PR-4 passkeys (WebAuthn)
+  "passkey_register", "passkey_register_fail", "passkey_signin_fail", "passkey_counter_regression",
+  "passkey_delete", "passkey_delete_blocked",
 ]);
 
 const SALT = () => process.env.PILOTLOG_AUDIT_SALT || "pilotlog-audit-v1";

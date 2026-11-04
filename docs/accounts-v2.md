@@ -107,3 +107,24 @@ CSRF: both POSTs sit under the PR-2 `/api/v2` same-origin guard.
 Passkeys (PR-4), PR #11 rework onto this schema
 (PR-5), link/merge (PR-12), legacy cutover (PR-13), any runtime read/write of `student_id`,
 any production migration or backfill run.
+
+## PR-4: passkey (WebAuthn) sign-in
+Files: `lib/accounts/passkeys.mjs`, `lib/accounts/passkeyRoutes.mjs`, `test/helpers/soft-authenticator.mjs`.
+Library: `@simplewebauthn/server` **14.0.3** (pinned exactly; Node ≥ 20). Only active with `PILOTLOG_ACCOUNTS_V2` on and Postgres configured; otherwise every route below is 404.
+
+| Route | Auth | Notes |
+|---|---|---|
+| `POST /api/v2/auth/passkey/register/options` | session | `residentKey: required`, `userVerification: preferred`, attestation `none`, ES256/RS256, existing credentials excluded |
+| `POST /api/v2/auth/passkey/register/verify` `{response, nickname?}` | session | stores `identities(type='passkey', subject=credential id)` + `webauthn_credentials` (public key, sign_count, transports, aaguid, backed_up; device type / backup-eligible in `identities.metadata`) |
+| `POST /api/v2/auth/passkey/login/options` `{email?}` | none | usernameless: `allowCredentials` is always empty, so the response is identical whether or not the email exists. A hint is bound into the challenge and enforced on verify (credential must belong to that email's student) |
+| `POST /api/v2/auth/passkey/login/verify` `{response}` | none | one generic 400 for every failure; success rotates any current session and sets `__Host-pl_sid` |
+| `GET /api/v2/auth/passkeys` | session | own passkeys only (id, nickname, created/last used, transports, aaguid, backedUp, deviceType); no key material |
+| `DELETE /api/v2/auth/passkeys/:id` | session | own only (else 404). **409** if it's the last sign-in method and the student has no verified email |
+
+- **Challenges:** the PR-2 nonce *is* the WebAuthn challenge (purposes `webauthn-register` bound to the student, `webauthn-auth` bound to `passkey-login`; 5-min TTL). Verify decodes `clientDataJSON.challenge` and consumes it atomically **before** looking up the credential, so replays, forged challenges, and any failed attempt burn it.
+- **RP config:** `PILOTLOG_RP_ID` + `PILOTLOG_PUBLIC_URL`. Dev defaults to RP ID `localhost` and the request origin. Production requires both, an https URL, a real domain, and URL host == RP ID or a subdomain of it; anything else → 503 and no challenge issued (fail closed). Changing the RP ID later invalidates every registered passkey.
+- **Counter:** a non-increasing counter (when either side is non-zero) is rejected and audited as `passkey_counter_regression`; the update is compare-and-swap. Authenticators that always report 0 (most synced passkeys) are allowed.
+- **User verification:** requested as `preferred`, not required; `userVerified` is recorded in the audit detail.
+- **CSRF:** all writes go through the PR-2 `/api/v2` same-origin guard.
+- **Audit events:** `passkey_register`, `passkey_register_fail`, `signin` (identity_type `passkey`), `passkey_signin_fail`, `passkey_counter_regression`, `passkey_delete`, `passkey_delete_blocked`. Credential ids are stored only as salted hashes.
+- **Not in this PR:** sign-up with a passkey (a student must already exist via email), renaming, linking or merging, attestation/AAGUID allow-lists, and front-end UI.
