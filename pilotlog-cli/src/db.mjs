@@ -6,6 +6,8 @@
  */
 
 import pg from "pg";
+import { accountsV2Enabled } from "./lib/accounts/flag.mjs";
+import { migrateAccountsV2 } from "./lib/accounts/schemaV2.mjs";
 const { Pool } = pg;
 
 let pool = null;
@@ -29,9 +31,10 @@ export function getPool() {
 /**
  * Run schema migrations idempotently.
  * Call once at startup before the Express server begins serving requests.
+ * Accounts v2 tables (students/identities/…) are added only when PILOTLOG_ACCOUNTS_V2=true.
+ * @param {import('pg').Pool|null} [p] pool override (tests); defaults to the DATABASE_URL pool.
  */
-export async function migrate() {
-  const p = getPool();
+export async function migrate(p = getPool()) {
   if (!p) {
     console.log("[db] DATABASE_URL not set — using JSON file persistence");
     return;
@@ -92,6 +95,10 @@ export async function migrate() {
       UNIQUE (wallet_address, milestone_key)
     );
   `);
+  if (accountsV2Enabled()) {
+    const { applied } = await migrateAccountsV2(p);
+    console.log(`[db] Accounts v2 schema ${applied ? "applied" : "already present"}.`);
+  }
   console.log("[db] Migrations complete.");
 }
 

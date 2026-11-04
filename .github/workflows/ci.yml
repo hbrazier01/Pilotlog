@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (Node 20, Postgres 16)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres   # throwaway CI container only
+          POSTGRES_DB: pilotlog_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Production image is node:20-alpine (Dockerfile, used by railway.toml builder=dockerfile).
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+      PILOTLOG_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/pilotlog_test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - name: Backfill dry run against an empty schema (smoke)
+        run: |
+          DATABASE_URL="$PILOTLOG_TEST_DATABASE_URL" PILOTLOG_ACCOUNTS_V2=true node --input-type=module -e "
+            const { migrate, getPool } = await import('./pilotlog-cli/src/db.mjs');
+            await migrate(); await getPool().end();"
+          DATABASE_URL="$PILOTLOG_TEST_DATABASE_URL" node pilotlog-cli/scripts/backfill-students.mjs --dry-run
