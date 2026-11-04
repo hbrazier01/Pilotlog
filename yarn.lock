@@ -118,7 +118,7 @@
     "@types/object-inspect" "^1.8.1"
     object-inspect "^1.12.3"
 
-"@midnight-ntwrk/ledger-v8@^8.0.2", "@midnight-ntwrk/ledger-v8@^8.0.3":
+"@midnight-ntwrk/ledger-v8@^8.0.2", "@midnight-ntwrk/ledger-v8@^8.0.3", "@midnight-ntwrk/ledger-v8@8.0.3":
   version "8.0.3"
   resolved "https://registry.npmjs.org/@midnight-ntwrk/ledger-v8/-/ledger-v8-8.0.3.tgz"
   integrity sha512-2BLMfHnZyKAHZxaGWjlenhity096lZ9jvyp1qrQH5J3ogpy7H5ostCW8kRj70dGv5T55qDAC5nJ+wnU/8CGUcQ==

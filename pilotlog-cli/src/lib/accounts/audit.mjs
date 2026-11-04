@@ -13,6 +13,8 @@ export const AUDIT_EVENTS = Object.freeze([
   // PR-4 passkeys (WebAuthn)
   "passkey_register", "passkey_register_fail", "passkey_signin_fail", "passkey_counter_regression",
   "passkey_delete", "passkey_delete_blocked",
+  // PR-5 wallet identities
+  "wallet_signin_fail", "wallet_link", "wallet_link_fail", "wallet_link_conflict", "wallet_claim_legacy",
 ]);
 
 const SALT = () => process.env.PILOTLOG_AUDIT_SALT || "pilotlog-audit-v1";
