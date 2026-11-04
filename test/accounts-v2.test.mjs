@@ -136,7 +136,7 @@ pgTest('flag on: migrate() up on a fresh database, then idempotent on re-run', (
     assert.equal(rows[0]?.is_nullable, 'YES', t);
   }
   const { rows } = await pool.query(`SELECT count(*)::int AS n FROM accounts_migration_log WHERE kind = 'ddl'`);
-  assert.equal(rows[0].n, 1);
+  assert.equal(rows[0].n, 2); // 001 schema + 002 sessions
   assert.deepEqual(await migrateAccountsV2(pool), { applied: false });
 }));
 
