@@ -7,6 +7,8 @@
 
 import pg from "pg";
 import { accountsV2Enabled } from "./lib/accounts/flag.mjs";
+import { migratePaperImport } from "./lib/import/schema.mjs";
+import { paperImportEnabled } from "./lib/import/routes.mjs";
 import { migrateAccountsV2 } from "./lib/accounts/schemaV2.mjs";
 const { Pool } = pg;
 
@@ -98,6 +100,7 @@ export async function migrate(p = getPool()) {
   if (accountsV2Enabled()) {
     const { applied } = await migrateAccountsV2(p);
     console.log(`[db] Accounts v2 schema ${applied ? "applied" : "already present"}.`);
+    if (paperImportEnabled()) { await migratePaperImport(p); console.log("[db] Paper import schema ready."); }
   }
   console.log("[db] Migrations complete.");
 }

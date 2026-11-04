@@ -17,6 +17,9 @@ import { selectEmailProvider } from "./email/index.mjs";
 import { registerEmailAuthRoutes } from "./emailRoutes.mjs";
 import { registerPasskeyRoutes } from "./passkeyRoutes.mjs";
 import { registerWalletRoutes } from "./walletRoutes.mjs";
+import { registerPaperImportRoutes, paperImportEnabled } from "../import/routes.mjs";
+import { selectImageStore } from "../import/imageStore.mjs";
+import { selectExtractor } from "../import/extractors.mjs";
 
 export function cookieConfig(env = process.env) {
   const secure = String(env.PILOTLOG_COOKIE_SECURE ?? "true").trim().toLowerCase() !== "false";
@@ -95,7 +98,7 @@ export function sameOriginWritesV2({ env = process.env } = {}) {
  * Register v2 session middleware + internal routes on an Express app.
  * Returns { enabled, reason? }. No-op unless the flag is on and a pg pool exists.
  */
-export function registerAccountsV2(app, { pool, env = process.env, cleanupEveryMs = 60 * 60 * 1000, emailProvider, onMagicLinkStart } = {}) {
+export function registerAccountsV2(app, { pool, env = process.env, cleanupEveryMs = 60 * 60 * 1000, emailProvider, onMagicLinkStart, importStore, importExtractor } = {}) {
   if (!accountsV2Enabled(env)) return { enabled: false, reason: "flag-off" };
   if (!pool) {
     console.log("[accounts] PILOTLOG_ACCOUNTS_V2 is on but DATABASE_URL is not set — v2 sessions disabled in JSON-file mode");
@@ -140,6 +143,12 @@ export function registerAccountsV2(app, { pool, env = process.env, cleanupEveryM
   registerPasskeyRoutes(app, { pool, env });
   // PR-5: Midnight wallets as identities (rework of PR #11). Legacy /wallet/connect untouched.
   registerWalletRoutes(app, { pool, env });
+  // IE-4 lean v1: paper logbook import drafts (second flag). Misconfiguration disables the routes (fail closed).
+  if (paperImportEnabled(env)) {
+    try {
+      registerPaperImportRoutes(app, { pool, env, store: importStore ?? selectImageStore(env), extractor: importExtractor ?? selectExtractor(env) });
+    } catch (err) { console.error(`[import] paper import disabled: ${err.message}`); }
+  }
 
   if (cleanupEveryMs > 0) {
     const t = setInterval(() => {
