@@ -42,7 +42,7 @@ import { getTrack, saveTrackForEntry, readTracks } from './lib/replay/tracks.mjs
 import { parseTrack } from './lib/replay/parse.mjs';
 import { detectEvents } from './lib/replay/events.mjs';
 
-export function registerCockpitRoutes(app, { dataDir, readEntries, escapeHtml, pg = null }) {
+export function registerCockpitRoutes(app, { dataDir, readEntries, escapeHtml, pg = null, accounts = null }) {
   const store = createCheckrideStore(dataDir, pg);
 
   /** Prefer file-backed cockpit entries so readiness works without a wallet. */
@@ -61,7 +61,10 @@ export function registerCockpitRoutes(app, { dataDir, readEntries, escapeHtml, p
     return computeCheckride(entries ?? cockpitEntries(), store.read(), { asOf });
   }
 
-  async function loadContext(req) {
+  // Accounts v2 (flag on): per-student page context from studentRoutes. null = legacy single-user (unchanged).
+  const loadContext = accounts?.loadContext ? (req) => accounts.loadContext(req) : legacyLoadContext;
+
+  async function legacyLoadContext(req) {
     const demo = req.query.demo === '1';
     if (demo) {
       const d = demoData();
@@ -267,14 +270,14 @@ export function registerCockpitRoutes(app, { dataDir, readEntries, escapeHtml, p
     }
   });
   app.get('/cockpit/settings', htmlPage((esc, ctx) =>
-    renderSettingsPage(esc, { ...ctx, rates: ctx.demo ? demoData().store.rates : store.read().rates })));
+    renderSettingsPage(esc, { ...ctx, rates: ctx.rates ?? (ctx.demo ? demoData().store.rates : store.read().rates) })));
 
   app.get('/cockpit/replay', async (req, res) => {
     try {
       const ctx = await loadContext(req);
       const track = ctx.demo
         ? buildSampleKapaTrack()
-        : (req.query.entry && getTrack(dataDir, String(req.query.entry))) || buildSampleKapaTrack();
+        : (req.query.entry && (ctx.getTrack ? await ctx.getTrack(String(req.query.entry)) : getTrack(dataDir, String(req.query.entry)))) || buildSampleKapaTrack();
       // Non-demo without a stored track still shows SAMPLE track clearly labeled
       if (!ctx.demo && track?.sample) {
         /* keep sample flag */
