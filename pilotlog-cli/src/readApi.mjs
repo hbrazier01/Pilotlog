@@ -30,6 +30,8 @@ import { computePplRequirements, computePplPart61Progress, computePplEngine } fr
 import { registerCheckrideRoutes } from "./checkrideRoutes.mjs";
 import { registerCockpitRoutes } from "./cockpitRoutes.mjs";
 import { registerAccountsV2 } from "./lib/accounts/http.mjs";
+import { registerStudentRoutes } from "./lib/accounts/studentRoutes.mjs";
+import { registerSignInPages } from "./lib/accounts/signInPages.mjs";
 
 const PORT = Number(process.env.PORT || 8788);
 const DATA_DIR = process.env.PILOTLOG_HOME || process.env.PILOTLOG_DIR || path.resolve(process.cwd(), "data");
@@ -1409,7 +1411,10 @@ function safeJsonForScript(value) {
 const app = express();
 app.use(express.json());
 // Accounts v2 sessions (PR-2): no-op unless PILOTLOG_ACCOUNTS_V2=true and DATABASE_URL is set.
-registerAccountsV2(app, { pool: getPool() });
+const accountsV2 = registerAccountsV2(app, { pool: getPool() });
+// Accounts v2 on: per-student cockpit/checkride/tracks/radio/usage + sign-in pages, mounted before the legacy routes.
+const studentScope = accountsV2.enabled ? registerStudentRoutes(app, { pool: getPool(), escapeHtml }) : null;
+if (accountsV2.enabled) registerSignInPages(app, { escapeHtml });
 
 registerCheckrideRoutes(app, {
   dataDir: DATA_DIR, readEntries, escapeHtml, safeJsonForScript,
@@ -1427,7 +1432,7 @@ registerCheckrideRoutes(app, {
 });
 
 registerCockpitRoutes(app, {
-  dataDir: DATA_DIR, readEntries, escapeHtml,
+  dataDir: DATA_DIR, readEntries, escapeHtml, accounts: studentScope,
   pg: {
     enabled: () => !!getPool(),
     read: () => (pgCache.walletAddress ? pgCache.checkride : null),
