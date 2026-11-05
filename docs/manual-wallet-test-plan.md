@@ -16,7 +16,7 @@ server expects (`MIDNIGHT_NETWORK`, default `preprod`).
    `Object.values(window.midnight||{}).map(w=>[w.rdns,w.name,w.apiVersion])` and record the output (rdns must be `io.lace.wallet`).
 3. Click **Lace**. Expect: Lace connect prompt for `localhost` → approve.
 4. Expect a second Lace prompt to **sign a message**. Check the text shown contains: `PilotLog`, intent `link`, the
-   domain `localhost:4610`, your student id `st_…`, a nonce and an expiry. Approve.
+   `Domain: localhost:4610`, `Intent: link`, `Account: st_…`, `Address: mn_addr_…`, `Nonce:` and `Issued:`. Approve.
 5. Expect green "Lace linked. You can now sign in with it." In DevTools → Network: `POST /api/v2/auth/wallet/challenge` 200
    (body `{address, intent:"link", provider:"midnight-lace"}`), `POST /api/v2/auth/wallet/link` 200 `{ok:true, alreadyLinked:false}`.
    Record the `signature` object shape (`signature`, `verifyingKey`, `scheme`) — no private data.
