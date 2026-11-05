@@ -90,7 +90,7 @@ Files: `lib/accounts/email/{index,postmark,console,test}.mjs`, `lib/accounts/mag
    challenge (`PILOTLOG_MAGIC_LINK_TTL_MS`, default 15 min, single-use, sha256 stored) and send the link.
    The response is **always the same 202** for new, existing, and rate-limited addresses. Account lookup never happens
    here, and delivery runs after the response, so neither status, body, nor timing enumerates accounts. A malformed address gets 400.
-2. `GET /api/v2/auth/email/verify?token=…` renders a confirm page (no-store, no-referrer, strict CSP) whose button POSTs.
+2. `GET /api/v2/auth/email/verify?token=…` renders a confirm page (no-store, `Referrer-Policy: same-origin` (no-referrer makes browsers send `Origin: null` on the form POST, which the same-origin guard rejects), strict CSP) whose button POSTs.
    **GET never consumes**, so mail scanners and link previews can't burn the link.
 3. `POST /api/v2/auth/email/verify` (form or JSON `{token}`) consumes the token atomically and finds or creates the student plus a verified
    `email` identity (transaction + per-email advisory lock). It revokes any current session, sets a fresh `__Host-pl_sid`, and
@@ -162,3 +162,10 @@ Supersedes #11. Ledger pins are unchanged from main: `@midnight-ntwrk/ledger-v8`
   - When a limit is hit, the route returns `429` with `Retry-After` and one generic body, and writes a `challenge_rate_limited` audit event.
   - The counts come from `auth_challenges` (each challenge now stores `payload.ip_hash`), the same mechanism the magic-link limiter uses. There's no new schema.
 - **Custom domain:** host A also serves `https://pilotlog.digitalaviationpool.com`, which can be used for `PILOTLOG_PUBLIC_URL` / `PILOTLOG_ALLOWED_ORIGINS`. No defaults depend on it. Changing `PILOTLOG_RP_ID` to it would orphan passkeys registered under the railway.app host.
+
+
+## Sign-in UI and per-student data
+
+The browser sign-in flow (`/signin`, `/account`), per-student cockpit/checkride/tracks/radio/usage scoping, and the
+explicit legacy-owner migration are documented in [student-accounts.md](student-accounts.md). Real-wallet QA steps:
+[manual-wallet-test-plan.md](manual-wallet-test-plan.md) (wallet sign-in is **not yet verified** with a real extension).

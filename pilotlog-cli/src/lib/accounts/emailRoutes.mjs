@@ -40,7 +40,10 @@ function safeRedirectPath(env) {
 function page(res, status, title, bodyHtml) {
   res.status(status)
     .set("Cache-Control", "no-store")
-    .set("Referrer-Policy", "no-referrer")
+    // same-origin, not no-referrer: under no-referrer browsers send "Origin: null" on the confirm form POST,
+    // which the /api/v2 same-origin guard rightly rejects (found in the sign-in UI smoke). The token still never
+    // leaves the origin in a Referer header.
+    .set("Referrer-Policy", "same-origin")
     .set("X-Frame-Options", "DENY")
     .set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
     .type("html")

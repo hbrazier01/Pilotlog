@@ -33,7 +33,8 @@ export function getTrack(dataDir, entryId) {
   return all[entryId] || null;
 }
 
-export function saveTrackForEntry(dataDir, entryId, text, filename = '') {
+/** Parse + analyse a track file into the stored track shape (pure; no I/O). */
+export function buildTrack(entryId, text, filename = '') {
   const parsed = parseTrack(text, filename);
   const fieldElevFt = 5885;
   const events = detectEvents(parsed.points, { fieldElevFt });
@@ -50,6 +51,11 @@ export function saveTrackForEntry(dataDir, entryId, text, filename = '') {
     fieldElevFt,
     savedAt: new Date().toISOString(),
   };
+  return track;
+}
+
+export function saveTrackForEntry(dataDir, entryId, text, filename = '') {
+  const track = buildTrack(entryId, text, filename);
   const all = readTracks(dataDir);
   all[entryId] = track;
   writeTracks(dataDir, all);

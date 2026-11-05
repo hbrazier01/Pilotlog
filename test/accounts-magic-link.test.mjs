@@ -144,7 +144,7 @@ pgTest('happy path: start → email → GET confirm page (no consume) → POST v
     assert.equal(g.status, 200);
     const html = await g.text();
     assert.match(html, /<form method="post" action="\/api\/v2\/auth\/email\/verify">/);
-    assert.equal(g.headers.get('referrer-policy'), 'no-referrer');
+    assert.equal(g.headers.get('referrer-policy'), 'same-origin');
     assert.match(g.headers.get('content-security-policy'), /form-action 'self'/);
   }
   const { rows: [c] } = await h.pool.query('SELECT consumed_at FROM auth_challenges');

@@ -122,7 +122,7 @@ function withEnv(vars, fn) {
 pgTest('flag off: migrate() creates only the original tables (behaviour unchanged)', () => withSchema(async (pool) => {
   await withEnv({ PILOTLOG_ACCOUNTS_V2: undefined }, () => migrate(pool));
   for (const t of ['pilot_profiles', 'flights', 'aircraft', 'milestones']) assert.equal(await tableExists(pool, t), true, t);
-  for (const t of ['students', 'identities', 'webauthn_credentials', 'auth_audit', 'accounts_migration_log']) assert.equal(await tableExists(pool, t), false, t);
+  for (const t of ['students', 'identities', 'webauthn_credentials', 'auth_audit', 'accounts_migration_log', 'student_docs', 'student_usage']) assert.equal(await tableExists(pool, t), false, t);
   const { rows } = await pool.query(`SELECT count(*)::int AS n FROM information_schema.columns WHERE table_schema = current_schema() AND column_name = 'student_id'`);
   assert.equal(rows[0].n, 0);
 }));
@@ -136,7 +136,7 @@ pgTest('flag on: migrate() up on a fresh database, then idempotent on re-run', (
     assert.equal(rows[0]?.is_nullable, 'YES', t);
   }
   const { rows } = await pool.query(`SELECT count(*)::int AS n FROM accounts_migration_log WHERE kind = 'ddl'`);
-  assert.equal(rows[0].n, 2); // 001 schema + 002 sessions
+  assert.equal(rows[0].n, 3); // 001 schema + 002 sessions + 003 student docs
   assert.deepEqual(await migrateAccountsV2(pool), { applied: false });
 }));
 
