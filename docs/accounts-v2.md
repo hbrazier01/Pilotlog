@@ -162,3 +162,10 @@ Supersedes #11. Ledger pins are unchanged from main: `@midnight-ntwrk/ledger-v8`
   - When a limit is hit, the route returns `429` with `Retry-After` and one generic body, and writes a `challenge_rate_limited` audit event.
   - The counts come from `auth_challenges` (each challenge now stores `payload.ip_hash`), the same mechanism the magic-link limiter uses. There's no new schema.
 - **Custom domain:** host A also serves `https://pilotlog.digitalaviationpool.com`, which can be used for `PILOTLOG_PUBLIC_URL` / `PILOTLOG_ALLOWED_ORIGINS`. No defaults depend on it. Changing `PILOTLOG_RP_ID` to it would orphan passkeys registered under the railway.app host.
+
+
+## Sign-in UI and per-student data
+
+The browser sign-in flow (`/signin`, `/account`), per-student cockpit/checkride/tracks/radio/usage scoping, and the
+explicit legacy-owner migration are documented in [student-accounts.md](student-accounts.md). Real-wallet QA steps:
+[manual-wallet-test-plan.md](manual-wallet-test-plan.md) (wallet sign-in is **not yet verified** with a real extension).
