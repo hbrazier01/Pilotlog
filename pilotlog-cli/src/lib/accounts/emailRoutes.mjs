@@ -14,6 +14,7 @@ import { normalizeEmail, startMagicLink, verifyMagicLink } from "./magicLink.mjs
 import { createSession, revokeSession } from "./sessions.mjs";
 import { sessionCookie } from "./http.mjs";
 import { looksLikeToken } from "./crypto.mjs";
+import { clientIp, clientMeta } from "./clientIp.mjs";
 
 const ACCEPTED = { ok: true, message: "If that address can receive email, a sign-in link is on its way." };
 
@@ -67,8 +68,7 @@ export function registerEmailAuthRoutes(app, { pool, env = process.env, provider
       return res.status(503).json({ error: "email sign-in is temporarily unavailable" });
     }
     try {
-      const xff = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
-      const r = await startMagicLink(pool, { email, ip: xff || req.socket?.remoteAddress, ua: req.headers["user-agent"],
+      const r = await startMagicLink(pool, { email, ip: clientIp(req, env), ua: req.headers["user-agent"],
         publicUrl: base, provider, env });
       onStart?.(r);
     } catch (err) {
@@ -90,8 +90,7 @@ export function registerEmailAuthRoutes(app, { pool, env = process.env, provider
   app.post("/api/v2/auth/email/verify", express.urlencoded({ extended: false, limit: "2kb" }), async (req, res) => {
     const wantsHtml = !req.is("application/json");
     const token = String(req.body?.token || "");
-    const xff = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
-    const meta = { ip: xff || req.socket?.remoteAddress || null, ua: req.headers["user-agent"] || null };
+    const meta = clientMeta(req, env);
     let r;
     try {
       r = await verifyMagicLink(pool, { token, currentStudentId: req.accountV2?.studentId ?? null, ...meta });

@@ -146,3 +146,19 @@ Supersedes #11. Ledger pins are unchanged from main: `@midnight-ntwrk/ledger-v8`
 - **PR #11 compatibility:** `mapPr11Students(pool, {apply})` keeps PR #11's `st_<sha(addr)>` ids and adds a `midnight-legacy` identity per `students.wallet_address`. It's a dry run by default, reports counts only, and is idempotent.
 - **Audit events:** `wallet_signin_fail`, `wallet_link`, `wallet_link_fail`, `wallet_link_conflict`, `wallet_claim_legacy`, plus `signup` and `signin` with identity_type `midnight-*`.
 - **Config:** `MIDNIGHT_NETWORK` (default `preprod`) selects the accepted `mn_addr_<network>1…` prefix. `PILOTLOG_PUBLIC_URL`'s host is used as the signed `Domain:`.
+
+## Hardening: client IP and challenge rate limits
+- **Client IP** (`lib/accounts/clientIp.mjs`) is used for every v2 rate limit and audit IP hash. It never takes the leftmost `X-Forwarded-For` entry.
+  - With `PILOTLOG_TRUSTED_PROXY_HOPS` (default **1**), it takes the entry that many places from the right.
+  - It falls back to the socket peer when the header has fewer entries than that, or the entry isn't a valid IP. `0` ignores XFF entirely.
+  - `PILOTLOG_CLIENT_IP_HEADER=x-real-ip` reads Railway's edge-set `X-Real-IP` instead. That's only safe if nothing reaches the service except through the public edge: no private-network callers and no TCP proxy.
+- **Railway:** its public docs (Networking › Specs & Limits) document `X-Real-IP` as the client IP and `X-Forwarded-Proto` as always `https`.
+  - Railway staff on Central Station say the edge *overwrites* `X-Forwarded-For` and `X-Real-IP` on both `*.up.railway.app` and custom domains.
+  - The hop count of XFF isn't guaranteed. This is a forum statement, not the formal spec.
+- **Challenge limits** (`lib/accounts/challengeLimits.mjs`) cover `POST /api/v2/auth/passkey/register/options`, `/passkey/login/options` and `/wallet/challenge`.
+  - **Per IP:** `PILOTLOG_CHALLENGE_MAX_PER_IP`, default 20.
+  - **Per subject:** `PILOTLOG_CHALLENGE_MAX_PER_SUBJECT`, default 10. The subject is the student for passkey register and the address for wallet. Passkey login is per-IP only, so the email hint can't change the response.
+  - **Window:** `PILOTLOG_CHALLENGE_WINDOW_MS`, default 15 min.
+  - When a limit is hit, the route returns `429` with `Retry-After` and one generic body, and writes a `challenge_rate_limited` audit event.
+  - The counts come from `auth_challenges` (each challenge now stores `payload.ip_hash`), the same mechanism the magic-link limiter uses. There's no new schema.
+- **Custom domain:** host A also serves `https://pilotlog.digitalaviationpool.com`, which can be used for `PILOTLOG_PUBLIC_URL` / `PILOTLOG_ALLOWED_ORIGINS`. No defaults depend on it. Changing `PILOTLOG_RP_ID` to it would orphan passkeys registered under the railway.app host.

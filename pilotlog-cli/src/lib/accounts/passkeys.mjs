@@ -15,7 +15,7 @@ import {
   generateAuthenticationOptions, verifyAuthenticationResponse,
 } from "@simplewebauthn/server";
 import { issueChallenge, consumeChallenge } from "./challenges.mjs";
-import { writeAudit } from "./audit.mjs";
+import { writeAudit, hashIp } from "./audit.mjs";
 import { normalizeEmail } from "./magicLink.mjs";
 
 export class PasskeyConfigError extends Error {}
@@ -63,7 +63,8 @@ async function studentPasskeys(db, studentId) {
 
 export async function registrationOptions(db, { studentId, rp, ip = null, ua = null }) {
   const existing = await studentPasskeys(db, studentId);
-  const { nonce } = await issueChallenge(db, { purpose: "webauthn-register", subject: studentId, studentId, ip, ua });
+  const { nonce } = await issueChallenge(db, { purpose: "webauthn-register", subject: studentId, studentId,
+    payload: { ip_hash: hashIp(ip) }, ip, ua });
   return generateRegistrationOptions({
     rpName: rp.rpName, rpID: rp.rpID,
     userID: new TextEncoder().encode(studentId), userName: "PilotLog student", userDisplayName: "PilotLog student",
@@ -122,7 +123,7 @@ export async function verifyRegistration(db, { studentId, response, rp, nickname
 export async function authenticationOptions(db, { rp, email = null, ip = null, ua = null }) {
   const hint = email ? normalizeEmail(email) : null;
   const { nonce } = await issueChallenge(db, { purpose: "webauthn-auth", subject: LOGIN_SUBJECT,
-    payload: hint ? { hint } : {}, ip, ua });
+    payload: { ...(hint ? { hint } : {}), ip_hash: hashIp(ip) }, ip, ua });
   return generateAuthenticationOptions({ rpID: rp.rpID, challenge: nonce, userVerification: "preferred",
     allowCredentials: [], timeout: 5 * 60 * 1000 });
 }

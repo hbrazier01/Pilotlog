@@ -16,11 +16,10 @@ import { registrationOptions, verifyRegistration, authenticationOptions, verifyA
   listPasskeys, deletePasskey } from "./passkeys.mjs";
 import { createSession, revokeSession } from "./sessions.mjs";
 import { sessionCookie } from "./http.mjs";
+import { clientMeta } from "./clientIp.mjs";
+import { checkChallengeLimit, sendRateLimited } from "./challengeLimits.mjs";
 
-const meta = (req) => {
-  const xff = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
-  return { ip: xff || req.socket?.remoteAddress || null, ua: req.headers["user-agent"] || null };
-};
+const meta = (req, env = process.env) => clientMeta(req, env);
 const SIGNIN_FAILED = "Passkey sign-in failed. Try again or use another sign-in method.";
 
 export function registerPasskeyRoutes(app, { pool, env = process.env }) {
@@ -46,14 +45,17 @@ export function registerPasskeyRoutes(app, { pool, env = process.env }) {
   app.post("/api/v2/auth/passkey/register/options", wrap(async (req, res) => {
     const studentId = authed(req, res); if (!studentId) return;
     const cfg = rp(req, res); if (!cfg) return;
-    res.json(await registrationOptions(pool, { studentId, rp: cfg, ...meta(req) }));
+    const m = meta(req, env);
+    const lim = await checkChallengeLimit(pool, { purposes: ["webauthn-register"], subject: studentId, route: "passkey_register_options", env, ...m });
+    if (!lim.ok) return sendRateLimited(res, lim.retryAfterSec);
+    res.json(await registrationOptions(pool, { studentId, rp: cfg, ...m }));
   }));
 
   app.post("/api/v2/auth/passkey/register/verify", wrap(async (req, res) => {
     const studentId = authed(req, res); if (!studentId) return;
     const cfg = rp(req, res); if (!cfg) return;
     const r = await verifyRegistration(pool, { studentId, response: req.body?.response, rp: cfg,
-      nickname: typeof req.body?.nickname === "string" ? req.body.nickname : null, ...meta(req) });
+      nickname: typeof req.body?.nickname === "string" ? req.body.nickname : null, ...meta(req, env) });
     if (!r.ok) return res.status(r.reason === "duplicate_credential" ? 409 : 400).json({ error: "passkey registration failed" });
     res.json({ ok: true, id: r.credentialId });
   }));
@@ -61,12 +63,16 @@ export function registerPasskeyRoutes(app, { pool, env = process.env }) {
   app.post("/api/v2/auth/passkey/login/options", wrap(async (req, res) => {
     const cfg = rp(req, res); if (!cfg) return;
     const email = typeof req.body?.email === "string" ? req.body.email : null;
-    res.json(await authenticationOptions(pool, { rp: cfg, email, ...meta(req) }));
+    const m = meta(req, env);
+    // Per-IP only: login challenges share one subject, and the email hint must not change the response.
+    const lim = await checkChallengeLimit(pool, { purposes: ["webauthn-auth"], route: "passkey_login_options", env, ...m });
+    if (!lim.ok) return sendRateLimited(res, lim.retryAfterSec);
+    res.json(await authenticationOptions(pool, { rp: cfg, email, ...m }));
   }));
 
   app.post("/api/v2/auth/passkey/login/verify", wrap(async (req, res) => {
     const cfg = rp(req, res); if (!cfg) return;
-    const m = meta(req);
+    const m = meta(req, env);
     const r = await verifyAuthentication(pool, { response: req.body?.response, rp: cfg, ...m });
     if (!r.ok) return res.status(400).json({ error: SIGNIN_FAILED });
     if (req.accountV2 && req.accountV2.studentId !== r.studentId)
@@ -84,7 +90,7 @@ export function registerPasskeyRoutes(app, { pool, env = process.env }) {
 
   app.delete("/api/v2/auth/passkeys/:id", wrap(async (req, res) => {
     const studentId = authed(req, res); if (!studentId) return;
-    const r = await deletePasskey(pool, { studentId, credentialId: req.params.id, ...meta(req) });
+    const r = await deletePasskey(pool, { studentId, credentialId: req.params.id, ...meta(req, env) });
     if (r.ok) return res.json({ ok: true });
     if (r.reason === "last_method")
       return res.status(409).json({ error: "This is your only way to sign in. Add and verify an email or another passkey first." });
