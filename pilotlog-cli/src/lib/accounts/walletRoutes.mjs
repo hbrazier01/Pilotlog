@@ -8,11 +8,10 @@
 import { issueWalletChallenge, walletLogin, walletLink } from "./walletIdentity.mjs";
 import { createSession, revokeSession } from "./sessions.mjs";
 import { sessionCookie } from "./http.mjs";
+import { clientMeta } from "./clientIp.mjs";
+import { checkChallengeLimit, sendRateLimited } from "./challengeLimits.mjs";
 
-const meta = (req) => {
-  const xff = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
-  return { ip: xff || req.socket?.remoteAddress || null, ua: req.headers["user-agent"] || null };
-};
+const meta = (req, env = process.env) => clientMeta(req, env);
 const str = (v) => (typeof v === "string" ? v.trim() : "");
 function domainOf(req, env) {
   try { if (env.PILOTLOG_PUBLIC_URL) return new URL(env.PILOTLOG_PUBLIC_URL).host; } catch { /* fall through */ }
@@ -31,14 +30,19 @@ export function registerWalletRoutes(app, { pool, env = process.env }) {
   app.post("/api/v2/auth/wallet/challenge", wrap(async (req, res) => {
     const intent = str(req.body?.intent) || "login";
     if (intent === "link" && !req.accountV2) return res.status(401).json({ error: "not signed in" });
+    const m = meta(req, env);
+    const address = str(req.body?.address);
+    const lim = await checkChallengeLimit(pool, { purposes: ["sign-in", "link-wallet"], subject: address && address.length <= 220 ? address : null,
+      route: "wallet_challenge", env, ...m });
+    if (!lim.ok) return sendRateLimited(res, lim.retryAfterSec);
     try {
-      res.json(await issueWalletChallenge(pool, { address: str(req.body?.address), intent,
-        provider: req.body?.provider, studentId: req.accountV2?.studentId ?? null, domain: domainOf(req, env), env, ...meta(req) }));
+      res.json(await issueWalletChallenge(pool, { address, intent,
+        provider: req.body?.provider, studentId: req.accountV2?.studentId ?? null, domain: domainOf(req, env), env, ...m }));
     } catch (err) { res.status(400).json({ error: err.message }); }
   }));
 
   app.post("/api/v2/auth/wallet/verify-login", wrap(async (req, res) => {
-    const m = meta(req);
+    const m = meta(req, env);
     const r = await walletLogin(pool, { address: str(req.body?.address), nonce: str(req.body?.nonce), signature: req.body?.signature, env, ...m });
     if (!r.ok) return res.status(401).json({ error: "Wallet sign-in failed. Request a new challenge and sign again." });
     if (req.accountV2 && req.accountV2.studentId !== r.studentId)
@@ -52,7 +56,7 @@ export function registerWalletRoutes(app, { pool, env = process.env }) {
   app.post("/api/v2/auth/wallet/link", wrap(async (req, res) => {
     if (!req.accountV2) return res.status(401).json({ error: "not signed in" });
     const r = await walletLink(pool, { studentId: req.accountV2.studentId, address: str(req.body?.address),
-      nonce: str(req.body?.nonce), signature: req.body?.signature, env, ...meta(req) });
+      nonce: str(req.body?.nonce), signature: req.body?.signature, env, ...meta(req, env) });
     if (r.ok) return res.json({ ok: true, alreadyLinked: r.alreadyLinked, claimed: r.claimed });
     if (r.reason === "conflict")
       return res.status(409).json({ error: "This wallet is already linked to another PilotLog account. Merging accounts isn't available yet." });

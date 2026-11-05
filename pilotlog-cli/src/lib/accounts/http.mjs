@@ -50,10 +50,8 @@ export function clearSessionCookie(env = process.env) {
   return [`${name}=`, "Path=/", "HttpOnly", "SameSite=Lax", secure ? "Secure" : null, "Max-Age=0"].filter(Boolean).join("; ");
 }
 
-function clientMeta(req) {
-  const xff = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
-  return { ip: xff || req.socket?.remoteAddress || null, ua: req.headers["user-agent"] || null };
-}
+import { clientMeta as clientMetaFor } from "./clientIp.mjs";
+const clientMeta = (req) => clientMetaFor(req);
 
 /** Load the v2 session cookie → req.accountV2 (and req.student if nothing else set it). */
 export function attachSessionV2({ pool, env = process.env }) {

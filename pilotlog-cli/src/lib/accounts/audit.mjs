@@ -14,6 +14,7 @@ export const AUDIT_EVENTS = Object.freeze([
   "passkey_register", "passkey_register_fail", "passkey_signin_fail", "passkey_counter_regression",
   "passkey_delete", "passkey_delete_blocked",
   // PR-5 wallet identities
+  "challenge_rate_limited",
   "wallet_signin_fail", "wallet_link", "wallet_link_fail", "wallet_link_conflict", "wallet_claim_legacy",
 ]);
 

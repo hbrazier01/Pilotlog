@@ -12,7 +12,7 @@
  *   verified signature: upgraded to the signing wallet's type with verified_at = now() (§2.4 M3).
  */
 import { issueChallenge, consumeChallenge } from "./challenges.mjs";
-import { writeAudit } from "./audit.mjs";
+import { writeAudit, hashIp } from "./audit.mjs";
 import { sha256Hex } from "./crypto.mjs";
 import { newStudentId, WALLET_IDENTITY_TYPES } from "./ids.mjs";
 import { WALLET_PROVIDERS, challengeMessage, decodeUnshieldedAddress, verifyWalletSignature, midnightNetwork } from "./walletVerify.mjs";
@@ -35,7 +35,7 @@ export async function issueWalletChallenge(db, { address, intent, provider, stud
   const issuedAt = new Date().toISOString();
   // Issue first to get the nonce, then store the message with it: a second tiny UPDATE keeps PR-2's API unchanged.
   const { nonce, expiresAt } = await issueChallenge(db, { purpose: INTENTS[intent], subject: address,
-    studentId: intent === "link" ? studentId : null, payload: { provider: prov, intent }, ip, ua });
+    studentId: intent === "link" ? studentId : null, payload: { provider: prov, intent, ip_hash: hashIp(ip) }, ip, ua });
   const message = challengeMessage({ intent, address, nonce, issuedAt, domain, studentId: intent === "link" ? studentId : null });
   await db.query(`UPDATE auth_challenges SET payload = payload || $2::jsonb WHERE id_hash = $1`,
     [sha256Hex(nonce), JSON.stringify({ message })]);
