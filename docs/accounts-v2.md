@@ -90,7 +90,7 @@ Files: `lib/accounts/email/{index,postmark,console,test}.mjs`, `lib/accounts/mag
    challenge (`PILOTLOG_MAGIC_LINK_TTL_MS`, default 15 min, single-use, sha256 stored) and send the link.
    The response is **always the same 202** for new, existing, and rate-limited addresses. Account lookup never happens
    here, and delivery runs after the response, so neither status, body, nor timing enumerates accounts. A malformed address gets 400.
-2. `GET /api/v2/auth/email/verify?token=…` renders a confirm page (no-store, no-referrer, strict CSP) whose button POSTs.
+2. `GET /api/v2/auth/email/verify?token=…` renders a confirm page (no-store, `Referrer-Policy: same-origin` (no-referrer makes browsers send `Origin: null` on the form POST, which the same-origin guard rejects), strict CSP) whose button POSTs.
    **GET never consumes**, so mail scanners and link previews can't burn the link.
 3. `POST /api/v2/auth/email/verify` (form or JSON `{token}`) consumes the token atomically and finds or creates the student plus a verified
    `email` identity (transaction + per-email advisory lock). It revokes any current session, sets a fresh `__Host-pl_sid`, and
