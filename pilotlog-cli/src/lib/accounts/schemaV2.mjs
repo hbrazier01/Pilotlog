@@ -12,6 +12,7 @@ import { IDENTITY_TYPES, WALLET_IDENTITY_TYPES } from "./ids.mjs";
 
 export const ACCOUNTS_V2_MIGRATION = "accounts_v2_001_students_identities";
 export const ACCOUNTS_V2_SESSIONS_MIGRATION = "accounts_v2_002_sessions_challenges";
+export const ACCOUNTS_V2_STUDENT_DOCS_MIGRATION = "accounts_v2_003_student_docs";
 const LOCK_KEY = 727001; // arbitrary constant for pg_advisory_xact_lock
 
 const q = (s) => `'${s.replace(/'/g, "''")}'`;
@@ -137,6 +138,27 @@ CREATE TABLE IF NOT EXISTS auth_challenges (
 CREATE INDEX IF NOT EXISTS auth_challenges_expires_idx ON auth_challenges (expires_at);
 `;
 
+// PR-12/13: per-student documents + AI-coach usage ledger (ported from PR #11, keyed to v2 students).
+export const ACCOUNTS_V2_STUDENT_DOCS_SQL = `
+CREATE TABLE IF NOT EXISTS student_docs (
+  student_id  TEXT        NOT NULL REFERENCES students(id),
+  kind        TEXT        NOT NULL CHECK (kind IN ('settings', 'checkride', 'tracks', 'entries', 'radio', 'meta')),
+  doc         JSONB       NOT NULL,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (student_id, kind)
+);
+CREATE TABLE IF NOT EXISTS student_usage (
+  student_id    TEXT        NOT NULL REFERENCES students(id),
+  month         TEXT        NOT NULL CHECK (month ~ '^[0-9]{4}-[0-9]{2}$'),
+  input_tokens  BIGINT      NOT NULL DEFAULT 0,
+  output_tokens BIGINT      NOT NULL DEFAULT 0,
+  usd_micros    BIGINT      NOT NULL DEFAULT 0,
+  requests      INT         NOT NULL DEFAULT 0,
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (student_id, month)
+);
+`;
+
 /**
  * Apply the accounts v2 DDL using the given pg Pool/Client. The base wallet-keyed tables
  * must already exist (db.mjs migrate() creates them first).
@@ -152,8 +174,9 @@ export async function migrateAccountsV2(db) {
     await client.query("SELECT pg_advisory_xact_lock($1)", [LOCK_KEY]);
     await client.query(ACCOUNTS_V2_SQL);
     await client.query(ACCOUNTS_V2_SESSIONS_SQL);
+    await client.query(ACCOUNTS_V2_STUDENT_DOCS_SQL);
     let applied = 0;
-    for (const name of [ACCOUNTS_V2_MIGRATION, ACCOUNTS_V2_SESSIONS_MIGRATION]) {
+    for (const name of [ACCOUNTS_V2_MIGRATION, ACCOUNTS_V2_SESSIONS_MIGRATION, ACCOUNTS_V2_STUDENT_DOCS_MIGRATION]) {
       const r = await client.query(
         `INSERT INTO accounts_migration_log (kind, name, mode, detail)
          VALUES ('ddl', $1, 'apply', '{}') ON CONFLICT (name) WHERE kind = 'ddl' DO NOTHING`,
