@@ -30,6 +30,7 @@ import { computePplRequirements, computePplPart61Progress, computePplEngine } fr
 import { registerCheckrideRoutes } from "./checkrideRoutes.mjs";
 import { registerCockpitRoutes } from "./cockpitRoutes.mjs";
 import { registerAccountsV2 } from "./lib/accounts/http.mjs";
+import { closeLegacyWrites, legacyWriteWallet } from "./lib/accounts/legacyGuard.mjs";
 import { registerStudentRoutes } from "./lib/accounts/studentRoutes.mjs";
 import { registerSignInPages } from "./lib/accounts/signInPages.mjs";
 
@@ -1415,6 +1416,9 @@ const accountsV2 = registerAccountsV2(app, { pool: getPool() });
 // Accounts v2 on: per-student cockpit/checkride/tracks/radio/usage + sign-in pages, mounted before the legacy routes.
 const studentScope = accountsV2.enabled ? registerStudentRoutes(app, { pool: getPool(), escapeHtml }) : null;
 if (accountsV2.enabled) registerSignInPages(app, { escapeHtml });
+// Legacy routes below use a process-global wallet cache / global files and have no authentication
+// (wallet connect is a freely asserted address). Their writes are closed with accounts ON and OFF (fail closed).
+app.use(closeLegacyWrites({ accountsEnabled: accountsV2.enabled }));
 
 registerCheckrideRoutes(app, {
   dataDir: DATA_DIR, readEntries, escapeHtml, safeJsonForScript,
@@ -3393,11 +3397,10 @@ app.post("/entries", async (req, res) => {
   // Normalise: if txRef is not a 64-char hex string and not a submitted- sentinel, treat as fallback.
   const isRealHash = /^[0-9a-f]{64}$/i.test(txRef);
   const normalisedTxRef = isRealHash ? txRef : (txRef.startsWith("submitted-") ? txRef : ("submitted-" + Date.now()));
-  const walletSession = readWalletSession();
-  const walletAddress = bodyWalletAddress || walletSession?.address || null;
-  if (!walletAddress) {
-    return res.status(400).json({ error: "Wallet not connected — connect your wallet before logging a flight" });
-  }
+  // Never trust a caller-chosen wallet: write only for the server-side wallet session.
+  const walletCheck = legacyWriteWallet(readWalletSession()?.address || pgCache.walletAddress || null, bodyWalletAddress);
+  if (!walletCheck.ok) return res.status(walletCheck.status).json({ error: walletCheck.error });
+  const walletAddress = walletCheck.wallet;
   const identity = readIdentity();
   const midname = (identity && identity.midnameVerified && identity.midname) ? identity.midname : undefined;
   const entryId = randomBytes(8).toString("hex");
@@ -3722,9 +3725,10 @@ app.get("/currency/details", (req, res) => {
 });
 
 app.get("/profile", (_req, res) => {
+  // No wallet (or a wallet with no saved profile yet) is a normal state, not a server error.
   const profile = readProfile();
-  if (!profile) return res.status(500).json({ error: "Failed to read profile.json" });
-  res.json(profile);
+  res.set("Cache-Control", "no-store");
+  res.json(profile || {});
 });
 
 app.get("/profile/summary", (req, res) => {

@@ -113,7 +113,7 @@ function boot(env, port) {
   });
 }
 
-test('readApi without DB (flag off, and flag on in file mode): no /signin, legacy /wallet/connect, no chip', async () => {
+test('readApi without DB (flag off, and flag on in file mode): no /signin, no chip, unauthenticated legacy writes closed (410)', async () => {
   const p1 = 21000 + Math.floor(Math.random() * 400);
   for (const [env, port] of [[{}, p1], [{ PILOTLOG_ACCOUNTS_V2: 'true' }, p1 + 500]]) {
     const c = await boot(env, port);
@@ -121,11 +121,12 @@ test('readApi without DB (flag off, and flag on in file mode): no /signin, legac
       const b = `http://127.0.0.1:${port}`;
       assert.equal((await fetch(`${b}/signin`)).status, 404);
       assert.equal((await fetch(`${b}/account`, { redirect: 'manual' })).status, 404);
-      assert.notEqual((await fetch(`${b}/wallet/connect`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status, 410);
+      // Readiness fix (Nov 2026): legacy writes have no authentication, so they are closed in every mode.
+      assert.equal((await fetch(`${b}/wallet/connect`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status, 410);
       const page = await (await fetch(`${b}/cockpit/logbook?demo=1`)).text();
       assert.ok(!page.includes('id="acct"') && !page.includes('class="signin-banner"'));
       const r = await fetch(`${b}/api/cockpit/entries`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(ENTRY) });
-      assert.equal(r.status, 201, 'legacy single-user write still works without sign-in');
+      assert.equal(r.status, 410, 'unauthenticated legacy single-user write is closed');
     } finally { c.kill(); }
   }
 });

@@ -169,3 +169,17 @@ Supersedes #11. Ledger pins are unchanged from main: `@midnight-ntwrk/ledger-v8`
 The browser sign-in flow (`/signin`, `/account`), per-student cockpit/checkride/tracks/radio/usage scoping, and the
 explicit legacy-owner migration are documented in [student-accounts.md](student-accounts.md). Real-wallet QA steps:
 [manual-wallet-test-plan.md](manual-wallet-test-plan.md) (wallet sign-in is **not yet verified** with a real extension).
+
+## Legacy writes closed (security fix, Nov 2026)
+The legacy routes act on a process-global wallet cache and global files, and they have no authentication. A wallet "connect" is a freely asserted address, and an Origin header is not identity. So `lib/accounts/legacyGuard.mjs` returns **410** for every legacy POST/PUT/PATCH/DELETE, with accounts ON and OFF. Affected routes:
+- `/entries*`, `/attestations*`, `/anchor/*`, `/verify/anchor`;
+- `/profile/*`, `/identity/*`, `/wallet/*`, `/deployment`;
+- with accounts off, also `/api/cockpit/*` and `/api/checkride/*`.
+
+What still works:
+- reads;
+- the stateless `POST /api/cockpit/tracks/parse`;
+- `/api/v2/*`;
+- with accounts on, the per-student routes, which are mounted before the guard.
+
+**With accounts off, the legacy app is read-only** (no flight saves) until accounts launch. `GET /profile` with no wallet/profile returns `200 {}` (was 500).
