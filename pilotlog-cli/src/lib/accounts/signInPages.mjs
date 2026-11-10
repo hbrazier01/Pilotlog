@@ -1,7 +1,8 @@
 /**
  * signInPages.mjs — accounts v2 landing / sign-in UI (served ONLY when registerAccountsV2() is enabled).
  *   GET /signin    email magic link (request → sent), passkey sign-in, optional linked-wallet sign-in, SAMPLE mode
- *   GET /account   signed-in: passkeys (add/remove), optional wallet link, sign out (this device / everywhere)
+ *   GET /account   signed-in: passkeys (add/remove), optional wallet link (no unlink yet), sign out (this device / everywhere).
+ *                  There is no email-change flow; the page must not promise one.
  * The magic-link confirm step is the existing GET /api/v2/auth/email/verify page (it does not consume the token).
  * Pages carry no inline script: behaviour lives in /js/signin.js and /js/account.js, all calls go to /api/v2/*.
  */
@@ -105,7 +106,8 @@ export function renderAccountPage(esc, { network = "preprod" } = {}) {
 <section class="card" aria-labelledby="wH">
   <h2 id="wH">Midnight wallet (optional)</h2>
   <p class="dim small">Link a 1AM or Lace wallet to sign in with it later and to keep on-chain features. The wallet signs a
-    one-time message (free, no transaction). One wallet can belong to only one PilotLog account.</p>
+    one-time message (free, no transaction). One wallet can belong to only one PilotLog account, and a linked
+    wallet can't be removed from this page yet, so link only a wallet you plan to keep.</p>
   <div class="wallet-list" id="walletList"></div>
   <div class="msg" id="wMsg" role="alert"></div>
 </section>
