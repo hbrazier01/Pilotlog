@@ -79,7 +79,7 @@ Files: `lib/accounts/email/{index,postmark,console,test}.mjs`, `lib/accounts/mag
 - In production it is Postmark only. A missing token, or `console`/`test`, **fails closed**: `/start` answers 503 and nothing is
   issued, sent, or logged.
 - Postmark: `POST https://api.postmarkapp.com/email` via `fetch`, header `X-Postmark-Server-Token` from
-  `POSTMARK_SERVER_TOKEN`, `From` = `PILOTLOG_EMAIL_FROM` or `support@digitalaviationpool.com`, `MessageStream: outbound`.
+  `POSTMARK_SERVER_TOKEN`, `From` = `PILOTLOG_EMAIL_FROM` or `PilotLog <support@digitalaviationpool.com>` (a bare address gets the `PilotLog` display name), `MessageStream: outbound`.
   Errors carry only HTTP status + Postmark `ErrorCode`. The token, recipient, and link are never logged.
   Postmark needs a verified sender signature/domain (SPF/DKIM) for `digitalaviationpool.com` before go-live.
 

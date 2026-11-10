@@ -3732,10 +3732,17 @@ app.get("/profile", (_req, res) => {
 });
 
 app.get("/profile/summary", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  // Accounts v2 on: this legacy, wallet-keyed summary has no per-student equivalent and no caller
+  // (no page or script links to it). Retired cleanly instead of 500ing.
+  if (accountsV2.enabled) {
+    return res.status(410).json({ error: "gone", message: "/profile/summary is retired. Use /cockpit and /checkride." });
+  }
   const asOf = String(req.query.asOf || new Date().toISOString());
 
   const profile = readProfile();
-  if (!profile) return res.status(500).json({ error: "Failed to read profile.json" });
+  // No wallet (or no saved profile) is a normal state, not a server error (matches GET /profile).
+  if (!profile) return res.status(404).json({ error: "no profile", message: "Connect a wallet and save a profile first." });
 
   const entries = readEntries();
 

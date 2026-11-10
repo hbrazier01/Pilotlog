@@ -3,7 +3,9 @@
  *
  *   PILOTLOG_EMAIL_PROVIDER = postmark | console | test   (optional)
  *   POSTMARK_SERVER_TOKEN   = Postmark server token       (read here, never logged)
- *   PILOTLOG_EMAIL_FROM     = sender (default support@digitalaviationpool.com)
+ *   PILOTLOG_EMAIL_FROM     = sender (default "PilotLog <support@digitalaviationpool.com>"). A bare
+ *                             address gets the "PilotLog" display name added, so the provider's
+ *                             sender-signature name (e.g. a person's name) is never shown instead.
  *
  * Rules:
  * - Not production (NODE_ENV != "production"): default console; "postmark" without a token falls
@@ -15,7 +17,17 @@ import { createPostmarkProvider } from "./postmark.mjs";
 import { createConsoleProvider } from "./console.mjs";
 import { createTestProvider } from "./test.mjs";
 
-export const DEFAULT_FROM = "support@digitalaviationpool.com";
+export const DEFAULT_FROM_ADDRESS = "support@digitalaviationpool.com";
+export const DEFAULT_FROM_NAME = "PilotLog";
+export const DEFAULT_FROM = `${DEFAULT_FROM_NAME} <${DEFAULT_FROM_ADDRESS}>`;
+
+/** "a@b" -> "PilotLog <a@b>"; a value that already has a display name ("Name <a@b>") is kept as is. */
+export function formatFrom(value) {
+  const v = String(value || "").trim();
+  if (!v) return DEFAULT_FROM;
+  if (/<[^<>@\s]+@[^<>\s]+>\s*$/.test(v)) return v;
+  return `${DEFAULT_FROM_NAME} <${v}>`;
+}
 
 export class EmailConfigError extends Error {
   constructor(msg) { super(msg); this.name = "EmailConfigError"; }
@@ -25,7 +37,7 @@ export function selectEmailProvider(env = process.env, { fetchImpl, log = consol
   const isProd = String(env.NODE_ENV || "").trim().toLowerCase() === "production";
   const requested = String(env.PILOTLOG_EMAIL_PROVIDER || "").trim().toLowerCase();
   const token = env.POSTMARK_SERVER_TOKEN || "";
-  const from = (env.PILOTLOG_EMAIL_FROM || "").trim() || DEFAULT_FROM;
+  const from = formatFrom(env.PILOTLOG_EMAIL_FROM);
 
   if (requested && !["postmark", "console", "test"].includes(requested)) {
     throw new EmailConfigError(`unknown PILOTLOG_EMAIL_PROVIDER "${requested}" (use postmark, console, or test)`);

@@ -54,7 +54,7 @@ test('Postmark request shape (mocked fetch), default From, MessageStream outboun
   assert.equal(calls[0].init.headers['X-Postmark-Server-Token'], FAKE_TOKEN);
   assert.equal(calls[0].init.headers['Content-Type'], 'application/json');
   assert.deepEqual(JSON.parse(calls[0].init.body), { From: DEFAULT_FROM, To: 'a@example.com', Subject: 'S', TextBody: 'T', HtmlBody: '<p>H</p>', MessageStream: 'outbound' });
-  assert.equal(DEFAULT_FROM, 'support@digitalaviationpool.com');
+  assert.equal(DEFAULT_FROM, 'PilotLog <support@digitalaviationpool.com>');
   const p2 = selectEmailProvider({ NODE_ENV: 'production', POSTMARK_SERVER_TOKEN: FAKE_TOKEN, PILOTLOG_EMAIL_FROM: 'PilotLog <hi@example.org>' }, { fetchImpl });
   await p2.send({ to: 'b@example.com', subject: 'S', text: 'T', html: 'H' });
   assert.equal(JSON.parse(calls[1].init.body).From, 'PilotLog <hi@example.org>');
