@@ -60,7 +60,7 @@ export function renderFlightPlanPage(esc, { demo = false, weather = null, user =
 export function renderLogbookPage(esc, { demo = false, entries = [], user = null, settings = null } = {}) {
   const homeIcao = settings?.homeAirport || '';
   const tot = entryTotals(entries);
-  const q = demoQ(demo);
+  const q = demoQ(demo, user);
   const rows = [...entries]
     .sort((a, b) => String(b.date).localeCompare(String(a.date)))
     .map(

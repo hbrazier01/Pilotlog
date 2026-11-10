@@ -275,13 +275,12 @@ export function registerCockpitRoutes(app, { dataDir, readEntries, escapeHtml, p
   app.get('/cockpit/replay', async (req, res) => {
     try {
       const ctx = await loadContext(req);
-      const track = ctx.demo
-        ? buildSampleKapaTrack()
-        : (req.query.entry && (ctx.getTrack ? await ctx.getTrack(String(req.query.entry)) : getTrack(dataDir, String(req.query.entry)))) || buildSampleKapaTrack();
-      // Non-demo without a stored track still shows SAMPLE track clearly labeled
-      if (!ctx.demo && track?.sample) {
-        /* keep sample flag */
-      }
+      // Sample replay is only for the signed-out / Explore-with-sample-data path (ctx.demo).
+      // A signed-in view never falls back to a sample track and never marks the page as demo.
+      const stored = !ctx.demo && req.query.entry
+        ? (ctx.getTrack ? await ctx.getTrack(String(req.query.entry)) : getTrack(dataDir, String(req.query.entry)))
+        : null;
+      const track = ctx.demo ? buildSampleKapaTrack() : (stored || null);
       const mission = buildMissionMap(ctx.entries, { testDate: ctx.cr?.testDate, cr: ctx.cr });
       const wxForCall = ctx.demo
         ? {
@@ -302,7 +301,7 @@ export function registerCockpitRoutes(app, { dataDir, readEntries, escapeHtml, p
       const strip = acsSkillStrip(ctx.cr?.acs);
       res.type('html').send(
         renderReplayPage(escapeHtml, {
-          demo: ctx.demo || !!track.sample,
+          demo: !!ctx.demo,
           user: ctx.user,
           track,
           mission,

@@ -182,3 +182,18 @@ test('detectEvents: lone touchdown that decelerates is a full stop, not a bounce
   const ev = detectEvents(pts, { fieldElevFt: 5885 });
   assert.deepEqual(ev.map((e) => e.type), ['full_stop']);
 });
+
+test('renderReplayPage signed-in with no track shows empty state, not a sample player', () => {
+  const html = renderReplayPage(esc, {
+    demo: false,
+    user: { name: 'STUDENT PILOT', initials: 'SP', role: 'PRIVATE PILOT STUDENT', account: { signedIn: true } },
+    track: null,
+    mission: { items: [], readinessPct: 0 },
+    call: { decision: 'UNKNOWN' },
+  });
+  assert.match(html, /No replay available/);
+  assert.match(html, /href="\/cockpit\/logbook"/);
+  assert.doesNotMatch(html, /\?demo=1/);
+  assert.doesNotMatch(html, /SAMPLE TRACK|class="sample-banner"|cockpit-replay3d\.js|SAMPLE · KAPA/);
+  assert.match(html, /class="live"/);
+});
