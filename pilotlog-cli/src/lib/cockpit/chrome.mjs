@@ -12,8 +12,10 @@ export const COCKPIT_NAV = [
   { href: '/cockpit/settings', id: 'settings', label: 'Settings' },
 ];
 
-export function demoQ(demo) {
-  return demo ? '?demo=1' : '';
+/** Query appended to cockpit links only on the signed-out sample-data path. A session never carries ?demo=1. */
+export function demoQ(demo, user = null) {
+  if (!demo || user?.account?.signedIn) return '';
+  return '?demo=1';
 }
 
 export function chromeCss() {
@@ -81,19 +83,21 @@ export function renderAccountChip(esc, account) {
 }
 
 export function renderNav(esc, { active, demo = false, user = null, timeZone = '' } = {}) {
-  const q = demoQ(demo);
+  const signedIn = !!user?.account?.signedIn;
+  const showDemo = !!demo && !signedIn;
+  const q = demoQ(showDemo, user);
   const links = COCKPIT_NAV.map((n) => {
     const href = n.href === '/cockpit' ? `/cockpit${q}` : `${n.href}${q}`;
     return `<a class="${n.id === active ? 'on' : ''}" href="${esc(href)}">${esc(n.label)}</a>`;
   }).join('');
-  const u = user || (demo
+  const u = user || (showDemo
     ? { name: 'JORDAN P.', role: 'PRIVATE PILOT STUDENT', initials: 'JP', sample: true }
     : { name: 'PILOT', role: 'PRIVATE PILOT STUDENT', initials: 'P', sample: false });
   return `<nav class="top">
   <span class="brand">PILOTLOG</span>
   ${links}
   <div class="nav-r">
-    ${demo ? '<span class="demo">SAMPLE</span>' : '<span class="live">LIVE</span>'}
+    ${showDemo ? '<span class="demo">SAMPLE</span>' : '<span class="live">LIVE</span>'}
     <span class="clock" id="clock" data-tz="${esc(timeZone || '')}">—</span>
     <div class="userchip" title="${esc(u.sample ? 'Sample pilot identity' : u.name)}">
       <span class="av">${esc(u.initials || 'JP')}</span>

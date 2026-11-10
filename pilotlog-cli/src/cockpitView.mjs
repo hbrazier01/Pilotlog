@@ -4,7 +4,7 @@
  */
 import { readinessScore, projectCheckride } from './lib/checkride/insights.mjs';
 import { cockpitGates, acsTiles, logbookTimeline, progressBars } from './lib/checkride/cockpit.mjs';
-import { chromeCss, renderNav, clockScript, accountCss } from './lib/cockpit/chrome.mjs';
+import { chromeCss, renderNav, clockScript, accountCss, demoQ } from './lib/cockpit/chrome.mjs';
 import { instructorBriefing, minutesAgoLabel } from './lib/cockpit/briefing.mjs';
 
 const usd = (v) => '$' + Math.round(Number(v || 0)).toLocaleString('en-US');
@@ -545,7 +545,7 @@ ${renderNav(esc, { active: 'dashboard', demo, user, timeZone: settings?.timeZone
         ${days != null ? `<div class="days">≈ ${days} DAYS</div>` : ''}
       </div>
       ${barHtml}
-      <a class="btn" href="/cockpit/acs${demo ? '?demo=1' : ''}">VIEW READINESS REPORT →</a>
+      <a class="btn" href="/cockpit/acs${demoQ(demo, user)}">VIEW READINESS REPORT →</a>
     </section>
   </div>
 
@@ -610,7 +610,7 @@ ${renderNav(esc, { active: 'dashboard', demo, user, timeZone: settings?.timeZone
   <section class="acs-row glass">
     <div class="acs-h">
       <span class="eyebrow">ACS Tasks · ${cr.acs.total} total</span>
-      <a class="mono dim" href="/cockpit/acs${demo ? '?demo=1' : ''}">${cr.acs.counts.proficient} proficient · ${cr.acs.counts.introduced} introduced →</a>
+      <a class="mono dim" href="/cockpit/acs${demoQ(demo, user)}">${cr.acs.counts.proficient} proficient · ${cr.acs.counts.introduced} introduced →</a>
     </div>
     <div class="tiles">${tileHtml}</div>
   </section>

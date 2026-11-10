@@ -43,7 +43,9 @@ export function renderReplayPage(esc, {
   const tz = settings?.timeZone || '';
   const callStation = station?.icao || '';
   const booking = call?.booking || { kind: 'setup', label: 'Set up scheduling', href: '/cockpit/settings#scheduling' };
-  const t = track || { points: [], events: [], label: 'No track', sample: demo };
+  const hasTrack = Array.isArray(track?.points) && track.points.length > 0;
+  // Signed-in empty state is not a sample track. Sample labeling is only for the explicit demo path.
+  const t = hasTrack ? track : { points: [], events: [], label: 'No replay available', sample: false };
   const points = t.points || [];
   const t0 = points[0]?.t || 0;
   const t1 = points[points.length - 1]?.t || t0;
@@ -100,6 +102,9 @@ export function renderReplayPage(esc, {
 
   const css = `
 ${chromeCss()}
+.hero-empty{min-height:420px;display:flex;flex-direction:column;justify-content:center;gap:12px;padding:40px 32px}
+.hero-empty h1{font-size:28px;letter-spacing:-.02em;margin:0;font-weight:800}
+.hero-empty p{max-width:36rem;font-size:14px;line-height:1.5}
 .replay-grid{display:grid;grid-template-columns:minmax(220px,260px) minmax(0,1fr) minmax(240px,300px);gap:14px;align-items:stretch}
 .col{display:flex;flex-direction:column;gap:14px;min-width:0}
 .mission{padding:16px 14px}
@@ -204,7 +209,12 @@ ${renderNav(esc, { active: 'replay', demo, user, timeZone: tz })}
 
   <div class="col col-hero">
     <section class="hero glass" id="hero">
-      <div class="hero-stage">
+      ${!hasTrack && !demo ? `<div class="hero-empty" role="status">
+        <div class="eyebrow">Replay</div>
+        <h1>No replay available</h1>
+        <p class="dim">This flight has no GPS track, so there's nothing to play. Your logbook is unchanged. Add a track to a flight to watch it here.</p>
+        <p><a class="btn" href="/cockpit/logbook">Back to Logbook</a></p>
+      </div>` : `<div class="hero-stage">
         <div class="replay2d" id="replay2d">${miniTrackSvg(points, 640, 360)}<div class="r3d-status" id="r3dStatus" role="status">Loading 3D replay…</div></div>
         <canvas class="replay3d" id="replay3d" aria-label="3D flight replay"></canvas>
         <div class="hero-vignette" aria-hidden="true"></div>
@@ -241,7 +251,7 @@ ${renderNav(esc, { active: 'replay', demo, user, timeZone: tz })}
             </label>
           </div>
           <div class="terrain-note"><span class="tn-long" id="tnLong">Terrain: stylized Terrarium elevation (no imagery key configured). Set CESIUM_ION_TOKEN on the server for satellite ground.</span></div>
-        </div>
+        </div>`}
     </section>
   </div>
 
@@ -269,13 +279,13 @@ ${renderNav(esc, { active: 'replay', demo, user, timeZone: tz })}
         <span class="eyebrow">Lesson Debrief</span>
         <span class="share-tag">SHAREABLE</span>
       </div>
-      ${miniTrackSvg(points)}
+      ${!hasTrack && !demo ? '<p class="dim" style="margin-top:8px">No track to debrief yet.</p>' : `${miniTrackSvg(points)}
       <div style="margin-top:8px;font-weight:650">${esc(t.dateLabel || '—')}</div>
       <div class="mono dim" style="font-size:12px;margin-top:4px">${esc(String(t.hours ?? stats.durationSec / 3600))} hrs · ${esc(String(t.takeoffs ?? 1))} Takeoffs · ${esc(t.airport || callStation || '')}</div>
       <div class="eyebrow" style="margin-top:10px">Skills nailed</div>
       <div class="skills">${skills || '<span class="dim">—</span>'}</div>
       <div class="mono dim" style="font-size:11px;margin:8px 0">+${esc(String(t.hours ?? 1.4))} hrs toward certificate</div>
-      <button type="button" class="btn" id="shareBtn">↩ Share PNG</button>
+      <button type="button" class="btn" id="shareBtn">↩ Share PNG</button>`}
     </section>
   </div>
 </div>
@@ -284,7 +294,8 @@ ${renderNav(esc, { active: 'replay', demo, user, timeZone: tz })}
   ${acsHtml}
 </section>
 </div>
-<script type="module">
+${hasTrack || demo ? `<script type="module">
+
 const TRACK = ${trackJson};
 const DUR = ${JSON.stringify(dur)};
 const R3D_TIMEOUT_MS = 40000;
@@ -388,6 +399,6 @@ document.getElementById('shareBtn')?.addEventListener('click', async ()=>{
     URL.revokeObjectURL(a.href);
   });
 });
-</script>
+</script>` : `<script>${clockScript()}</script>`}
 </body></html>`;
 }

@@ -6,7 +6,8 @@
  * and BEFORE the legacy cockpit/checkride routes, so in v2 mode these handlers answer first. With the flag
  * off nothing here is mounted and the legacy single-user file/wallet behaviour is untouched.
  *
- *   signed in  (req.accountV2)  → reads/writes only that student's student_docs rows
+ *   signed in  (req.accountV2)  → reads/writes only that student's student_docs rows.
+ *                                 ?demo=1 is ignored so a session is never switched to SAMPLE data.
  *   signed out                  → GETs return SAMPLE (demo) data, writes return 401
  * The student id comes only from the server-side session; no route takes a student id from the client.
  */
@@ -58,7 +59,8 @@ export function registerStudentRoutes(app, { pool, escapeHtml, env = process.env
     res.set("Cache-Control", "no-store");
     return fn(req, res, s, next);
   })];
-  const isDemo = (req) => req.query.demo === "1" || !st(req);
+  // Sample data only when there is no session. ?demo=1 must not replace a signed-in logbook.
+  const isDemo = (req) => !st(req);
 
   async function studentState(s, asOf) {
     const [entries, store] = await Promise.all([data.entries(s), data.checkride(s)]);
@@ -68,7 +70,7 @@ export function registerStudentRoutes(app, { pool, escapeHtml, env = process.env
   /** Page context for cockpit HTML pages (passed to registerCockpitRoutes as accounts.loadContext). */
   async function loadContext(req) {
     const s = st(req);
-    if (req.query.demo === "1" || !s) {
+    if (!s) {
       const d = demoData();
       const cr = computeCheckride(d.entries, d.store);
       const weather = await getStationWeather({ demo: true });

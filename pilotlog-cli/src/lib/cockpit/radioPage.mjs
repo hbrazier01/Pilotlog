@@ -2,7 +2,7 @@
  * Radio Practice — AI tower (deterministic, free). Speech in/out via the browser Web Speech API,
  * text fallback. Uses the student's own Settings (airport, facility, runways, callsign, aircraft).
  */
-import { shellStart, shellEnd } from './chrome.mjs';
+import { shellStart, shellEnd, demoQ } from './chrome.mjs';
 import { SCENARIOS, DISCLAIMER } from '../../../../public/js/atc-engine.js';
 
 export function renderRadioPage(esc, { demo = false, user = null, settings = {}, weather = null, airportData = null } = {}) {
@@ -13,7 +13,7 @@ export function renderRadioPage(esc, { demo = false, user = null, settings = {},
     airportData: airportData ? { taxi: airportData.taxi || null, atis: airportData.atis || null, freqs: airportData.freqs ? { tower: airportData.freqs.tower, ground: airportData.freqs.ground, atis: airportData.freqs.atis, source: airportData.freqs.source } : null } : null,
     weather: weather && weather.metar ? { metar: { wdir: weather.metar.wdir ?? null, wspd: weather.metar.wspd ?? null, altim: weather.metar.altim ?? null, obsTime: weather.metar.obsTime ?? null }, station: { runways: weather.station?.runways || [] } } : null,
   };
-  const q = demo ? '?demo=1' : '';
+  const q = demoQ(demo, user);
   const css = `<style>
 .disc{display:flex;gap:10px;align-items:center;padding:10px 14px;border-radius:14px;margin-bottom:14px;background:linear-gradient(90deg,rgba(251,191,36,.16),rgba(251,191,36,.04));border:1px solid rgba(251,191,36,.45);color:#fde68a;font:600 12px/1.4 var(--mono);letter-spacing:.02em}
 .disc b{background:var(--am);color:#1a1200;border-radius:6px;padding:2px 7px;font-size:10px;letter-spacing:.14em;white-space:nowrap}
