@@ -54,7 +54,9 @@ test('tower phraseology: takeoff clearance includes wind, runway, clearance, pat
 
 test('ground taxi phraseology includes hold-short; grader requires it', () => {
   const [st] = scenarioScript(ctx('ground_taxi'));
-  assert.match(st.reply.text, /taxi via A, hold short of runway 20\.$/);
+  // KXYZ has no verified taxi route data, so Ground names no via-route (fail closed, never a guessed "A")
+  assert.match(st.reply.text, /Springfield Ground, runway 20, hold short of runway 20\.$/);
+  assert.ok(!/taxi via/.test(st.reply.text + st.ideal));
   const good = gradeReadback('Runway two zero, taxi via Alpha, hold short runway two zero, Skyhawk eight sierra papa', st);
   assert.ok(good.passed, JSON.stringify(good.missing));
   const bad = gradeReadback('taxi via alpha, eight sierra papa', st);
