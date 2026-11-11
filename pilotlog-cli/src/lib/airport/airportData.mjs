@@ -5,6 +5,10 @@
  *    failures back off for 6 h. https://dev.overpass-api.de/overpass-doc/en/preface/commons.html
  *  - Frequencies: OurAirports airport-frequencies.csv (public domain), downloaded at most weekly.
  *  - ATIS letter: FAA D-ATIS mirror datis.clowd.io (only towered airports with D-ATIS).
+ *  - Offline fallback: a bundled OSM snapshot (snapshots/, © OpenStreetMap contributors, ODbL) for airports
+ *    with FAA-verified TAXI_RULES (KAPA only). Live Overpass stays the preferred source; the snapshot is used
+ *    only when there is no live/cached data (cold start with no volume, Overpass error/timeout, 6 h backoff).
+ *    Airports without a bundled snapshot still degrade to null — no invented routes.
  * Everything degrades to null so the UI can label values SIM.
  */
 import fs from 'node:fs';
@@ -234,6 +238,28 @@ function nearestOnSeg(p, a, b) {
   return { lat: a.lat + ay * t, lon: a.lon + ax * t };
 }
 
+/* ----------------------------- bundled snapshots ---------------------------- */
+/** ICAO → committed OSM snapshot shipped in the deploy image. Only airports with FAA-verified TAXI_RULES. */
+export const BUNDLED_OSM = Object.freeze({ KAPA: 'osm-KAPA.json' });
+const SNAPSHOT_DIR = new URL('./snapshots/', import.meta.url);
+const snapMem = new Map();
+/** Bundled OSM snapshot for an airport (sync, local file, read once), or null when none is shipped. */
+export function bundledOsm(icao) {
+  const id = String(icao || '').toUpperCase(), file = BUNDLED_OSM[id];
+  if (!file) return null;
+  if (!snapMem.has(id)) {
+    let v = null;
+    try {
+      const j = JSON.parse(fs.readFileSync(new URL(file, SNAPSHOT_DIR), 'utf8'));
+      if (Array.isArray(j?.elements)) v = { fetchedAt: j.fetchedAt || null, elements: j.elements, snapshot: true, attribution: j.attribution || null };
+    } catch { /* missing / unreadable → no fallback */ }
+    snapMem.set(id, v);
+  }
+  return snapMem.get(id);
+}
+/** Test hook: forget in-memory OSM data, Overpass backoff and snapshot reads. */
+export function _resetAirportCache() { mem.clear(); failedAt.clear(); snapMem.clear(); }
+
 /* ------------------------------- fetch + cache ------------------------------ */
 function cacheFile(dir, name) { return dir ? path.join(dir, 'airport-cache', name) : null; }
 function readCache(file, ttl) {
@@ -246,7 +272,12 @@ export function overpassQuery(lat, lon, radiusM = 3500) {
   const a = `(around:${radiusM},${lat},${lon})`;
   return `[out:json][timeout:25];(way["aeroway"="taxiway"]${a};way["aeroway"~"^(apron|runway)$"]${a};node["aeroway"="gate"]${a};);out body geom;`;
 }
-export async function getAirportOsm(station, { dataDir, fetchImpl = fetch } = {}) {
+/** Live OSM for an airport: memory → 30-day disk cache → Overpass; on failure/backoff the bundled snapshot (if any). */
+export async function getAirportOsm(station, { dataDir, fetchImpl = fetch, bundled = true } = {}) {
+  const live = await getLiveAirportOsm(station, { dataDir, fetchImpl });
+  return live || (bundled ? bundledOsm(station?.icao) : null);
+}
+async function getLiveAirportOsm(station, { dataDir, fetchImpl = fetch } = {}) {
   if (!station?.icao || !Number.isFinite(station.lat) || !Number.isFinite(station.lon)) return null;
   const key = `osm-${station.icao}.json`, file = cacheFile(dataDir, key);
   if (mem.has(key)) return mem.get(key);
@@ -317,24 +348,52 @@ export async function getAtis(icao, { fetchImpl = fetch } = {}) {
   return v;
 }
 
-/** Everything Radio Practice needs; each piece null when unavailable. */
+/** How long Radio Practice waits for live OSM before using a bundled snapshot (the page races ~4 s total). */
+export const LIVE_OSM_WAIT_MS = 1500;
+
+/** Taxi routes for every runway end of one OSM dataset (client picks the end the wind favours); null if none. */
+function taxiTable(osm, icao) {
+  if (!osm) return null;
+  const taxi = {}, opts2 = { icao };
+  const snap = osm.snapshot ? ` (offline snapshot ${String(osm.fetchedAt || '').slice(0, 10)})` : '';
+  for (const w of osm.elements.filter((e) => e.tags?.aeroway === 'runway')) for (const end of String(w.tags.ref || '').toUpperCase().split('/')) {
+    const id = end.trim();
+    // no verified route → route: [] (Radio Practice fails closed and names no via), exit kept if known
+    const r = buildTaxiRoute(osm, id, opts2), ex = r ? null : buildExit(osm, id, opts2);
+    if (r) taxi[id] = { ...r, source: r.source + snap }; else if (ex) taxi[id] = { runway: id.toUpperCase(), route: [], exit: ex.exit, exitSide: ex.exitSide, source: 'OpenStreetMap' + snap };
+  }
+  return Object.keys(taxi).length ? taxi : null;
+}
+
+/**
+ * Everything Radio Practice needs; each piece null when unavailable.
+ * OSM: live (memory / disk cache / Overpass) is preferred. For an airport with a bundled snapshot (KAPA) the
+ * live lookup gets `liveWaitMs`; if it has not produced data by then (cold start, Overpass error, 6 h
+ * backoff) the local snapshot is used so the page can embed routes inside its 4 s race, and the live fetch
+ * keeps running in the background to fill the cache for later loads. Airports with no snapshot are unchanged.
+ * A runway end with an FAA-verified TAXI_RULES path that live OSM no longer reproduces (OSM edit) is filled
+ * from the snapshot route; any other runway end keeps the live result (incl. fail-closed route: []).
+ */
 export async function getRadioAirportData(station, _runway, opts = {}) {
+  const icao = String(station?.icao || '').toUpperCase();
+  const snap = opts.bundled === false ? null : bundledOsm(icao);
+  const live = getAirportOsm(station, { ...opts, bundled: false }).catch(() => null);
+  const osmP = snap
+    ? Promise.race([live, new Promise((r) => { const t = setTimeout(() => r(null), opts.liveWaitMs ?? LIVE_OSM_WAIT_MS); t.unref?.(); })]).then((o) => o || snap)
+    : live;
   const [osm, freqs, atis] = await Promise.all([
-    getAirportOsm(station, opts).catch(() => null),
+    osmP,
     getFrequencies(station?.icao, opts).catch(() => null),
     getAtis(station?.icao, opts).catch(() => null),
   ]);
-  let taxi = null;
-  if (osm) {
-    // build routes for every runway end so the client can pick the one the wind favours
-    taxi = {};
-    for (const w of osm.elements.filter((e) => e.tags?.aeroway === 'runway')) for (const end of String(w.tags.ref || '').toUpperCase().split('/')) {
-      const id = end.trim(), opts2 = { icao: station?.icao };
-      // no verified route → route: [] (Radio Practice fails closed and names no via), exit kept if known
-      const r = buildTaxiRoute(osm, id, opts2), ex = r ? null : buildExit(osm, id, opts2);
-      if (r) taxi[id] = r; else if (ex) taxi[id] = { runway: id.toUpperCase(), route: [], exit: ex.exit, exitSide: ex.exitSide, source: 'OpenStreetMap' };
+  let taxi = taxiTable(osm, station?.icao);
+  if (snap && osm !== snap) {
+    const paths = TAXI_RULES[icao]?.paths || {};
+    const verified = Object.keys(paths).filter((id) => !taxi?.[id]?.route?.length);
+    if (verified.length) {
+      const fromSnap = taxiTable(snap, station?.icao) || {};
+      for (const id of verified) if (fromSnap[id]?.route?.length) (taxi ||= {})[id] = fromSnap[id];
     }
-    if (!Object.keys(taxi).length) taxi = null;
   }
   return { taxi, freqs, atis };
 }
