@@ -379,7 +379,7 @@ export async function getRadioAirportData(station, _runway, opts = {}) {
   const snap = opts.bundled === false ? null : bundledOsm(icao);
   const live = getAirportOsm(station, { ...opts, bundled: false }).catch(() => null);
   const osmP = snap
-    ? Promise.race([live, new Promise((r) => { const t = setTimeout(() => r(null), opts.liveWaitMs ?? LIVE_OSM_WAIT_MS); t.unref?.(); })]).then((o) => o || snap)
+    ? Promise.race([live, new Promise((r) => setTimeout(() => r(null), opts.liveWaitMs ?? LIVE_OSM_WAIT_MS))]).then((o) => o || snap)
     : live;
   const [osm, freqs, atis] = await Promise.all([
     osmP,
