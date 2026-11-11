@@ -109,18 +109,23 @@ export function buildContext({ settings = {}, weather = null, scenario = 'ground
   let atis = airportData?.atis?.letter || null;
   if (!atis) { atis = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[(new Date(weather?.metar?.obsTime || Date.now()).getUTCHours()) % 26]; simulated.push('atis'); }
   const side = runway.endsWith('R') ? 'right' : 'left'; // standard pattern is left unless parallel right
-  // Taxi route from OpenStreetMap taxiway names, else a clearly-labelled generic route
+  // Taxi route: only a verified movement-area route to this runway end (airportData.mjs buildTaxiRoute).
+  // Fail closed at a real field: with no verified route Ground names no via-route at all (never a guess).
+  // The generic "A" route is only for practice with no home airport set (a fictional field).
   const taxi = airportData?.taxi?.[runway] || null;
-  const taxiRoute = taxi?.route?.length ? taxi.route : ['A'];
-  if (!taxi?.route?.length) simulated.push('taxi');
-  const exitTaxiway = taxi?.exit || (taxi?.route?.length ? taxi.route[0] : 'C');
+  const verified = taxi?.route?.length ? taxi.route : null;
+  const taxiUnavailable = !verified && !!airport;
+  const taxiRoute = verified || (airport ? [] : ['A']);
+  if (!verified) simulated.push('taxi');
+  const taxiNote = taxiUnavailable ? `No verified taxi route to runway ${runway}${airport ? ' at ' + airport : ''} in PilotLog's map data, so this practice clearance names no taxi route. Get the real route from the FAA airport diagram and your CFI.` : null;
+  const exitTaxiway = taxi?.exit || (verified ? verified[0] : 'C');
   if (!taxi?.exit) simulated.push('exit');
   const exitSide = taxi?.exitSide || 'left';
   const f = airportData?.freqs || null;
   const freqs = { tower: f?.tower || null, ground: f?.ground || null, atis: f?.atis || null, source: f ? f.source : null };
   if (!f) simulated.push('freq');
   const traffic = pickTraffic(rng(seed), side);
-  return { scenario, airport, facilityName, callsign, typeName, wind, altimeter, runway, atis, side, taxiRoute, taxiway: taxiRoute.join(', '), sayTaxi: sayTaxiways(taxiRoute), exitTaxiway, sayExit: sayTaxiways([exitTaxiway]), exitSide, freqs, traffic, taxiSource: taxi ? 'OpenStreetMap' : null, simulated, needsSetup: !airport };
+  return { scenario, airport, facilityName, callsign, typeName, wind, altimeter, runway, atis, side, taxiRoute, taxiway: taxiRoute.join(', '), sayTaxi: sayTaxiways(taxiRoute), taxiUnavailable, taxiNote, exitTaxiway, sayExit: sayTaxiways([exitTaxiway]), exitSide, freqs, traffic, taxiSource: verified ? (taxi.source || 'OpenStreetMap') : null, simulated, needsSetup: !airport };
 }
 
 /* ------------------------------- normaliser -------------------------------- */
@@ -234,9 +239,12 @@ export function scenarioScript(ctx) {
       cue: 'You\'re parked on the ramp with the ATIS. Call Ground for taxi to the active runway, staying in the pattern.',
       example: `${fac('ground')}, ${csFull}, at the ramp with information ${sayLetter(c.atis)}, ready to taxi, VFR closed traffic.`,
       call: [facEl('ground'), CS(c), el('position', 'Your position (e.g. “at the ramp”)', 'Ground needs to know where you are to build a taxi route.', (t) => hasPhrase(t, 'ramp') || hasPhrase(t, 'parking') || hasPhrase(t, 'fbo') || hasPhrase(t, 'hangar') || hasPhrase(t, 'tie down') || hasPhrase(t, 'spot')), atisEl, el('request', 'Request (“ready to taxi”)', 'State what you want.', (t) => hasPhrase(t, 'taxi'))],
-      reply: { text: `${csFull}, ${fac('ground')}, runway ${c.runway}, taxi via ${c.taxiway}, hold short of runway ${c.runway}.`, speak: `${csSayFull}, ${fac('ground')}, runway ${sayRunway(c.runway)}, taxi via ${c.sayTaxi}, hold short of runway ${sayRunway(c.runway)}.` },
-      readback: [RW(c), el('route', `Taxi route “via ${c.taxiway}”`, 'Read back the taxi route so Ground can catch a wrong turn before it happens (7110.65 3-7-2).', (t) => { const l3 = c.callsign.slice(-3); const u = t.map((x) => (x.length > l3.length && x.endsWith(l3) ? x.slice(0, -l3.length) : x)); return heardTaxiway(u, c.taxiRoute[0]) && heardTaxiway(u, c.taxiRoute[c.taxiRoute.length - 1]); }), el('hold_short', `“Hold short runway ${c.runway}”`, 'Hold-short instructions MUST be read back word-for-word (7110.65 3-7-2, AIM 4-3-18). This is the #1 runway-incursion safeguard.', (t) => hasPhrase(t, 'hold short') || hasPhrase(t, 'short of')), CS(c)],
-      ideal: `Runway ${c.runway}, taxi via ${c.taxiway}, hold short runway ${c.runway}, ${csAbbr}.`,
+      // No verified route → no via-route in the clearance, readback or model answer (fail closed).
+      reply: c.taxiRoute.length
+        ? { text: `${csFull}, ${fac('ground')}, runway ${c.runway}, taxi via ${c.taxiway}, hold short of runway ${c.runway}.`, speak: `${csSayFull}, ${fac('ground')}, runway ${sayRunway(c.runway)}, taxi via ${c.sayTaxi}, hold short of runway ${sayRunway(c.runway)}.` }
+        : { text: `${csFull}, ${fac('ground')}, runway ${c.runway}, hold short of runway ${c.runway}.`, speak: `${csSayFull}, ${fac('ground')}, runway ${sayRunway(c.runway)}, hold short of runway ${sayRunway(c.runway)}.` },
+      readback: [RW(c), ...(c.taxiRoute.length ? [el('route', `Taxi route “via ${c.taxiway}”`, 'Read back the taxi route so Ground can catch a wrong turn before it happens (7110.65 3-7-2).', (t) => { const l3 = c.callsign.slice(-3); const u = t.map((x) => (x.length > l3.length && x.endsWith(l3) ? x.slice(0, -l3.length) : x)); return heardTaxiway(u, c.taxiRoute[0]) && heardTaxiway(u, c.taxiRoute[c.taxiRoute.length - 1]); })] : []), el('hold_short', `“Hold short runway ${c.runway}”`, 'Hold-short instructions MUST be read back word-for-word (7110.65 3-7-2, AIM 4-3-18). This is the #1 runway-incursion safeguard.', (t) => hasPhrase(t, 'hold short') || hasPhrase(t, 'short of')), CS(c)],
+      ideal: c.taxiRoute.length ? `Runway ${c.runway}, taxi via ${c.taxiway}, hold short runway ${c.runway}, ${csAbbr}.` : `Runway ${c.runway}, hold short runway ${c.runway}, ${csAbbr}.`,
     }],
     takeoff: [{
       cue: `You\'ve switched to Tower and you\'re holding short of runway ${c.runway}, run-up complete. Tell Tower you\'re ready, staying in the pattern.`,
@@ -291,6 +299,13 @@ export function gradeElements(utterance, elements) {
   const missing = results.filter((r) => !r.ok);
   return { score, passed: missing.length === 0, results, missing, tokens: toks };
 }
+/**
+ * A good-faith challenge of the clearance ("that's incorrect", "unable", "verify the route") rather
+ * than a readback. 14 CFR 91.123(a): a pilot uncertain of a clearance must ask ATC to clarify, so a
+ * challenge is never graded as a missed readback of the (possibly wrong) instruction.
+ */
+const CHALLENGE_RE = /\b(incorrect|not correct|isnt correct|wrong|unable|cannot|cant|can not|arent able|are not able|not able to|not possible|isnt possible|invalid|not valid|(doesnt|does not|dont|do not) (connect|go|reach|work|lead)|verify|confirm|say again|is that (right|correct)|question)\b/;
+export const isChallenge = (utterance) => CHALLENGE_RE.test(canonicalize(utterance));
 export function gradeCall(utterance, step) { return step.call ? gradeElements(utterance, step.call) : null; }
 export function gradeReadback(utterance, step) {
   const g = gradeElements(utterance, step.readback);
@@ -332,6 +347,14 @@ export function respond(s, utterance) {
   }
   if (s.phase === 'readback') {
     const g = gradeReadback(utterance, st);
+    if (!g.passed && isChallenge(utterance)) {
+      // Challenge, not a readback: no score, no "missing" items, no model readback of the challenged route.
+      out.grade = { kind: 'challenge', score: null, passed: false, results: [], missing: [], tokens: g.tokens, ideal: null, verdict: 'Challenge noted — not scored as a readback. If a clearance looks wrong, ask ATC to clarify before you move (14 CFR 91.123(a)); check the FAA airport diagram with your CFI.' };
+      s.challenges = (s.challenges || 0) + 1;
+      out.tower = { text: `${abbreviatedCallsign(s.ctx.callsign, s.ctx.typeName)}, roger, hold position.`, speak: `${s.ctx.typeName} ${sayCallsign(s.ctx.callsign.slice(-3))}, roger, hold position.` };
+      s.log.push({ who: 'atc', text: out.tower.text });
+      return out; // stay in 'readback'; the challenge is not added to the graded readbacks
+    }
     out.grade = { kind: 'readback', ...g };
     s.grades.push(out.grade);
     const holdMissing = g.missing.some((m) => m.id === 'hold_short' || m.id === 'clearance');
@@ -354,6 +377,7 @@ export function respond(s, utterance) {
   return out;
 }
 export function sessionScore(s) {
-  if (!s.grades.length) return 0;
-  return Math.round(s.grades.reduce((a, g) => a + g.score, 0) / s.grades.length);
+  const scored = s.grades.filter((g) => Number.isFinite(g.score));
+  if (!scored.length) return 0;
+  return Math.round(scored.reduce((a, g) => a + g.score, 0) / scored.length);
 }

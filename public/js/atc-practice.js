@@ -38,11 +38,11 @@ function renderCtx() {
   $('ctx').innerHTML = [
     ['FIELD', ctx.airport || '—', ''], ['RWY', ctx.runway, sim('runway')], ['WIND', w, sim('wind')],
     ['ALTM', ctx.altimeter.toFixed(2), sim('altimeter')], ['ATIS', sayLetter(ctx.atis).toUpperCase(), sim('atis')],
-    ['TAXI', ctx.taxiRoute.join('→'), sim('taxi')], ['TWR', ctx.freqs.tower || '—', sim('freq')], ['GND', ctx.freqs.ground || '—', sim('freq')], ['CALLSIGN', ctx.callsign, sim('callsign')],
+    ['TAXI', ctx.taxiRoute.length ? ctx.taxiRoute.join('→') : 'NO ROUTE', sim('taxi')], ['TWR', ctx.freqs.tower || '—', sim('freq')], ['GND', ctx.freqs.ground || '—', sim('freq')], ['CALLSIGN', ctx.callsign, sim('callsign')],
   ].map(([k, v, s]) => `<div class="cx">${k}${s}<b>${esc(v)}</b></div>`).join('');
   $('setupNote').hidden = !(ctx.needsSetup || ctx.simulated.includes('callsign'));
   renderFreq();
-  const src = [ctx.taxiSource ? 'Taxiways © OpenStreetMap contributors (ODbL)' : 'Taxi route SIM (no map data for this field)', ctx.freqs.source ? 'Frequencies: OurAirports' : 'Frequencies SIM', ctx.simulated.includes('atis') ? 'ATIS letter SIM (no D-ATIS)' : 'ATIS: FAA D-ATIS'];
+  const src = [ctx.taxiSource ? 'Taxiways © OpenStreetMap contributors (ODbL)' : ctx.taxiUnavailable ? 'No verified taxi route — none issued' : 'Taxi route SIM (no map data for this field)', ctx.freqs.source ? 'Frequencies: OurAirports' : 'Frequencies SIM', ctx.simulated.includes('atis') ? 'ATIS letter SIM (no D-ATIS)' : 'ATIS: FAA D-ATIS'];
   $('dataSrc').textContent = src.join(' · ');
 }
 function renderFreq() {
@@ -69,6 +69,11 @@ function renderCue() {
 }
 function renderGrade(g) {
   if (!g) return;
+  if (g.kind === 'challenge') {
+    $('gmini').innerHTML = `<div><div class="gm-t">${esc(g.verdict)}</div><a href="#grade">Full check ↓</a></div>`;
+    $('grade').innerHTML = `<h3>READBACK CHECK</h3><div class="score"><div class="verdict">${esc(g.verdict)}</div></div>`;
+    return;
+  }
   const colm = g.score === 100 ? 'var(--gr)' : g.score >= 60 ? 'var(--am)' : '#fb7185';
   const vm = g.kind === 'call' ? (g.passed ? 'Clean initial call.' : `Call missing ${g.missing.length} item${g.missing.length > 1 ? 's' : ''}.`) : g.verdict;
   $('gmini').innerHTML = `<div class="ring" style="--p:${g.score};--rc:${colm}"><span style="color:${colm}">${g.score}</span></div><div><div class="gm-t">${esc(vm)}</div>${g.missing.length ? `<div class="gm-m">✕ ${esc(g.missing.map((m) => m.label).join(' · '))}</div>` : ''}${g.ideal ? `<div class="gm-m" style="color:var(--cy)">Model: ${esc(g.ideal)}</div>` : ''}<a href="#grade">Full check ↓</a></div>`;
@@ -89,6 +94,7 @@ function start(id) {
   $('grade').innerHTML = '<h3>READBACK CHECK</h3><div class="empty">Make your call. Each transmission is checked for the required elements: callsign, runway, clearance, hold-short, altimeter, and more.</div>';
   renderCtx();
   addMsg('sys', `${ctx.facilityName} · runway ${ctx.runway} in use · information ${sayLetter(ctx.atis)}`);
+  if (ctx.taxiNote && id === 'ground_taxi') addMsg('sys', ctx.taxiNote);
   const open = towerOpening(session);
   if (open) { addMsg('atc', open.text); lastTower = open; speak(open); }
   renderCue();
