@@ -56,15 +56,31 @@ export function runwayEnd(osm, rwId) {
  * requires one. OSM tags every paved lane as aeroway=taxiway; it does not say which ones are
  * non-movement (uncontrolled) taxilanes, so Ground must never route over them.
  *  - KAPA: FAA From the Flight Deck (https://www.faa.gov/flight_deck/apa), HS 3: "Taxi-lane C is not
- *    a TWY and is not ATC controlled", on the ramp parallel to RWY 10/28. FAA Airport Diagram AL-5715,
- *    cycle 26134 (https://aeronav.faa.gov/d-tpp/2611/05715AD.PDF): the RWY 28 departure end (east,
- *    elev 5794, MTC run-up) is reached only from taxilane C via C5, so there is no movement-area
- *    taxiway route Ground can issue to it here. A8 is at HS 2, the west (RWY 10) end.
+ *    a TWY and is not ATC controlled", on the ramp parallel to RWY 10/28, so C is never part of a
+ *    graph-searched Ground route. FAA Airport Diagram AL-5715, cycle 26134
+ *    (https://aeronav.faa.gov/d-tpp/2611/05715AD.PDF): the RWY 28 departure end (east, elev 5794, MTC
+ *    run-up) is reached from the midfield ramp on taxilane C, then C5. A8 is at HS 2, the west (RWY 10)
+ *    end, so it is the wrong way to 28. `paths` is the allowlist for that one verified path: Ground
+ *    clears a student at the midfield run-up (east of TWY A, north of HS 2) "runway 28, taxi to C5 via C"
+ *    (Holland Brazier, CFI-checked correction, Nov 10 2026). The route is still computed over the OSM
+ *    graph from that start, and is issued only if it comes out exactly as `expect` (else fail closed).
  */
 export const TAXI_RULES = Object.freeze({
   KAPA: Object.freeze({
     nonMovement: Object.freeze(['C']),
-    noRoute: Object.freeze({ 28: 'The RWY 28 departure end is reached only from taxilane C (non-movement, not ATC controlled) via C5 (FAA airport diagram AL-5715 / From the Flight Deck HS 3).' }),
+    paths: Object.freeze({
+      28: Object.freeze({
+        // Midfield run-up pad (OSM way 663953885), east of TWY A between A6 and A8 / HS 2 on AL-5715.
+        start: Object.freeze({ lat: 39.57611, lon: -104.84885, name: 'midfield run-up' }),
+        taxilanes: Object.freeze(['C']), // allowed on this path only (never as general Ground routing)
+        // OSM tags the paved ramp throat east of TWY A (between the run-up and the west end of C) as part of
+        // A8. On AL-5715 A8 is the connector west of TWY A at HS 2, so here that stub is ramp lead-in only:
+        // it is never named in the clearance, and the lead-in may not touch TWY A or any other named taxiway.
+        rampRefs: Object.freeze(['A8']),
+        expect: Object.freeze(['C', 'C5']),
+        phrase: 'to', // "taxi to C5 via C"
+      }),
+    }),
     source: 'FAA airport diagram AL-5715 (cycle 26134) + FAA From the Flight Deck APA',
   }),
 });
@@ -93,20 +109,26 @@ export function isNonMovement(tags, rules) {
  *  - the route must end on a named taxiway within THRESHOLD_MAX_M of the departure threshold;
  *  - the route may not enter or cross any runway on the way (7110.65 3-7-2 requires an explicit
  *    crossing / hold-short instruction for each runway, which this practice clearance does not issue);
- *  - routes are never truncated (a cut route would not reach the runway), and TAXI_RULES.noRoute
- *    ends return null.
+ *  - routes are never truncated (a cut route would not reach the runway);
+ *  - a TAXI_RULES `paths` entry for this runway end sets the start (e.g. KAPA midfield run-up), allows
+ *    its listed taxilanes on that path only, and the result must equal its `expect` route.
  */
 export function buildTaxiRoute(osm, rwId, { icao, rules: rulesOpt } = {}) {
   const els = osm?.elements || [];
   const rules = rulesOpt ?? TAXI_RULES[String(icao || '').toUpperCase()] ?? null;
   const end = runwayEnd(osm, rwId);
-  if (!end || rules?.noRoute?.[end.id]) return null;
-  const taxi = els.filter((e) => e.type === 'way' && e.tags?.aeroway === 'taxiway' && e.nodes?.length >= 2 && e.geometry?.length === e.nodes.length && !isNonMovement(e.tags, rules));
+  if (!end) return null;
+  const vp = rules?.paths?.[end.id] || null; // verified path for this runway end (start + allowed taxilanes)
+  const allowLane = (tags) => !!vp?.taxilanes?.includes(cleanRef(tags?.ref));
+  const taxi = els.filter((e) => e.type === 'way' && e.tags?.aeroway === 'taxiway' && e.nodes?.length >= 2 && e.geometry?.length === e.nodes.length && (!isNonMovement(e.tags, rules) || allowLane(e.tags)));
   if (!taxi.length) return null;
   const pos = new Map(), adj = new Map();
   const link = (a, b, w, ref) => { if (!adj.has(a)) adj.set(a, []); adj.get(a).push({ to: b, w, ref }); };
+  const onNamed = new Map(); // node → named movement-area refs through it (for the ramp lead-in check)
   for (const w of taxi) {
-    const ref = cleanRef(w.tags.ref);
+    const named = cleanRef(w.tags.ref);
+    const ref = named && vp?.rampRefs?.includes(named) ? null : named; // OSM ramp-side stub of that ref = ramp lead-in only
+    if (ref) for (const n of w.nodes) { if (!onNamed.has(n)) onNamed.set(n, new Set()); onNamed.get(n).add(ref); }
     w.nodes.forEach((n, i) => pos.set(n, { lat: w.geometry[i].lat, lon: w.geometry[i].lon }));
     for (let i = 1; i < w.nodes.length; i++) {
       const d = distM(w.geometry[i - 1], w.geometry[i]) * (ref ? 1 : 1.6); // prefer named taxiways
@@ -115,8 +137,8 @@ export function buildTaxiRoute(osm, rwId, { icao, rules: rulesOpt } = {}) {
   }
   const aprons = els.filter((e) => e.tags?.aeroway === 'apron' && e.geometry?.length);
   const fbo = els.find((e) => e.type === 'node' && /fbo|gate/i.test(e.tags?.aeroway || '') && e.lat);
-  let ramp = null;
-  if (aprons.length) {
+  let ramp = vp?.start || null;
+  if (ramp) { /* airport-specific verified start */ } else if (aprons.length) {
     const cents = aprons.map((a) => ({ lat: a.geometry.reduce((s, p) => s + p.lat, 0) / a.geometry.length, lon: a.geometry.reduce((s, p) => s + p.lon, 0) / a.geometry.length, n: a.geometry.length, name: a.tags.name || '' }));
     // GA ramp heuristic: a named FBO/GA apron, else the biggest apron
     ramp = cents.find((c) => /fbo|ga\b|general|jet|signature|atlantic|million|ross|ramp/i.test(c.name)) || cents.sort((a, b) => b.n - a.n)[0];
@@ -148,13 +170,21 @@ export function buildTaxiRoute(osm, rwId, { icao, rules: rulesOpt } = {}) {
   if (!goal) return null;
   const refs = [], path = [goal.split('|')[0]];
   for (let k = goal; prev.has(k); k = prev.get(k).k) { refs.unshift(prev.get(k).ref); path.unshift(prev.get(k).k.split('|')[0]); }
+  if (vp?.rampRefs?.length) {
+    // the ramp lead-in may not touch any named taxiway before the junction with the route (e.g. may not reach TWY A)
+    const first = refs.findIndex(Boolean);
+    if (first < 0 || path.slice(0, first).some((n) => onNamed.has(+n) || onNamed.has(n))) return null;
+  }
   if (crossesRunway(path.map((n) => pos.get(+n) ?? pos.get(n)), path, els, end.wayId)) return null; // crossings need their own ATC instruction
   const route = refs.filter(Boolean).filter((r, i, a) => r !== a[i - 1]);
   // drop a one-segment connector between the same parallel (A → A3 → A reads as A), then re-dedupe
   const compact = route.filter((r, i) => !(i > 0 && i < route.length - 1 && route[i - 1] === route[i + 1])).filter((r, i, a) => r !== a[i - 1]);
   if (!compact.length || compact.length > MAX_ROUTE) return null; // never truncate: a cut route would not reach the runway
+  if (vp?.expect && compact.join(',') !== vp.expect.join(',')) return null; // verified path didn't reproduce → fail closed
   const ex = buildExit(osm, end.id, { icao, rules });
-  return { runway: end.id, route: compact, exit: ex?.exit || null, exitSide: ex?.exitSide || 'left', source: rules ? `OpenStreetMap + ${rules.source}` : 'OpenStreetMap' };
+  const out = { runway: end.id, route: compact, exit: ex?.exit || null, exitSide: ex?.exitSide || 'left', source: rules ? `OpenStreetMap + ${rules.source}` : 'OpenStreetMap' };
+  if (vp) { out.from = vp.start?.name || null; if (vp.phrase) out.phrase = vp.phrase; }
+  return out;
 }
 
 /** Landing exit: named movement-area taxiway touching the runway nearest ~55% of the way down the roll. */

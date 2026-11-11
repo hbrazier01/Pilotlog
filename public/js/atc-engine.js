@@ -118,6 +118,11 @@ export function buildContext({ settings = {}, weather = null, scenario = 'ground
   const taxiRoute = verified || (airport ? [] : ['A']);
   if (!verified) simulated.push('taxi');
   const taxiNote = taxiUnavailable ? `No verified taxi route to runway ${runway}${airport ? ' at ' + airport : ''} in PilotLog's map data, so this practice clearance names no taxi route. Get the real route from the FAA airport diagram and your CFI.` : null;
+  // "taxi to C5 via C" phrasing where the verified path asks for it (KAPA RWY 28 from the midfield run-up), else "taxi via A8, A, A1"
+  const toVia = !!(verified && taxi.phrase === 'to' && verified.length >= 2);
+  const taxiClear = !verified ? '' : toVia ? `to ${verified[verified.length - 1]} via ${verified.slice(0, -1).join(', ')}` : `via ${verified.join(', ')}`;
+  const sayTaxiClear = !verified ? '' : toVia ? `to ${sayTaxiways(verified.slice(-1))} via ${sayTaxiways(verified.slice(0, -1))}` : `via ${sayTaxiways(verified)}`;
+  const taxiFrom = verified ? taxi.from || null : null;
   const exitTaxiway = taxi?.exit || (verified ? verified[0] : 'C');
   if (!taxi?.exit) simulated.push('exit');
   const exitSide = taxi?.exitSide || 'left';
@@ -125,7 +130,7 @@ export function buildContext({ settings = {}, weather = null, scenario = 'ground
   const freqs = { tower: f?.tower || null, ground: f?.ground || null, atis: f?.atis || null, source: f ? f.source : null };
   if (!f) simulated.push('freq');
   const traffic = pickTraffic(rng(seed), side);
-  return { scenario, airport, facilityName, callsign, typeName, wind, altimeter, runway, atis, side, taxiRoute, taxiway: taxiRoute.join(', '), sayTaxi: sayTaxiways(taxiRoute), taxiUnavailable, taxiNote, exitTaxiway, sayExit: sayTaxiways([exitTaxiway]), exitSide, freqs, traffic, taxiSource: verified ? (taxi.source || 'OpenStreetMap') : null, simulated, needsSetup: !airport };
+  return { scenario, airport, facilityName, callsign, typeName, wind, altimeter, runway, atis, side, taxiRoute, taxiway: taxiRoute.join(', '), sayTaxi: sayTaxiways(taxiRoute), taxiClear: taxiClear || `via ${taxiRoute.join(', ')}`, sayTaxiClear: sayTaxiClear || `via ${sayTaxiways(taxiRoute)}`, taxiFrom, taxiUnavailable, taxiNote, exitTaxiway, sayExit: sayTaxiways([exitTaxiway]), exitSide, freqs, traffic, taxiSource: verified ? (taxi.source || 'OpenStreetMap') : null, simulated, needsSetup: !airport };
 }
 
 /* ------------------------------- normaliser -------------------------------- */
@@ -236,15 +241,15 @@ export function scenarioScript(ctx) {
   const atisEl = el('atis', `ATIS “information ${sayLetter(c.atis)}”`, 'Tell ATC you have the current ATIS so they don\'t have to read you the weather (AIM 4-1-13).', (t) => has(t, new RegExp(`^${c.atis}$`, 'i')) && (hasPhrase(t, 'information') || hasPhrase(t, 'with') || hasPhrase(t, 'have') || hasPhrase(t, 'got')));
   const S = {
     ground_taxi: [{
-      cue: 'You\'re parked on the ramp with the ATIS. Call Ground for taxi to the active runway, staying in the pattern.',
-      example: `${fac('ground')}, ${csFull}, at the ramp with information ${sayLetter(c.atis)}, ready to taxi, VFR closed traffic.`,
-      call: [facEl('ground'), CS(c), el('position', 'Your position (e.g. “at the ramp”)', 'Ground needs to know where you are to build a taxi route.', (t) => hasPhrase(t, 'ramp') || hasPhrase(t, 'parking') || hasPhrase(t, 'fbo') || hasPhrase(t, 'hangar') || hasPhrase(t, 'tie down') || hasPhrase(t, 'spot')), atisEl, el('request', 'Request (“ready to taxi”)', 'State what you want.', (t) => hasPhrase(t, 'taxi'))],
+      cue: c.taxiFrom ? `You\'re at the ${c.taxiFrom} with the ATIS. Call Ground for taxi to the active runway, staying in the pattern.` : 'You\'re parked on the ramp with the ATIS. Call Ground for taxi to the active runway, staying in the pattern.',
+      example: `${fac('ground')}, ${csFull}, ${c.taxiFrom ? 'at the ' + c.taxiFrom : 'at the ramp'} with information ${sayLetter(c.atis)}, ready to taxi, VFR closed traffic.`,
+      call: [facEl('ground'), CS(c), el('position', 'Your position (e.g. “at the ramp”)', 'Ground needs to know where you are to build a taxi route.', (t) => hasPhrase(t, 'ramp') || hasPhrase(t, 'parking') || hasPhrase(t, 'fbo') || hasPhrase(t, 'hangar') || hasPhrase(t, 'tie down') || hasPhrase(t, 'spot') || hasPhrase(t, 'run up') || hasPhrase(t, 'runup')), atisEl, el('request', 'Request (“ready to taxi”)', 'State what you want.', (t) => hasPhrase(t, 'taxi'))],
       // No verified route → no via-route in the clearance, readback or model answer (fail closed).
       reply: c.taxiRoute.length
-        ? { text: `${csFull}, ${fac('ground')}, runway ${c.runway}, taxi via ${c.taxiway}, hold short of runway ${c.runway}.`, speak: `${csSayFull}, ${fac('ground')}, runway ${sayRunway(c.runway)}, taxi via ${c.sayTaxi}, hold short of runway ${sayRunway(c.runway)}.` }
+        ? { text: `${csFull}, ${fac('ground')}, runway ${c.runway}, taxi ${c.taxiClear}, hold short of runway ${c.runway}.`, speak: `${csSayFull}, ${fac('ground')}, runway ${sayRunway(c.runway)}, taxi ${c.sayTaxiClear}, hold short of runway ${sayRunway(c.runway)}.` }
         : { text: `${csFull}, ${fac('ground')}, runway ${c.runway}, hold short of runway ${c.runway}.`, speak: `${csSayFull}, ${fac('ground')}, runway ${sayRunway(c.runway)}, hold short of runway ${sayRunway(c.runway)}.` },
-      readback: [RW(c), ...(c.taxiRoute.length ? [el('route', `Taxi route “via ${c.taxiway}”`, 'Read back the taxi route so Ground can catch a wrong turn before it happens (7110.65 3-7-2).', (t) => { const l3 = c.callsign.slice(-3); const u = t.map((x) => (x.length > l3.length && x.endsWith(l3) ? x.slice(0, -l3.length) : x)); return heardTaxiway(u, c.taxiRoute[0]) && heardTaxiway(u, c.taxiRoute[c.taxiRoute.length - 1]); })] : []), el('hold_short', `“Hold short runway ${c.runway}”`, 'Hold-short instructions MUST be read back word-for-word (7110.65 3-7-2, AIM 4-3-18). This is the #1 runway-incursion safeguard.', (t) => hasPhrase(t, 'hold short') || hasPhrase(t, 'short of')), CS(c)],
-      ideal: c.taxiRoute.length ? `Runway ${c.runway}, taxi via ${c.taxiway}, hold short runway ${c.runway}, ${csAbbr}.` : `Runway ${c.runway}, hold short runway ${c.runway}, ${csAbbr}.`,
+      readback: [RW(c), ...(c.taxiRoute.length ? [el('route', `Taxi route “${c.taxiClear}”`, 'Read back the taxi route so Ground can catch a wrong turn before it happens (7110.65 3-7-2).', (t) => { const l3 = c.callsign.slice(-3); const u = t.map((x) => (x.length > l3.length && x.endsWith(l3) ? x.slice(0, -l3.length) : x)); return heardTaxiway(u, c.taxiRoute[0]) && heardTaxiway(u, c.taxiRoute[c.taxiRoute.length - 1]); })] : []), el('hold_short', `“Hold short runway ${c.runway}”`, 'Hold-short instructions MUST be read back word-for-word (7110.65 3-7-2, AIM 4-3-18). This is the #1 runway-incursion safeguard.', (t) => hasPhrase(t, 'hold short') || hasPhrase(t, 'short of')), CS(c)],
+      ideal: c.taxiRoute.length ? `Runway ${c.runway}, taxi ${c.taxiClear}, hold short runway ${c.runway}, ${csAbbr}.` : `Runway ${c.runway}, hold short runway ${c.runway}, ${csAbbr}.`,
     }],
     takeoff: [{
       cue: `You\'ve switched to Tower and you\'re holding short of runway ${c.runway}, run-up complete. Tell Tower you\'re ready, staying in the pattern.`,
