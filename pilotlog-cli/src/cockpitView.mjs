@@ -1,6 +1,8 @@
 /**
  * Cockpit Dashboard — bold glass-cockpit layout matching the "unlimited" concept.
- * Center hero: three.js + Terrarium terrain with SVG fallback. Live weather for the user's home airport.
+ * Center hero: the illustrated mountain-and-sunset training journey (SVG) is the default view.
+ * The three.js + Terrarium terrain is opt-in only, behind the "3D view" control; it never replaces
+ * the journey on its own. Live weather for the user's home airport.
  */
 import { readinessScore, projectCheckride } from './lib/checkride/insights.mjs';
 import { cockpitGates, acsTiles, logbookTimeline, progressBars } from './lib/checkride/cockpit.mjs';
@@ -111,13 +113,13 @@ function synthVision(gates, st = stationLabels(null)) {
       return `<g class="${cls}" transform="translate(${xs[i]} ${ys[i]})">
       <ellipse rx="28" ry="10" class="gate-ring"/>
       <ellipse rx="18" ry="6" class="gate-inner"/>
-      <text y="-18" text-anchor="middle" class="gate-lab">${g.label.toUpperCase()}</text>
+      <text y="-20" text-anchor="middle" class="gate-lab">${g.label.toUpperCase()}</text>
       ${lit ? '<circle r="3.5" class="gate-core"/>' : ''}
     </g>`;
     })
     .join('');
 
-  return `<svg class="synth" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Training path over Front Range">
+  return `<svg class="synth" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Training journey: ${gates.gates.map((g, i) => `${g.label} ${g.done ? 'done' : i === gates.current ? 'next' : 'ahead'}`).join(', ')}">
     <defs>
       <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stop-color="#1a0a2e"/>
@@ -377,21 +379,32 @@ nav a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 0 0 
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:8px;background:linear-gradient(180deg,#14324a,#0c2234);color:var(--cy);border:1px solid rgba(34,211,238,.45);border-radius:10px;padding:10px 12px;font:600 12px inherit;cursor:pointer;letter-spacing:.04em}
 .btn:hover{box-shadow:0 0 18px rgba(34,211,238,.25)}
 
-/* center synth — stretch to match side columns */
-.col-center{display:flex;flex-direction:column;min-height:0;align-self:stretch;height:100%}
-.hero{padding:0;overflow:hidden;position:relative;flex:1 1 auto;min-height:520px;width:100%;display:block}
+/* center: illustrated training journey is the default; container sized to the art (no letterbox) */
+.col-center{display:flex;flex-direction:column;gap:14px;min-height:0}
+.hero{padding:0;overflow:hidden;position:relative;flex:none;width:100%;display:block;aspect-ratio:720/420}
 .hero-stage{position:absolute;inset:0;width:100%;height:100%;background:#12081c}
 .synth{position:absolute;inset:0;width:100%;height:100%;display:block;min-height:0}
 .synth3d{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:2;opacity:0;transition:opacity .6s ease}
+.synth3d[hidden],.hero-hud[hidden],.hero-loading[hidden]{display:none!important}
 .synth3d.on{opacity:1}
-.synth-fallback{position:absolute;inset:0;z-index:1;width:100%;height:100%}
-.synth-fallback .synth{position:absolute;inset:0;width:100%;height:100%}
-.hero.webgl-on .synth-fallback{opacity:0;pointer-events:none}
+.journey{position:absolute;inset:0;z-index:1;width:100%;height:100%}
+.hero[data-view="3d"].webgl-on .journey{opacity:0;pointer-events:none}
+.view-toggle{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:5;display:inline-flex;gap:2px;padding:3px;border-radius:999px;background:rgba(3,6,15,.6);border:1px solid rgba(34,211,238,.3);backdrop-filter:blur(6px)}
+.view-toggle button{font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);background:transparent;border:0;border-radius:999px;padding:5px 10px;cursor:pointer;white-space:nowrap}
+.view-toggle button[aria-pressed="true"]{color:var(--txt);background:rgba(34,211,238,.16);box-shadow:inset 0 0 0 1px rgba(34,211,238,.45)}
+.view-toggle button:focus-visible{outline:2px solid var(--cy);outline-offset:1px}
+.milestones{padding:12px 14px}
+.ms-list{list-style:none;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:8px}
+.ms{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.03);border:1px solid var(--line);min-width:0}
+.ms-lab{font:700 13px var(--mono);letter-spacing:.1em;color:var(--txt);text-transform:uppercase}
+.ms-st{font:600 10px var(--mono);letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
+.ms.done{border-color:rgba(244,114,208,.35)}.ms.done .ms-st{color:#f5b8e6}
+.ms.next{border-color:rgba(34,211,238,.45);box-shadow:0 0 14px -6px var(--cy)}.ms.next .ms-st{color:var(--cy)}
 .hero-hud{position:absolute;inset:0;z-index:3;pointer-events:none;font-family:var(--mono)}
 .hero-hud .chip{position:absolute;background:rgba(3,6,15,.55);border:1px solid rgba(34,211,238,.25);border-radius:8px;padding:8px 10px;font-size:10px;color:#a8b4cc;letter-spacing:.04em;backdrop-filter:blur(6px)}
 .hero-hud .chip b{color:var(--cy);display:block;font-size:11px;margin-bottom:2px}
 .hero-hud .chip-tl{top:14px;left:14px}.hero-hud .chip-tr{top:14px;right:14px;text-align:right}
-.hero-hud .chip-bl{bottom:14px;left:14px}.hero-hud .chip-bc{bottom:14px;left:50%;transform:translateX(-50%);border-color:rgba(244,114,208,.35);color:#f5b8e6}
+.hero-hud .chip-bl{bottom:14px;left:14px;max-width:calc(50% - 96px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hero-hud .chip-bc{bottom:14px;left:50%;transform:translateX(-50%);border-color:rgba(244,114,208,.35);color:#f5b8e6}
 .hero-loading{position:absolute;inset:0;z-index:4;display:grid;place-items:center;background:rgba(3,6,15,.35);font:600 11px var(--mono);letter-spacing:.18em;color:var(--cy);pointer-events:none;transition:opacity .4s}
 .hero-loading.hide{opacity:0}
 .voice-row{display:flex;align-items:center;gap:10px;margin-top:10px}
@@ -411,10 +424,10 @@ nav a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 0 0 
 @keyframes draw{to{stroke-dashoffset:0}}
 .gate .gate-ring{fill:none;stroke:rgba(255,255,255,.2);stroke-width:2}
 .gate .gate-inner{fill:rgba(3,6,15,.4);stroke:rgba(255,255,255,.15);stroke-width:1}
-.gate .gate-lab{font:700 11px var(--mono);letter-spacing:.14em;fill:var(--dim)}
+.gate .gate-lab{font:700 15px var(--mono);letter-spacing:.12em;fill:#c4cee0;paint-order:stroke;stroke:rgba(3,6,15,.85);stroke-width:4px;stroke-linejoin:round}
 .gate .gate-core{fill:var(--mg)}
 .gate.done .gate-ring,.gate.next .gate-ring{stroke:var(--mg);filter:url(#mgGlow)}
-.gate.done .gate-lab,.gate.next .gate-lab{fill:#f5b8e6}
+.gate.done .gate-lab{fill:#f5b8e6}.gate.next .gate-lab{fill:#fff}
 .gate.next .gate-ring{animation:pulse 2s infinite}
 @keyframes pulse{50%{stroke-opacity:.35}}
 .acft{animation:float 4s ease-in-out infinite}
@@ -437,6 +450,7 @@ nav a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 0 0 
 .fi .n{font:700 12px var(--mono);color:var(--gr);width:20px;flex:none}
 .fi .tag{font:600 8px var(--mono);letter-spacing:.1em;color:var(--gr);border:1px solid rgba(52,245,160,.35);border-radius:3px;padding:1px 4px;margin-left:4px}
 .fi .s{font-size:11px;color:var(--dim)}
+.fuelc .wx-h{flex-wrap:wrap;row-gap:2px}.fuelc .wx-h .eyebrow,.fuelc .wx-h .mono{white-space:nowrap}
 .fuel{width:100%;max-width:220px;display:block;margin:4px auto 0}
 .fz{fill:none;stroke:rgba(255,255,255,.07);stroke-width:14;stroke-linecap:round}
 .fz-on{fill:none;stroke:url(#fuelg);stroke-width:14;stroke-linecap:round;stroke-dasharray:100;stroke-dashoffset:100;animation:fz 1.5s cubic-bezier(.2,.8,.2,1) .4s forwards}
@@ -518,7 +532,8 @@ nav.top a.on{color:var(--txt);background:rgba(34,211,238,.1);box-shadow:inset 0 
   .grid{grid-template-columns:1fr}
   .page{padding:12px 10px 40px}
   .tiles{grid-template-columns:1fr 1fr}
-  .hero{min-height:360px}.hero-stage,.synth{min-height:0}
+  .hero-stage,.synth{min-height:0}
+  .ms-list{grid-template-columns:repeat(2,minmax(0,1fr))}
   .nav-r .clock{display:none}
   .g-pct{font-size:40px}
 }
@@ -547,20 +562,53 @@ ${renderNav(esc, { active: 'dashboard', demo, user, timeZone: settings?.timeZone
       ${barHtml}
       <a class="btn" href="/cockpit/acs${demoQ(demo, user)}">VIEW READINESS REPORT →</a>
     </section>
+
+    <section class="fuelc glass">
+      <div class="wx-h"><span class="eyebrow">Budget Tracker</span><span class="mono dim">${usd(cr.costs.toDate)} OF ${usd(cr.costs.toDate + p.total)}</span></div>
+      ${fuelGauge(cr.costs.toDate, p.total)}
+      <div class="fuel-n">
+        <div><b>${usd(cr.costs.toDate)}</b><span>SPENT</span></div>
+        <div class="rem"><b>${usd(p.total)}</b><span>REMAINING</span></div>
+      </div>
+      ${remNote ? `<div class="fuel-note">${remNote}</div>` : ''}
+    </section>
   </div>
 
   <div class="col col-center">
-    <section class="hero glass" id="hero">
+    <section class="hero glass" id="hero" data-view="journey" aria-label="Training journey">
+      <div class="view-toggle" role="group" aria-label="Dashboard view">
+        <button type="button" id="viewJourney" aria-pressed="true">Journey</button>
+        <button type="button" id="view3d" aria-pressed="false">3D view</button>
+      </div>
       <div class="hero-stage">
-        <div class="synth-fallback">${synthVision(gates, st)}</div>
-        <canvas class="synth3d" id="synth3d" aria-label="3D synthetic vision of ${st.icao}"></canvas>
-        <div class="hero-hud" aria-hidden="true">
+        <div class="journey" id="journeyView">${synthVision(gates, st)}</div>
+        <canvas class="synth3d" id="synth3d" hidden aria-label="3D synthetic vision of ${st.icao}"></canvas>
+        <div class="hero-hud" id="hud3d" hidden aria-hidden="true">
           <div class="chip chip-tl"><b>${st.icao}</b>${st.sub}</div>
           <div class="chip chip-tr"><b>TRK 031° · ALT 7,500</b>VSI −200 FPM</div>
           <div class="chip chip-bl">${st.long}</div>
           <div class="chip chip-bc">HDG 032° · GS 96</div>
         </div>
-        <div class="hero-loading" id="heroLoad">LOADING TERRAIN…</div>
+        <div class="hero-loading" id="heroLoad" hidden role="status"></div>
+      </div>
+    </section>
+    <section class="milestones glass" aria-label="Training milestones">
+      <div class="eyebrow">Training Journey · ${gates.litCount} of ${gates.gates.length} milestones</div>
+      <ol class="ms-list">${gates.gates
+        .map((g, i) => {
+          const state = g.done ? 'done' : i === gates.current ? 'next' : 'ahead';
+          const word = g.done ? 'Done' : i === gates.current ? 'Up next' : 'Ahead';
+          return `<li class="ms ${state}" data-milestone="${esc(g.key)}"><span class="ms-lab">${esc(g.label)}</span><span class="ms-st">${word}</span></li>`;
+        })
+        .join('')}</ol>
+    </section>
+    <section class="tl glass">
+      <div class="eyebrow">Logbook Timeline</div>
+      <div class="tl-track">${tlHtml}</div>
+      <div class="tl-sum">
+        <span>TOTAL TIME <b>${timeline.totals.total} HRS</b></span>
+        <span>PIC <b>${timeline.totals.pic} HRS</b></span>
+        <span>DUAL <b>${timeline.totals.dual} HRS</b></span>
       </div>
     </section>
   </div>
@@ -593,16 +641,6 @@ ${renderNav(esc, { active: 'dashboard', demo, user, timeZone: settings?.timeZone
       </div>
       <div class="brief-stamp mono dim">BRIEFING UPDATED ${esc(briefAgo).toUpperCase()} <button type="button" class="icon-btn" id="briefRefresh" title="Refresh briefing" aria-label="Refresh briefing">↻</button></div>
     </section>
-
-    <section class="fuelc glass">
-      <div class="wx-h"><span class="eyebrow">Budget Tracker</span><span class="mono dim">${usd(cr.costs.toDate)} OF ${usd(cr.costs.toDate + p.total)}</span></div>
-      ${fuelGauge(cr.costs.toDate, p.total)}
-      <div class="fuel-n">
-        <div><b>${usd(cr.costs.toDate)}</b><span>SPENT</span></div>
-        <div class="rem"><b>${usd(p.total)}</b><span>REMAINING</span></div>
-      </div>
-      ${remNote ? `<div class="fuel-note">${remNote}</div>` : ''}
-    </section>
   </div>
 </div>
 
@@ -613,16 +651,6 @@ ${renderNav(esc, { active: 'dashboard', demo, user, timeZone: settings?.timeZone
       <a class="mono dim" href="/cockpit/acs${demoQ(demo, user)}">${cr.acs.counts.proficient} proficient · ${cr.acs.counts.introduced} introduced →</a>
     </div>
     <div class="tiles">${tileHtml}</div>
-  </section>
-
-  <section class="tl glass">
-    <div class="eyebrow">Logbook Timeline</div>
-    <div class="tl-track">${tlHtml}</div>
-    <div class="tl-sum">
-      <span>TOTAL TIME <b>${timeline.totals.total} HRS</b></span>
-      <span>PIC <b>${timeline.totals.pic} HRS</b></span>
-      <span>DUAL <b>${timeline.totals.dual} HRS</b></span>
-    </div>
   </section>
 </div>
 </div>
@@ -673,25 +701,52 @@ document.getElementById('briefRefresh')?.addEventListener('click',()=>location.r
   });
 })();
 
-(async function(){
+// Illustrated journey is the default and stays visible. 3D terrain is opt-in only (no auto-swap).
+(function(){
   const hero=document.getElementById('hero');
   const canvas=document.getElementById('synth3d');
+  const hud=document.getElementById('hud3d');
   const load=document.getElementById('heroLoad');
-  try{
-    const canvasTest=document.createElement('canvas');
-    const gl=canvasTest.getContext('webgl')||canvasTest.getContext('experimental-webgl');
-    if(!gl) throw new Error('no webgl');
-    const { mountSynth3d }=await import('/js/cockpit-synth3d.js');
-    const handle=mountSynth3d(canvas, GATE_STATE, ORIGIN, AIRCRAFT_TYPE);
-    await handle.ready;
-    canvas.classList.add('on');
-    hero.classList.add('webgl-on');
-    load?.classList.add('hide');
-  }catch(err){
-    console.warn('[cockpit] 3D fallback to SVG:', err);
-    if(load) load.textContent='SVG VIEW';
-    setTimeout(()=>load?.classList.add('hide'), 600);
+  const bJ=document.getElementById('viewJourney');
+  const b3=document.getElementById('view3d');
+  if(!hero||!canvas||!bJ||!b3) return;
+  // The 3D scene is mounted once on first opt-in and kept (paused while hidden) for later toggles.
+  let handle=null, mounted=false, token=0;
+  function press(view){ bJ.setAttribute('aria-pressed', String(view==='journey')); b3.setAttribute('aria-pressed', String(view==='3d')); }
+  function showJourney(note){
+    token++;
+    hero.dataset.view='journey';
+    canvas.classList.remove('on'); canvas.hidden=true; if(hud) hud.hidden=true;
+    if(load){ load.hidden=!note; load.textContent=note||''; if(note) setTimeout(()=>{ load.hidden=true; },1800); }
+    press('journey');
   }
+  async function show3d(){
+    if(hero.dataset.view==='3d') return;
+    const my=++token;
+    hero.dataset.view='3d'; press('3d');
+    canvas.hidden=false;
+    if(mounted){ canvas.classList.add('on'); hero.classList.add('webgl-on'); if(hud) hud.hidden=false; return; }
+    if(load){ load.textContent='PREPARING 3D VIEW…'; load.hidden=false; }
+    try{
+      const t=document.createElement('canvas');
+      const gl=t.getContext('webgl')||t.getContext('experimental-webgl');
+      if(!gl) throw new Error('no webgl');
+      const { mountSynth3d }=await import('/js/cockpit-synth3d.js');
+      if(my!==token) return;
+      handle=handle||mountSynth3d(canvas, GATE_STATE, ORIGIN, AIRCRAFT_TYPE);
+      await handle.ready;
+      mounted=true;
+      if(my!==token) return;
+      canvas.classList.add('on'); hero.classList.add('webgl-on'); if(hud) hud.hidden=false;
+      if(load) load.hidden=true;
+    }catch(err){
+      console.warn('[cockpit] 3D view unavailable:', err);
+      handle=null;
+      if(my===token) showJourney('3D VIEW UNAVAILABLE');
+    }
+  }
+  bJ.addEventListener('click',()=>showJourney());
+  b3.addEventListener('click',()=>{ show3d(); });
 })();
 </script>
 </body></html>`;
