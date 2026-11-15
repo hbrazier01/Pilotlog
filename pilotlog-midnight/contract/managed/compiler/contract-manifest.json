@@ -1,0 +1,139 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.36.0",
+  "compiler-commit": "b5d9e4dfc532fe47011c4f6296e254f4853eb469",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 8948,
+      "hash": "f4688f0f0dc17a763b62a2bb735bbc3f7495b4ce86ce73a319bccce5b07f8b75"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 7438,
+      "hash": "be92ecb6fcc3de76f9e18278dc3a8c08adce455c01c5bc624fe4b2d168298de2"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 133039,
+      "hash": "576043cd74e11439de22b6642442c2ff3cf6f9793802e8e02f5c9a36ba0a0a97"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 6699,
+      "hash": "d6cc858590097824cdf1bf58b3ed24a44c1b218e8b45a005d133a4fc4460a9b5"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "endorseEntry.bzkir": {
+      "type": "file",
+      "size": 53374,
+      "hash": "5cac8ecdfeb3ac2ccb408f630c1e7265922938adf87192f888f00b6ef4bc34a8"
+    },
+    "endorseEntry.zkir": {
+      "type": "file",
+      "size": 170888,
+      "hash": "00054a62a577313fd34a121974704c28b83a28765de32fd6690691ace446240e"
+    },
+    "enrollCfi.bzkir": {
+      "type": "file",
+      "size": 988,
+      "hash": "90d059dbcf9c559ee8e43d52902e26c0466abef88f0fa8a229722afdd5ea4e2d"
+    },
+    "enrollCfi.zkir": {
+      "type": "file",
+      "size": 3680,
+      "hash": "9456bea499ef76762be3a803345c698a14ee5427ccc42f86bf4e0524a8cf800b"
+    },
+    "revokeCfi.bzkir": {
+      "type": "file",
+      "size": 1054,
+      "hash": "56cc54b8d1005d630218da93aa7b6ff51e29505b50eda82ecda2372bb4cacbc7"
+    },
+    "revokeCfi.zkir": {
+      "type": "file",
+      "size": 3871,
+      "hash": "b1900067c971c1bd4ec493ae1bea1064f1f45641c782aef7465081af47987528"
+    },
+    "rotateAdmin.bzkir": {
+      "type": "file",
+      "size": 551,
+      "hash": "783f89f76c5d3f4b1e92c72ea96daec2b1fb1ef83a50780f1b6aeb7899274e2b"
+    },
+    "rotateAdmin.zkir": {
+      "type": "file",
+      "size": 2070,
+      "hash": "271bfdca4fcde94c4ead7db670fa1153a6df902426659cacb69ab841fd32fb94"
+    },
+    "selfRevoke.bzkir": {
+      "type": "file",
+      "size": 52678,
+      "hash": "1f8164485eae9076af78cbb32a7a1a26d3ef6be1e05c390a836a245aac6b3334"
+    },
+    "selfRevoke.zkir": {
+      "type": "file",
+      "size": 168956,
+      "hash": "ab7724604bd78991e47fed7485a85dc41f3eddf4c8bde1209be213e62cd23e3b"
+    }
+  },
+  "keys": {
+    "type": "directory",
+    "endorseEntry.prover": {
+      "type": "file",
+      "size": 234940068,
+      "hash": "d0c9a55d3a22a5583dd0ea45c7b267dfcb5a69d72acf9f435f2bb76230e75552"
+    },
+    "endorseEntry.verifier": {
+      "type": "file",
+      "size": 2745,
+      "hash": "20c43b3ac4bfc6b2bd559f1ad8cca1c24f3e0b90d596d5200d5722d950a04b20"
+    },
+    "enrollCfi.prover": {
+      "type": "file",
+      "size": 11277548,
+      "hash": "c5553fa4b5dfb3b74989cfc6f5e28e814ae6570145f7cc0f1c260ae183bc4c0d"
+    },
+    "enrollCfi.verifier": {
+      "type": "file",
+      "size": 2121,
+      "hash": "109ce35a68c817ded4b9e9d5cf12398ffcd52631f780462c7018117daada3b9c"
+    },
+    "revokeCfi.prover": {
+      "type": "file",
+      "size": 11277614,
+      "hash": "b92aea71b403788f3db1bf6939d5dfacd987280d81b10acb88bf0c7c56e5af78"
+    },
+    "revokeCfi.verifier": {
+      "type": "file",
+      "size": 2121,
+      "hash": "a1bd6b8d513b0d789d805216cef4b731e2e29910ca2608a4278c2d997ad4fe88"
+    },
+    "rotateAdmin.prover": {
+      "type": "file",
+      "size": 11277111,
+      "hash": "b6108e61a89ba1ff1ff54df5136040bf8f44683be57a1b1a8f4a1abf8634b583"
+    },
+    "rotateAdmin.verifier": {
+      "type": "file",
+      "size": 2121,
+      "hash": "6d33203640bfb0b35949c931efa9f1efa373c50ba3e4fb7c69d168ecbeb7ebd4"
+    },
+    "selfRevoke.prover": {
+      "type": "file",
+      "size": 234939372,
+      "hash": "77cfa2b5292295674b146957f17a0fa9f9295ddd7861f792ce2cbdb7d17cb989"
+    },
+    "selfRevoke.verifier": {
+      "type": "file",
+      "size": 2745,
+      "hash": "b5eae3ccd1a7e7d3f66dcdad46e13123f20136da1275ad3564220314012d75ec"
+    }
+  }
+}

@@ -49,3 +49,22 @@ jobs:
             const { migrate, getPool } = await import('./pilotlog-cli/src/db.mjs');
             await migrate(); await getPool().end();"
           DATABASE_URL="$PILOTLOG_TEST_DATABASE_URL" node pilotlog-cli/scripts/backfill-students.mjs --dry-run
+
+  # Isolated CFI-on-Midnight module (pilotlog-midnight/). Separate install, separate lockfile; it does not
+  # touch the main app job above. Unit + simulator tests only: no network, no proofs, no secrets.
+  midnight-module:
+    name: pilotlog-midnight (isolated module, Node 20)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: pilotlog-midnight
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: pilotlog-midnight/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm test

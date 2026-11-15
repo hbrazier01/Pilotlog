@@ -1,0 +1,23 @@
+{
+  "name": "@pilotlog/midnight-cfi-preview",
+  "private": true,
+  "description": "Midnight PREVIEW TESTNET runner for the isolated CFI endorsement contract. Never used by the main app or CI.",
+  "type": "module",
+  "scripts": {
+    "run:preview": "node run.mjs"
+  },
+  "dependencies": {
+    "@midnight-ntwrk/compact-js": "3.0.0",
+    "@midnight-ntwrk/compact-runtime": "0.21.0",
+    "@midnight-ntwrk/midnight-js-contracts": "5.0.0",
+    "@midnight-ntwrk/midnight-js-protocol": "5.0.0",
+    "@midnight-ntwrk/midnight-js-types": "5.0.0",
+    "@midnight-ntwrk/testkit-js": "5.0.0",
+    "@midnightntwrk/wallet-sdk": "2.0.0",
+    "rxjs": "7.8.2",
+    "ws": "8.23.0"
+  },
+  "overrides": {
+    "@midnightntwrk/ledger-v9": "1.0.1"
+  }
+}

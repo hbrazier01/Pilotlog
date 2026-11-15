@@ -6,3 +6,6 @@ compact/contracts/airlog/node_modules
 compact/tooling/node_modules
 .gitignore
 *.log
+
+# Isolated CFI-on-Midnight module (Preview testnet only); never part of the production image.
+pilotlog-midnight

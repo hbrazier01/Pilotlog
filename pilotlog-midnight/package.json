@@ -1,0 +1,22 @@
+{
+  "name": "@pilotlog/midnight-cfi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ISOLATED: CFI passkey (WebAuthn P-256) endorsement of PilotLog entries on Midnight. Preview testnet only. Not imported by the main app. Disabled unless PILOTLOG_CFI_MIDNIGHT=1.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "compile": "sh scripts/compile.sh",
+    "compile:skip-zk": "SKIP_ZK=1 sh scripts/compile.sh",
+    "cli": "node src/cli.mjs"
+  },
+  "dependencies": {
+    "@midnight-ntwrk/compact-runtime": "0.21.0"
+  },
+  "overrides": {
+    "@midnightntwrk/ledger-v9": "1.0.1"
+  }
+}
