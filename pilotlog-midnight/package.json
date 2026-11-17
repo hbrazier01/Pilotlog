@@ -11,10 +11,12 @@
     "test": "node --test test/*.test.mjs",
     "compile": "sh scripts/compile.sh",
     "compile:skip-zk": "SKIP_ZK=1 sh scripts/compile.sh",
-    "cli": "node src/cli.mjs"
+    "cli": "node src/cli.mjs",
+    "start": "node staging/server.mjs"
   },
   "dependencies": {
-    "@midnight-ntwrk/compact-runtime": "0.21.0"
+    "@midnight-ntwrk/compact-runtime": "0.21.0",
+    "qrcode": "1.5.4"
   },
   "overrides": {
     "@midnightntwrk/ledger-v9": "1.0.1"

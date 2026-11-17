@@ -5,12 +5,50 @@
   "runtime-version": "0.21.0",
   "circuits": [
     {
-      "name": "adminCommitment",
+      "name": "keyIdOf",
       "pure": true,
       "proof": false,
       "arguments": [
         {
-          "name": "sk",
+          "name": "pk",
+          "type": {
+            "type-name": "Secp256r1Point"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "rootDigest",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "contractAddr",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "op",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "a",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "b",
           "type": {
             "type-name": "Bytes",
             "length": 32
@@ -23,14 +61,43 @@
       }
     },
     {
-      "name": "keyIdOf",
+      "name": "schoolDigest",
       "pure": true,
       "proof": false,
       "arguments": [
         {
-          "name": "pk",
+          "name": "contractAddr",
           "type": {
-            "type-name": "Secp256r1Point"
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "op",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "schoolId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "a",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "b",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
           }
         }
       ],
@@ -60,6 +127,13 @@
         },
         {
           "name": "studentCommit",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "attestHash",
           "type": {
             "type-name": "Bytes",
             "length": 32
@@ -122,7 +196,159 @@
       }
     },
     {
-      "name": "enrollCfi",
+      "name": "rootOnboardSchool",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "schoolId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "adminKeyId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "rootPk",
+          "type": {
+            "type-name": "Secp256r1Point"
+          }
+        },
+        {
+          "name": "sig",
+          "type": {
+            "type-name": "Struct",
+            "name": "Secp256r1EcdsaSignature",
+            "elements": [
+              {
+                "name": "r",
+                "type": {
+                  "type-name": "Secp256r1Scalar"
+                }
+              },
+              {
+                "name": "s",
+                "type": {
+                  "type-name": "Secp256r1Scalar"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "rootRevokeSchool",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "schoolId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "rootPk",
+          "type": {
+            "type-name": "Secp256r1Point"
+          }
+        },
+        {
+          "name": "sig",
+          "type": {
+            "type-name": "Struct",
+            "name": "Secp256r1EcdsaSignature",
+            "elements": [
+              {
+                "name": "r",
+                "type": {
+                  "type-name": "Secp256r1Scalar"
+                }
+              },
+              {
+                "name": "s",
+                "type": {
+                  "type-name": "Secp256r1Scalar"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "rootSetSchoolAdmin",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "schoolId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "newAdminKeyId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "rootPk",
+          "type": {
+            "type-name": "Secp256r1Point"
+          }
+        },
+        {
+          "name": "sig",
+          "type": {
+            "type-name": "Struct",
+            "name": "Secp256r1EcdsaSignature",
+            "elements": [
+              {
+                "name": "r",
+                "type": {
+                  "type-name": "Secp256r1Scalar"
+                }
+              },
+              {
+                "name": "s",
+                "type": {
+                  "type-name": "Secp256r1Scalar"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "rootSetKey",
       "pure": false,
       "proof": true,
       "arguments": [
@@ -134,29 +360,131 @@
           }
         },
         {
+          "name": "active",
+          "type": {
+            "type-name": "Boolean"
+          }
+        },
+        {
+          "name": "rootPk",
+          "type": {
+            "type-name": "Secp256r1Point"
+          }
+        },
+        {
+          "name": "sig",
+          "type": {
+            "type-name": "Struct",
+            "name": "Secp256r1EcdsaSignature",
+            "elements": [
+              {
+                "name": "r",
+                "type": {
+                  "type-name": "Secp256r1Scalar"
+                }
+              },
+              {
+                "name": "s",
+                "type": {
+                  "type-name": "Secp256r1Scalar"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "schoolEnrollCfi",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "schoolId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "cfiKeyId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
           "name": "cfiRef",
           "type": {
             "type-name": "Bytes",
             "length": 32
           }
-        }
-      ],
-      "result-type": {
-        "type-name": "Tuple",
-        "types": [
-        ]
-      }
-    },
-    {
-      "name": "revokeCfi",
-      "pure": false,
-      "proof": true,
-      "arguments": [
+        },
         {
-          "name": "keyId",
+          "name": "adminPk",
+          "type": {
+            "type-name": "Secp256r1Point"
+          }
+        },
+        {
+          "name": "authData",
           "type": {
             "type-name": "Bytes",
-            "length": 32
+            "length": 37
+          }
+        },
+        {
+          "name": "challenge",
+          "type": {
+            "type-name": "Bytes",
+            "length": 43
+          }
+        },
+        {
+          "name": "cdSuffix",
+          "type": {
+            "type-name": "Bytes",
+            "length": 84
+          }
+        },
+        {
+          "name": "flagsBit1",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 1
+          }
+        },
+        {
+          "name": "flagsHigh",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 31
+          }
+        },
+        {
+          "name": "sig",
+          "type": {
+            "type-name": "Struct",
+            "name": "Secp256r1EcdsaSignature",
+            "elements": [
+              {
+                "name": "r",
+                "type": {
+                  "type-name": "Secp256r1Scalar"
+                }
+              },
+              {
+                "name": "s",
+                "type": {
+                  "type-name": "Secp256r1Scalar"
+                }
+              }
+            ]
           }
         }
       ],
@@ -167,15 +495,172 @@
       }
     },
     {
-      "name": "rotateAdmin",
+      "name": "schoolRevokeCfi",
       "pure": false,
       "proof": true,
       "arguments": [
         {
-          "name": "newAdminCommit",
+          "name": "schoolId",
           "type": {
             "type-name": "Bytes",
             "length": 32
+          }
+        },
+        {
+          "name": "cfiKeyId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "adminPk",
+          "type": {
+            "type-name": "Secp256r1Point"
+          }
+        },
+        {
+          "name": "authData",
+          "type": {
+            "type-name": "Bytes",
+            "length": 37
+          }
+        },
+        {
+          "name": "challenge",
+          "type": {
+            "type-name": "Bytes",
+            "length": 43
+          }
+        },
+        {
+          "name": "cdSuffix",
+          "type": {
+            "type-name": "Bytes",
+            "length": 84
+          }
+        },
+        {
+          "name": "flagsBit1",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 1
+          }
+        },
+        {
+          "name": "flagsHigh",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 31
+          }
+        },
+        {
+          "name": "sig",
+          "type": {
+            "type-name": "Struct",
+            "name": "Secp256r1EcdsaSignature",
+            "elements": [
+              {
+                "name": "r",
+                "type": {
+                  "type-name": "Secp256r1Scalar"
+                }
+              },
+              {
+                "name": "s",
+                "type": {
+                  "type-name": "Secp256r1Scalar"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "schoolRotateAdmin",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "schoolId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "newAdminKeyId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "adminPk",
+          "type": {
+            "type-name": "Secp256r1Point"
+          }
+        },
+        {
+          "name": "authData",
+          "type": {
+            "type-name": "Bytes",
+            "length": 37
+          }
+        },
+        {
+          "name": "challenge",
+          "type": {
+            "type-name": "Bytes",
+            "length": 43
+          }
+        },
+        {
+          "name": "cdSuffix",
+          "type": {
+            "type-name": "Bytes",
+            "length": 84
+          }
+        },
+        {
+          "name": "flagsBit1",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 1
+          }
+        },
+        {
+          "name": "flagsHigh",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 31
+          }
+        },
+        {
+          "name": "sig",
+          "type": {
+            "type-name": "Struct",
+            "name": "Secp256r1EcdsaSignature",
+            "elements": [
+              {
+                "name": "r",
+                "type": {
+                  "type-name": "Secp256r1Scalar"
+                }
+              },
+              {
+                "name": "s",
+                "type": {
+                  "type-name": "Secp256r1Scalar"
+                }
+              }
+            ]
           }
         }
       ],
@@ -214,7 +699,7 @@
           "name": "cdSuffix",
           "type": {
             "type-name": "Bytes",
-            "length": 74
+            "length": 84
           }
         },
         {
@@ -279,6 +764,13 @@
           }
         },
         {
+          "name": "attestHash",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
           "name": "cfiPubKey",
           "type": {
             "type-name": "Secp256r1Point"
@@ -302,7 +794,7 @@
           "name": "cdSuffix",
           "type": {
             "type-name": "Bytes",
-            "length": 74
+            "length": 84
           }
         },
         {
@@ -349,32 +841,33 @@
     }
   ],
   "witnesses": [
-    {
-      "name": "adminSecret",
-      "arguments": [
-      ],
-      "result type": {
-        "type-name": "Bytes",
-        "length": 32
-      }
-    }
   ],
   "contracts": [
   ],
   "ledger": [
     {
-      "name": "admin",
+      "name": "rootKeys",
       "index": 0,
       "exported": true,
-      "storage": "Cell",
+      "storage": "Set",
       "type": {
         "type-name": "Bytes",
         "length": 32
       }
     },
     {
-      "name": "cfiKeys",
+      "name": "retiredRootKeys",
       "index": 1,
+      "exported": true,
+      "storage": "Set",
+      "type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "schools",
+      "index": 2,
       "exported": true,
       "storage": "Map",
       "key": {
@@ -387,8 +880,76 @@
       }
     },
     {
+      "name": "adminKeySchool",
+      "index": 3,
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Bytes",
+        "length": 32
+      },
+      "value": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "retiredAdminKeys",
+      "index": 4,
+      "exported": true,
+      "storage": "Set",
+      "type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "schoolRevokedAtSeq",
+      "index": 5,
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Bytes",
+        "length": 32
+      },
+      "value": {
+        "type-name": "Uint",
+        "maxval": 18446744073709551615
+      }
+    },
+    {
+      "name": "cfiKeys",
+      "index": 6,
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Bytes",
+        "length": 32
+      },
+      "value": {
+        "type-name": "Struct",
+        "name": "CfiRecord",
+        "elements": [
+          {
+            "name": "cfiRef",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          },
+          {
+            "name": "schoolId",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "revokedAtSeq",
-      "index": 2,
+      "index": 7,
       "exported": true,
       "storage": "Map",
       "key": {
@@ -402,7 +963,7 @@
     },
     {
       "name": "endorsements",
-      "index": 3,
+      "index": 8,
       "exported": true,
       "storage": "Map",
       "key": {
@@ -428,6 +989,13 @@
             }
           },
           {
+            "name": "schoolId",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          },
+          {
             "name": "studentCommit",
             "type": {
               "type-name": "Bytes",
@@ -446,7 +1014,7 @@
     },
     {
       "name": "seq",
-      "index": 4,
+      "index": 9,
       "exported": true,
       "storage": "Counter"
     }

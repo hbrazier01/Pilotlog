@@ -6,9 +6,12 @@
 import { createPublicKey, verify as nodeVerify } from 'node:crypto';
 import { decodeCbor } from './cbor.mjs';
 import { sha256, concat, enc, b64url, fromB64url, bytesToBigBE, bigToBytesBE, equalBytes } from './bytes.mjs';
+import { CONTRACT_ENV } from './env.mjs';
 
-export const RP_ID = 'pilotlog.digitalaviationpool.com';
-export const ORIGIN = 'https://pilotlog.digitalaviationpool.com';
+// The RP ID and origin the COMPILED circuit enforces (contract/managed/env.json, written by scripts/compile.sh).
+// They are per-environment compile-time constants; nothing here is tied to the production domain.
+export const RP_ID = CONTRACT_ENV.rpId;
+export const ORIGIN = CONTRACT_ENV.origin;
 export const P256 = {
   p: 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffffn,
   n: 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n,
@@ -68,7 +71,8 @@ export function splitClientData(cdBytes, opts) {
   }
   const challenge = cdBytes.slice(CD_PREFIX_LEN, CD_PREFIX_LEN + CHALLENGE_LEN);
   const cdSuffix = cdBytes.slice(CD_PREFIX_LEN + CHALLENGE_LEN);
-  if (cdSuffix.length !== 74) throw new Error(`cdSuffix must be 74 bytes for the deployed circuit, got ${cdSuffix.length}`);
+  const want = enc.encode(stdSuffix(opts?.origin ?? ORIGIN)).length;
+  if (cdSuffix.length !== want) throw new Error(`cdSuffix must be ${want} bytes for this origin, got ${cdSuffix.length}`);
   return { challenge, cdSuffix };
 }
 
@@ -168,7 +172,7 @@ export function spkiToPoint(spki) {
 
 export const toCircuitPoint = ({ x, y }) => ({ x, y, identity: false });
 
-function pointToSpki({ x, y }) {
+export function pointToSpki({ x, y }) {
   return createPublicKey({ key: { kty: 'EC', crv: 'P-256', x: b64url(bigToBytesBE(x, 32)), y: b64url(bigToBytesBE(y, 32)) }, format: 'jwk' });
 }
 
@@ -189,7 +193,7 @@ export function assertionToCircuitArgs({ publicKey, authenticatorData, clientDat
   const point = publicKey.cose ? coseKeyToPoint(publicKey.cose) : publicKey.spki ? spkiToPoint(publicKey.spki) : publicKey;
   if (!isOnCurve(point.x, point.y)) throw new Error('public key not on P-256');
   const ad = parseAuthenticatorData(authenticatorData, { rpId });
-  if (!ad.rpIdOk) throw new Error('rpIdHash does not match the PilotLog RP ID');
+  if (!ad.rpIdOk) throw new Error(`rpIdHash does not match the RP ID ${rpId}`);
   if (ad.length !== 37) throw new Error('authenticatorData with extensions/attested data is not supported by the circuit (expected 37 bytes)');
   const { flagsBit1, flagsHigh } = flagsHints(ad.flags.byte);
   const { challenge, cdSuffix } = splitClientData(clientDataJSON, { origin, expectedChallenge: digest });

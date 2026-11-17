@@ -1,0 +1,9 @@
+# STAGING upload of pilotlog-midnight/ only (railway up). Never ship keys, preview state or wallet material.
+node_modules
+contract/managed/keys
+contract/managed/zkir
+preview
+test
+*.seed
+seed.hex
+*.key

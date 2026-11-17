@@ -3,7 +3,7 @@
 CFI passkey (WebAuthn ES256 / P-256) endorsement of PilotLog logbook entries, verified in a Midnight
 Compact contract. Design: [`docs/design/cfi-passkey-signing.md`](../docs/design/cfi-passkey-signing.md).
 
-**Status: experimental. Not wired into the app. Not for production.**
+**Status: PROTOTYPE — not an FAA endorsement. Not wired into the app. Not for production.**
 
 - Separate package with its own lockfile. The root `package.json` has no workspace or dependency on
   it, so `npm ci` and `npm test` for the main app are unchanged. It is excluded from Dockerfile builds
@@ -17,15 +17,21 @@ Compact contract. Design: [`docs/design/cfi-passkey-signing.md`](../docs/design/
 
 | Path | What |
 |---|---|
-| `contract/cfi_endorse.compact` | Contract: admin-managed CFI key registry, endorse, admin revoke, CFI self-revoke, admin rotation |
-| `contract/managed/` | `compactc 0.36.0` output (JS + zkir). `keys/` (~480 MB) is gitignored; regenerate with `npm run compile` |
-| `src/canonical.mjs` | Entry canonicalization (v1), `entryHash`, salted `studentCommit` / `cfiRef`, digest mirrors |
-| `src/webauthn.mjs` | clientDataJSON profiles, authenticatorData flags, DER→(r,s), COSE/SPKI→P-256 point, circuit args |
+| `contract/cfi_endorse.compact.in` | Contract template: root keys (offline P-256), per-school admins (passkey), CFI keys, endorse, revocations |
+| `contract/cfi_endorse.compact`, `contract/env.json` | Generated per environment by `scripts/gen-contract.mjs` (RP ID and origin are compile-time constants) |
+| `contract/managed/` | `compactc 0.36.0` output (JS + zkir), 9 circuits. `keys/` (~2.1 GB) is gitignored; regenerate with `npm run compile` |
+| `src/canonical.mjs` | Entry canonicalization (v1), `entryHash`, salted ids, root/school/endorse digests, signature block, `attestHash`, validity rule |
+| `src/record.mjs` | Offline verification of a stored record: `unsigned` / `signed` / `superseded` / `invalid` |
+| `src/rootKey.mjs` | **Synthetic** root key helpers for tests and Preview (the real root key is offline; see the design doc §3.4) |
+| `src/webauthn.mjs`, `src/env.mjs` | clientDataJSON profiles, authenticatorData flags, DER/COSE/SPKI, circuit args; compiled RP ID and origin |
 | `src/cbor.mjs` | Minimal strict CBOR for COSE keys |
 | `src/simulator.mjs` | In-process contract simulator (compact-runtime 0.21.0) |
 | `src/softPasskey.mjs` | Synthetic authenticator for tests (DER sigs, COSE keys, client-data variants) |
 | `src/cli.mjs` | Dev-only CLI (`demo`, `entry-hash`, `classify`) |
-| `preview/run.mjs` | One-off Preview testnet run (deploy, enroll, endorse, tamper, revoke, read back) |
+| `preview/run.mjs` | Preview testnet run of the layered-admin key flows (results in `preview/.state-v2/`, gitignored) |
+| `preview/worker.mjs` | Staging prover/relayer, run on the box next to a local proof server (never on Railway) |
+| `staging/` | Real-device staging app (Railway `pilotlog-staging` only, synthetic data). See `staging/README.md` |
+| `railway.json` | Used only by `railway up` from this directory for the staging service. Production services do not read it |
 
 ## Commands
 

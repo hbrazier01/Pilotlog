@@ -1,3 +1,4 @@
+import { CONTRACT_ENV } from '../src/env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
@@ -76,13 +77,14 @@ test('client-data variants are classified; only std-v1 is accepted on-chain', as
   assert.equal(classifyClientData(enc.encode('not json')).profile, 'invalid');
 });
 
-test('splitClientData yields the 43-byte challenge and 74-byte suffix the circuit expects', async () => {
+test('splitClientData yields the 43-byte challenge and the per-origin suffix the compiled circuit expects', async () => {
   const pk = await createSoftPasskey();
   const d = digest();
   const { clientDataJSON } = await pk.get(d);
   const { challenge, cdSuffix } = splitClientData(clientDataJSON, { expectedChallenge: d });
   assert.equal(challenge.length, 43);
-  assert.equal(cdSuffix.length, 74);
+  assert.equal(cdSuffix.length, CONTRACT_ENV.cdSuffixLen);
+  assert.equal(Buffer.from(cdSuffix).toString(), `","origin":"${CONTRACT_ENV.origin}","crossOrigin":false}`);
   assert.equal(Buffer.from(challenge).toString(), Buffer.from(d).toString('base64url'));
   await assert.rejects(async () => splitClientData((await pk.get(d, { variant: 'chrome-extra' })).clientDataJSON), (e) => e.action === 'retry');
 });

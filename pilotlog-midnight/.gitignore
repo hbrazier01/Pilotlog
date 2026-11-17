@@ -8,3 +8,4 @@ preview/midnight-level-db/
 *.seed
 seed.hex
 *.key
+preview/.state-v2/
