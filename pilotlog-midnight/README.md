@@ -22,6 +22,8 @@ Compact contract. Design: [`docs/design/cfi-passkey-signing.md`](../docs/design/
 | `contract/managed/` | `compactc 0.36.0` output (JS + zkir), 9 circuits. `keys/` (~2.1 GB) is gitignored; regenerate with `npm run compile` |
 | `src/canonical.mjs` | Entry canonicalization (v1), `entryHash`, salted ids, root/school/endorse digests, signature block, `attestHash`, validity rule |
 | `src/record.mjs` | Offline verification of a stored record: `unsigned` / `signed` / `superseded` / `invalid` |
+| `src/revocation.mjs` | Leave-school / compromised revocations and per-entry disputes: reason + UTC time, signature standing; history never deleted |
+| `src/credential.mjs` | What a WebAuthn response establishes about a credential (ID, UV, BE, BS, attestation format) and what it doesn't |
 | `src/rootKey.mjs` | **Synthetic** root key helpers for tests and Preview (the real root key is offline; see the design doc §3.4) |
 | `src/webauthn.mjs`, `src/env.mjs` | clientDataJSON profiles, authenticatorData flags, DER/COSE/SPKI, circuit args; compiled RP ID and origin |
 | `src/cbor.mjs` | Minimal strict CBOR for COSE keys |

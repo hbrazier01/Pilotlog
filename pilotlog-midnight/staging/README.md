@@ -9,24 +9,23 @@ its domain. This is a technical prototype, not a legal signature or endorsement.
 - Proving and the relayer run on the box, not on Railway: `preview/worker.mjs` (needs the local proof server,
   ~3.2 GB RAM per worker). The header of the staging page shows whether the prover is online.
 
-## Phone test steps (Holland, Giselle)
+## Phone test checklist (Holland, Giselle)
 
-1. Open the URL in Safari (iPhone/iPad/Mac) or Chrome (Android). Check the yellow "Prototype — not an FAA
-   endorsement" banner and that "prover: online" is shown.
-2. **Set up:** keep a name containing "Synthetic", "Test" or "Demo" (the FAA lookup is a stub that refuses real
-   names). Use any certificate number, set the RE date in the future, and tap **Create my signing passkey**.
-   Approve with Face ID / Touch ID / fingerprint / device PIN.
-3. Note the passkey kind shown (synced or device-bound). Wait for **enrollment: done** (1–3 minutes; the school
-   approval is proved and submitted to Preview).
-4. Tap **Review a new synthetic entry**. Read the entry and the signature block, tick the certification statement,
-   then tap **Certify and sign with passkey** and approve the prompt.
-5. The entry shows **signed · locked**, version 1. Try **edit**: it creates version 2 (unsigned); version 1 now shows
-   **superseded**. Sign version 2.
-6. Open **print** for an entry: check the signature block, status, "Prototype" notice and QR code. Scan the QR with
-   another phone; the verify page should show the same status.
-7. Optional checks: set the RE date in the past under "Test the RE-date block" and try to sign (must be refused);
-   cancel the passkey prompt (nothing is signed); try from a second device (it gets its own passkey and profile).
-8. Fill in the actual results in the PR #28 device matrix. Use **Reset** to forget the profile on that device.
+1. Open the staging URL on your phone.
+2. Register a passkey with a "Synthetic …" name and approve with Face ID, fingerprint or PIN.
+3. Wait for **Enrolled on Preview** (~1 min).
+4. Review the synthetic entry, tick certify, tap **Sign** and approve.
+5. Confirm **Signed + Locked** (~1 min until "recorded on Midnight Preview").
+6. Edit the entry and confirm v2 is **unsigned** and v1 **superseded**.
+7. Open **Print** and scan the QR; confirm it **verifies** ("signature valid for this exact version").
+8. Note the credential flags shown (credential ID, UV, BE, BS, attestation).
+
+Record for each step: phone model + OS, browser, authenticator used (Face ID / fingerprint / PIN), pass/fail, time
+taken, the backup-eligible (BE) / backed-up (BS) flags shown, and anything confusing.
+
+Optional (school-admin actions, off-chain in staging): under "Test revocation", revoke with reason "left the school"
+or "compromised" and check that signing is blocked while earlier signatures stay listed with a dated note; use
+"dispute signature" on one signed entry and check that only that entry is flagged.
 
 ## Running the worker on the box (operators only)
 

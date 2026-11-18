@@ -20,10 +20,11 @@ await page.fill('#name', 'Synthetic Headless Tester'); await page.fill('#cert', 
 await page.click('#btnSetup');
 await page.waitForSelector('#me:not(.hidden)', { timeout: 30_000 });
 out.registered = (await page.textContent('#me')).replace(/\s+/g, ' ').slice(0, 300);
+out.credentialFacts = (await page.textContent('#me .facts')).replace(/\s+/g, ' ').trim();
 out.credentials = (await cdp.send('WebAuthn.getCredentials', { authenticatorId })).credentials.length;
 const wait = async (fn, ms, label) => { const t = Date.now(); for (;;) { if (await fn()) return Date.now() - t; if (Date.now() - t > ms) throw new Error('timeout: ' + label); await page.waitForTimeout(3000); } };
 if (doSign) {
-  out.enrollMs = await wait(async () => /enrolled on-chain/.test(await page.textContent('#me')), 15 * 60_000, 'enrollment');
+  out.enrollMs = await wait(async () => /Enrolled on Preview/.test(await page.textContent('#me')), 15 * 60_000, 'enrollment');
   await page.click('#btnNew');
   await page.waitForSelector('#certify');
   out.signDisabledBeforeCertify = await page.isDisabled('#btnSign');
@@ -36,6 +37,10 @@ if (doSign) {
   await page.waitForSelector('#certify');
   await page.waitForTimeout(1500);
   out.entries2 = (await page.textContent('#entries')).replace(/\s+/g, ' ').slice(0, 500);
+  // the QR target: /verify/<entryHash of v1>
+  const v1 = (await (await page.request.get(new URL('/api/entries?cfiId=' + (await page.evaluate(() => JSON.parse(localStorage.getItem('cfiStaging')).cfiId)), url).href)).json()).find((e) => e.version === 1);
+  const vp = await (await page.request.get(new URL('/verify/' + v1.entryHash, url).href)).text();
+  out.verifyPage = /signature valid for this exact version/.test(vp) ? 'verifies' : 'DOES NOT VERIFY';
 }
 console.log(JSON.stringify(out, null, 2));
 await browser.close();

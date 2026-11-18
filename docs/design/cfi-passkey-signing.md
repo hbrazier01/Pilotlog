@@ -8,8 +8,8 @@
 Status: **DRAFT for review. Not approved for production.** Everything is isolated in `pilotlog-midnight/`, behind
 `PILOTLOG_CFI_MIDNIGHT=1`, uses synthetic data, and runs on the Midnight Preview testnet only. The real-device staging
 app lives in the `pilotlog-staging` Railway project and does not touch production.
-Owner: Holland Brazier. Last updated: 2026-11-17 (layered admin, key ceremony, e-signature requirements from
-Eric's 11-17 brief, signature binding, versioning).
+Owner: Holland Brazier. Last updated: 2026-11-17, 5:30 PM MST (layered admin; signature binding; versioning;
+Holland's 5:09 PM decisions: test-only root key, leave/compromise/dispute cases, credential facts, identity deferred).
 
 ## 1. Goal and non-goals
 
@@ -119,20 +119,27 @@ valid(e) ⇔ cfiKeys[e.keyId].schoolId == e.schoolId
 
   Rationale: revocation means "stop trusting this school from now on", not "the training never happened".
   Fraud by a school before it was revoked needs a separate, explicit dispute marking (`disputeEndorsement`,
-  §13 open question; not implemented), never silent invalidation;
+  §3.7, proposed; staging records disputes off-chain), never silent invalidation;
 - a CFI of a revoked school can still `selfRevoke` (harmless). To move to another school, the CFI enrolls a **new**
   passkey there, because a key belongs to one school forever;
 - a revoked `schoolId` can never be onboarded again. Reinstating a school means a new `schoolId` under a new root operation.
 
-### 3.4 Root key ceremony (Holland runs it himself, offline)
+### 3.4 Root key: TEST-ONLY in this prototype; proposed two-YubiKey ceremony for later
 
-The root key **never goes on a server, a CI system, or to an agent.** PilotLog only ever receives the root
-**public** key and individual signatures over specific operation digests. Tests and the Preview run use a
-**synthetic** root key generated in-process.
+> **Decision (Holland, 2026-11-17): the root key is TEST-ONLY for this prototype.** Every root operation in tests,
+> the Preview runs and staging is signed by a **synthetic software key** generated in-process
+> (`src/rootKey.mjs`, kept in a gitignored, 0600 state file on the box). **Nothing has been purchased or
+> provisioned:** no YubiKeys have been bought, no real root key exists, no ceremony has been run, and no
+> production contract has been deployed. Everything below is a **proposal** for a later, separately approved step
+> (buying hardware is a purchase decision for Holland).
 
-**Recommended form: two hardware keys (YubiKey 5 series, PIV applet, P-256), each generated on-device and
+The rule that will apply once a real root key exists: it **never goes on a server, a CI system, or to an agent.**
+PilotLog only ever receives the root **public** key and individual signatures over specific operation digests.
+
+**Proposed form: two hardware keys (YubiKey 5 series, PIV applet, P-256), each generated on-device and
 non-exportable.** The primary stays with Holland; the backup goes in a safe or bank box. Both keys are registered as
-root keys (1-of-2). The software alternative below is for cases where hardware isn't available.
+root keys (1-of-2), so either one can act alone and either one can remove the other. A software alternative is
+listed for completeness.
 
 **A. Generation (once, about 45 min).**
 1. Use a clean offline laptop: a fresh OS install or a live USB (Tails/Ubuntu live), with Wi‑Fi off and no network
@@ -158,14 +165,14 @@ root keys (1-of-2). The software alternative below is for cases where hardware i
 4. Check: `node src/cli.mjs root-verify root-pub-1.pem digest.bin sig.der`. Copy **only `sig.der`** back to engineering.
 5. The relayer submits it. A signature is useless for any other op, contract, school or key (§3.2).
 
-**C. Rotation and loss recovery.**
-- *Lost or stolen primary:* use the backup key to sign `rootSetKey(primary, false)`, which retires the primary forever,
-  then `rootSetKey(newKey, true)`. Order the replacement hardware in advance.
-- *Routine rotation (for example, yearly):* add the new key, then remove the old one. The contract refuses to remove the last root key.
-- *Both keys lost:* root actions become impossible. Schools keep operating (their admins don't need root). Recovery
-  means a new contract deployment and a migration (§13). This is why the backup lives in a separate location.
-- *Suspected compromise:* use the other root key to remove the compromised one immediately, audit recent root
-  operations on-chain (all are public), then revoke any rogue school.
+**C. Recovery process (proposed; the contract already supports every step, and the tests exercise it with synthetic keys).**
+
+| Event | Steps | Result |
+|---|---|---|
+| **Loss of one key** (lost, stolen or broken) | 1. With the remaining key, sign `rootSetKey(lostKeyId, false)`; the lost key is retired forever, so finding it later changes nothing. 2. Provision a replacement key offline (a purchase, needs approval) and sign `rootSetKey(newKeyId, true)` with the remaining key. 3. Until step 2, the system runs on one root key: schools, CFIs and signing are unaffected. | back to 1-of-2 |
+| **Loss of both keys** | No on-chain recovery, by design (nobody, including PilotLog, can take over root). Schools and CFIs keep working, because school admins don't need root, but onboarding or revoking schools and replacing school admins stop. Recovery: generate new root keys, deploy a **new contract**, re-onboard schools, have CFIs re-enroll, and keep the old contract readable for history (§13). Storing the backup in a separate place makes this unlikely. | new deployment |
+| **Rotation** (planned, e.g. yearly, or a staff change) | 1. Provision the new key offline. 2. With an existing key, sign `rootSetKey(newKeyId, true)`. 3. With any key, sign `rootSetKey(oldKeyId, false)`. The contract refuses to remove the last root key. | old key retired |
+| **Suspected compromise** | With the other key, remove the compromised key immediately; audit recent root operations on-chain (all are public); revoke any rogue school and replace any changed school admin. | compromised key retired |
 
 **D. Contract upgrade and maintenance authority (separate key).** Midnight's *contract maintenance authority* (the key
 that can replace verifier keys, set via midnight-js at deploy) is a Midnight signing key, not P-256, so the root
@@ -175,7 +182,11 @@ announced in advance; monitor on-chain verifier keys against the expected set (T
 maintenance to a committee or relinquish it once stable. **For Preview/staging the maintenance key is
 midnight-js's default ephemeral key.** It was not kept, so the staging contract cannot be upgraded, by design.
 
-### 3.5 CFI identity verification at enrollment (design only; staging uses a stub)
+### 3.5 CFI identity verification at enrollment (DEFERRED; staging uses synthetic identities only)
+
+> **Decision (Holland, 2026-11-17): identity checks stay synthetic for the prototype.** The **photo-ID vendor** and
+> the **production FAA verification process** are **DEFERRED**: not selected, not built, not in the prototype
+> estimate (§14). Staging only accepts synthetic names, and no live FAA lookups are made.
 
 A passkey proves "the same key as at enrollment", not "this is CFI #123". Binding identity to the key is PilotLog's
 job, done once at enrollment:
@@ -185,7 +196,7 @@ job, done once at enrollment:
    the match is name plus certificate number plus "flight instructor" rating. **No live FAA calls are made in this
    PR.** Staging uses `faaLookupStub` with deterministic synthetic answers, accepts only names containing
    Synthetic/Test/Demo, and treats numbers starting with 0 as "no match".
-2. A photo-ID check (vendor TBD) ties the person to that name.
+2. A photo-ID check ties the person to that name (**DEFERRED**: no vendor selected).
 3. The **RE (recent-experience) end date or certificate expiration date** is entered by the CFI with evidence (a FIRC
    certificate or 61.197 activity). The registry may not show RE dates (unavailable per Eric's brief). PilotLog
    stores the date and **blocks signing once it has passed**. This is implemented in staging and tested.
@@ -205,7 +216,42 @@ job, done once at enrollment:
 - **Synced vs device-bound:** the authenticator's **BE** (backup-eligible) and **BS** (backed-up) flags are recorded at
   registration and **on every signature** (implemented in staging). Synced passkeys live in the CFI's
   iCloud/Google account. Losing a phone is then not a key compromise, but an account takeover is. v1 accepts both
-  kinds and records which one was used. Requiring device-bound keys is a policy switch (§13, decision D3).
+  kinds and records which one was used. **Decision (Holland, 2026-11-17): synced passkeys stay allowed for testing.**
+  Requiring device-bound keys remains a later policy switch (§13, D3).
+
+**What the system can actually establish about a credential** (shown on the staging UI after registration and after
+each signature, so testers can record it):
+
+| Field | Source | What it does and doesn't tell us |
+|---|---|---|
+| Credential ID | browser response | an opaque identifier for this passkey at this RP ID. It does not identify a device or person |
+| UV (user verified) | authenticatorData flag, per ceremony | the authenticator says it checked a biometric or device PIN/passcode locally. It doesn't say whose, or which method |
+| BE (backup-eligible) | authenticatorData flag | the authenticator says the key *can* be synced (e.g. iCloud Keychain, Google Password Manager). Self-reported |
+| BS (backed up) | authenticatorData flag | the authenticator says the key *is currently* synced. Self-reported; can change over time |
+| Attestation | attestationObject `fmt` | staging requests `attestation: "none"`, so expect `none`: **no attestation statement, so the make, model and hardware are not verified.** An AAGUID is shown only if the browser discloses one, and is not verified either |
+
+**Not established:** which physical device holds the key, whether the key is hardware-bound or exportable, or who
+performed the gesture. The prototype makes no claim to identify a specific physical device. Doing so would require
+verified attestation (e.g. `direct`/`enterprise` with a trust store and device-bound keys), which is not implemented
+and is not demonstrated here.
+
+### 3.7 Leaving a school vs a compromised credential vs a disputed signature
+
+These are three different events and are not treated the same way. In every case **signature history is preserved**:
+nothing is deleted or rewritten, the event is recorded **with a reason and a UTC timestamp**, and each existing
+signature gets a *standing* (`good`, `review` or `disputed`) next to its unchanged cryptographic status (§4.2). Code:
+`src/revocation.mjs`; staging endpoints `POST /api/cfi/revoke` and `POST /api/entries/dispute`; tests in
+`test/revocation.test.mjs` and `test/staging-revocation.test.mjs`.
+
+| Case | Prototype NOW (staging, off-chain) | PROPOSED (production) |
+|---|---|---|
+| **(i) CFI leaves a school** | Reason `left-school` plus timestamp (and an optional note) are recorded. New signing is blocked (403). Earlier signatures keep **good** standing, with a note giving the leave date. | The school submits `schoolRevokeCfi`; on-chain `revokedAtSeq` orders it after earlier endorsements (§3.3), so they stay valid. The reason code stays off-chain. If the CFI joins another school, they enroll a new passkey there. |
+| **(ii) Compromised credential** (lost or stolen device, account takeover) | Reason `credential-compromised`, revocation time, and a **suspected-from** time (defaults to the revocation time) are recorded. New signing is blocked, and pending challenges are cancelled. Signatures made at or after the suspected-from time are flagged **review**; earlier ones keep good standing. Nothing is silently invalidated. | Revoke on-chain immediately (`schoolRevokeCfi` or `selfRevoke`). The school reviews flagged signatures and resolves each one (confirm, or have the entry re-signed with a new passkey as a new version). Record the resolution and who made it. On-chain, a `disputeEndorsement` marking would cover endorsements in the window that the seq rule still treats as valid. |
+| **(iii) Disputed signature** (e.g. the student or school challenges one entry) | Recorded per entry with reason `disputed-signature`, timestamp and note. The signature is flagged **disputed** and the entry stays locked. **The CFI is not revoked** and can keep signing other entries. | A dispute workflow: who may raise it (student, school, root), evidence, and a resolution (upheld or rejected) with a timestamp and actor. An optional on-chain `disputeEndorsement(endorsementKey, reasonCode)` that marks but never deletes. A correction is a new superseding version that needs a new signature. |
+
+In staging the tester plays the school admin, and the **on-chain revocation is not submitted** for these test
+actions. Revocation on-chain is already implemented and was run on Preview (§8.1); it is just not wired to the
+staging buttons, which avoids changing the box worker during device tests.
 
 ## 4. Signing a specific entry version
 
@@ -362,7 +408,9 @@ tamper evidence of `entryHash` and timing.
 | Record synced vs device-bound (BE/BS) | §3.6 | **yes** (at registration and on each signature) |
 | Retention independent of the chain; readable entry is the record | §7 | design; staging memory is ephemeral (synthetic) |
 | Printable PDF with verify QR | §7 | **yes**, browser "Save as PDF" of `/print/:id` with QR to `/verify/:entryHash` |
-| Photo-ID check, PilotLog-signed binding record, re-verification | §3.5 | no |
+| Photo-ID check, production FAA verification, PilotLog-signed binding record, re-verification | §3.5 | **DEFERRED** (synthetic identities only) |
+| Revocation reason + timestamp; leave vs compromise vs dispute | §3.7 | **yes**, off-chain (on-chain revoke exists, not wired to staging buttons) |
+| Credential facts shown to testers (ID, UV, BE, BS, attestation) | §3.6 | **yes** |
 | Endorsement text and reg cites; solo/checkride endorsements | §4.4 | no (deliberately out of scope until counsel) |
 
 ## 7. Records, retention, export and PDF
@@ -527,13 +575,16 @@ Residual leakage:
 
 ## 13. Open questions and decisions for Holland
 
-- **D1 Root key custody:** two YubiKeys (primary plus backup in a separate location) with 1-of-2 authority, or a
-  Shamir split of a software key? Recommendation: two YubiKeys.
-- **D2 Revoked school's past endorsements:** keep them valid (current seq rule) with an explicit dispute marking for
-  fraud, or invalidate them all on revocation?
-- **D3 Synced vs device-bound passkeys:** accept both and record which (current), or require device-bound for CFIs?
-- **D4 Identity vendor** for the photo-ID check, and whether to use the Airmen Inquiry download file or a manual check.
-- `disputeEndorsement` semantics and who may call it (root only, or the school too).
+Decided 2026-11-17 (Holland):
+- **D1 Root key:** TEST-ONLY synthetic key for the prototype. The two-YubiKey proposal and recovery process are
+  documented (§3.4). Nothing has been purchased or provisioned; real keys are a later, separate decision.
+- **D2 Revocation semantics:** distinguish leaving a school, a compromised credential and a disputed signature,
+  preserve history, and record reason and time (§3.7).
+- **D3 Synced passkeys:** allowed for testing; flags recorded and shown (§3.6). Revisit after device tests.
+- **D4 Identity:** synthetic for the prototype; photo-ID vendor and production FAA verification are DEFERRED.
+
+Still open:
+- Production dispute workflow: who may raise and resolve, and whether to add an on-chain `disputeEndorsement`.
 - Contract migration path for a breaking ledger version or root key loss.
 - Should the student co-sign? That doubles proving cost.
 - Batching endorsements per tx to cut fees and timing leakage.
@@ -547,13 +598,18 @@ Engineering time, one engineer, after G0. Ranges reflect unknowns in review feed
 |---|---|
 | G1 security review fixes (circuits, digests) | 3–5 days, plus external reviewer lead time |
 | G2 device matrix on staging, client-data profile fixes, decide D3 | 2–4 days |
-| Production identity verification (Airmen Inquiry data, photo ID vendor, binding record, re-verification) | 6–10 days |
+| Production identity verification (Airmen Inquiry data, photo ID vendor, binding record, re-verification) | **DEFERRED** (6–10 days when un-deferred; not in the total below) |
+| Production revocation reasons and dispute workflow (§3.7), incl. optional on-chain dispute marking | 2–3 days |
 | App integration: Postgres schema (lineages, versions, signatures, nonces, jobs), review-and-certify UI, lock and supersede in the real logbook, school admin console | 10–15 days |
 | Root key ceremony tooling (offline signer script, runbook dry run with a synthetic key) | 2–3 days |
 | Proof service and relayer as a private service, queue, alerting, drills (G4) | 5–8 days |
 | Server-side PDF with verify QR (production PDF is disabled by the S2 gate until it lifts) | 2–3 days |
 | Endorsement text and reg cites (after counsel) | 3–5 days |
-| **Total to a limited design-partner pilot (G6)** | **≈ 33–53 engineering days**, plus legal review (G3) and the mainnet spending decision (G5), which are not engineering-time-bound |
+| **Total to a limited design-partner pilot (G6), excluding deferred identity work** | **≈ 29–46 engineering days** (≈ 35–56 including identity), plus legal review (G3) and the mainnet spending decision (G5), which are not engineering-time-bound |
+
+Change from the earlier 33–53: +2–3 days for revocation reasons and disputes; identity verification (6–10 days)
+moved out as DEFERRED. **Prototype test first:** Holland and Giselle test the staging prototype before any pilot
+commitment. A smallest-useful-pilot proposal follows that feedback.
 
 ## 15. Staging environment (real devices)
 

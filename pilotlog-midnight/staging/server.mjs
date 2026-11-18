@@ -13,6 +13,8 @@
 // public URL is refused at boot.
 import http from 'node:http';
 import { readFileSync } from 'node:fs';
+import { registrationFacts, assertionFacts, CREDENTIAL_FACTS_NOTE } from '../src/credential.mjs';
+import { REVOCATION_REASONS, makeRevocation, makeDispute, signatureStanding } from '../src/revocation.mjs';
 import { randomBytes, randomUUID, timingSafeEqual, createHash } from 'node:crypto';
 import QRCode from 'qrcode';
 import { assertEnabled } from '../src/flag.mjs';
@@ -95,7 +97,8 @@ function publicEntry(e) {
   const v = verifyRecord(recordOf(e), { supersededBy: e.supersededBy });
   return {
     id: e.id, lineageId: e.lineageId, version: e.version, status: v.status, statusReason: v.reason ?? null, entryHash: e.entryHash, raw: e.raw, student: e.studentLabel, locked: e.locked, supersedes: e.supersedes, supersedesId: e.supersedesId,
-    supersededBy: e.supersededBy, signature: e.signature ?? null,
+    supersededBy: e.supersededBy, signature: e.signature ?? null, dispute: e.dispute ?? null,
+    standing: signatureStanding(e.signature, cfi?.revocation ?? null, e.dispute ?? null),
     signatureBlockPreview: e.signature?.line ?? (cfi ? safeLine(sigBlockFor(cfi, e)) : null), statement: CERTIFICATION_STATEMENT_V1,
     chain: job ? { status: job.status, txHash: job.result?.txHash ?? null, explorer: job.result?.txHash ? EXPLORER(job.result.txHash) : null, error: job.result?.error ?? null, proveMs: job.result?.proveMs ?? null } : null,
   };
@@ -177,7 +180,11 @@ const routes = {
     const keyId = toHex(keyIdOf(point));
     need(![...cfis.values()].some((c) => c.keyId === keyId), 409, 'this passkey is already set up');
     budget('enroll');
+    let credential;
+    try { credential = registrationFacts({ credentialId: b.credentialId, authenticatorData: fromB64url(String(b.authenticatorData ?? '')), attestationObject: b.attestationObject ? fromB64url(String(b.attestationObject)) : null, transports: b.transports }); }
+    catch (err) { throw httpError(400, err.message); }
     const cfi = {
+      credential, revocation: null, history: [{ at: new Date().toISOString(), event: 'registered' }],
       cfiId: pend.cfiId, ...pend.block, faa: pend.faa, credentialId: String(b.credentialId), spki: String(b.publicKeySpki), keyId,
       cfiRef: toHex(cfiRef(pend.cfiId, SERVER_SALT)), passkey: { backupEligible: ad.flags.be, backedUp: ad.flags.bs, kind: ad.flags.be ? 'synced (backup-eligible)' : 'device-bound', transports: b.transports ?? [] },
       userAgent: String(req.headers['user-agent'] ?? '').slice(0, 200), createdAt: new Date().toISOString(),
@@ -206,11 +213,12 @@ const routes = {
   'GET /api/entries': (req, url) => { const cfiId = url.searchParams.get('cfiId'); return [...entries.values()].filter((e) => e.cfiId === cfiId).map(publicEntry).reverse(); },
   'GET /api/entry': (req, url) => publicEntry(getEntry(url.searchParams.get('id'))),
   // Off-chain re-verification of the stored signature against the stored readable entry (primary check).
-  'GET /api/verify': (req, url) => { const e = getEntry(url.searchParams.get('id')); const p = publicEntry(e); return { id: e.id, version: e.version, entryHash: e.entryHash, status: p.status, reason: p.statusReason, chain: p.chain }; },
+  'GET /api/verify': (req, url) => { const e = getEntry(url.searchParams.get('id')); const p = publicEntry(e); return { id: e.id, version: e.version, entryHash: e.entryHash, status: p.status, reason: p.statusReason, standing: p.standing, dispute: p.dispute, chain: p.chain }; },
   'POST /api/entries/challenge': async (req) => {
     const b = await body(req); const e = getEntry(b.entryId); const cfi = getCfi(b.cfiId);
     need(e.cfiId === cfi.cfiId, 403, 'entry belongs to another CFI');
     need(!e.locked, 409, 'entry is signed and locked; make a correction instead');
+    need(!cfi.revocation, 403, cfi.revocation ? `this passkey was revoked (${cfi.revocation.reason}) at ${cfi.revocation.revokedAt}; signing is blocked, earlier signatures are kept` : '');
     need(b.certify === true && b.statement === CERTIFICATION_STATEMENT_V1, 400, 'review the entry and tick the certification statement first');
     const enr = jobs.get(cfi.enrollJobId);
     need(enr?.status === 'done', 409, `your passkey is not enrolled on-chain yet (status: ${enr?.status ?? 'unknown'}); wait for the school enrollment to finish`);
@@ -230,6 +238,7 @@ const routes = {
     const n = nonces.get(e.id); nonces.delete(e.id); // single use
     need(n && n.exp > Date.now() && n.cfiId === cfi.cfiId, 400, 'signing challenge unknown, used or expired; review and certify again');
     need(!e.locked, 409, 'entry already signed');
+    need(!cfi.revocation, 403, 'this passkey was revoked; signing is blocked');
     need(String(b.credentialId) === cfi.credentialId, 400, 'unexpected credential');
     let a;
     try {
@@ -243,13 +252,33 @@ const routes = {
     e.locked = true;
     e.signature = {
       line: signatureBlockLine(n.block), block: n.block, signedAt: new Date().toISOString(), serverNonce: n.nonce, signatureBlockSalt: n.salt, attestHash: n.attest, challenge: n.digest,
-      keyId: cfi.keyId, publicKeySpki: cfi.spki, flags: { up: ad.flags.up, uv: ad.flags.uv, backupEligible: ad.flags.be, backedUp: ad.flags.bs }, passkeyKind: ad.flags.be ? 'synced (backup-eligible)' : 'device-bound',
+      keyId: cfi.keyId, publicKeySpki: cfi.spki, flags: { up: ad.flags.up, uv: ad.flags.uv, backupEligible: ad.flags.be, backedUp: ad.flags.bs }, credential: assertionFacts({ credentialId: b.credentialId, authenticatorData: a.authData }), passkeyKind: ad.flags.be ? 'synced (backup-eligible)' : 'device-bound',
       assertion: { authenticatorData: b.authenticatorData, clientDataJSON: b.clientDataJSON, signature: b.signature }, highS: a.highS,
     };
     const job = enqueue('endorse', { args: bigify([fromHex(e.entryHash, 32), fromHex(e.studentCommit, 32), fromHex(n.attest, 32), a.cfiPubKey, a.authData, a.challenge, a.cdSuffix, a.flagsBit1, a.flagsHigh, a.sig]), entryHash: e.entryHash, keyId: cfi.keyId });
     e.jobId = job.id;
     return publicEntry(e);
   },
+
+  // 2b. Revocation and disputes (staging: off-chain records with reason + UTC timestamp; history is never deleted).
+  // In staging the tester plays the school admin. On-chain schoolRevokeCfi / dispute marking is PROPOSED (docs §3.7).
+  'POST /api/cfi/revoke': async (req) => {
+    const b = await body(req); const cfi = getCfi(b.cfiId);
+    need(!cfi.revocation, 409, `already revoked (${cfi.revocation?.reason}) at ${cfi.revocation?.revokedAt}`);
+    try { cfi.revocation = makeRevocation({ reason: b.reason, note: b.note, suspectedFrom: b.suspectedFrom || null }); } catch (err) { throw httpError(400, err.message); }
+    nonces.forEach((n, k) => { if (n.cfiId === cfi.cfiId) nonces.delete(k); }); // pending challenges die with the credential
+    cfi.history.push({ at: cfi.revocation.revokedAt, event: 'revoked', reason: cfi.revocation.reason });
+    return publicCfi(cfi);
+  },
+  'POST /api/entries/dispute': async (req) => {
+    const b = await body(req); const e = getEntry(b.entryId); const cfi = getCfi(b.cfiId);
+    need(e.cfiId === cfi.cfiId, 403, 'entry belongs to another CFI');
+    need(e.signature, 409, 'only a signed entry can have its signature disputed');
+    need(!e.dispute, 409, 'signature already disputed');
+    e.dispute = makeDispute({ note: b.note });
+    return publicEntry(e);
+  },
+  'GET /api/revocation-reasons': () => ({ reasons: REVOCATION_REASONS, dispute: 'disputed-signature (per entry; does not revoke the CFI)' }),
 
   // 3. Worker (box prover/relayer)
   'POST /api/worker/claim': (req) => {
@@ -274,7 +303,8 @@ function publicCfi(c) {
   const j = jobs.get(c.enrollJobId);
   return {
     cfiId: c.cfiId, cfiName: c.cfiName, certificateNumber: c.certificateNumber, currencyKind: c.currencyKind, currencyDate: c.currencyDate,
-    signingBlocked: today() > c.currencyDate, faa: c.faa, passkey: c.passkey, keyId: c.keyId, credentialId: c.credentialId,
+    signingBlocked: today() > c.currencyDate || !!c.revocation, faa: c.faa, passkey: c.passkey, keyId: c.keyId, credentialId: c.credentialId,
+    credential: c.credential, credentialNote: CREDENTIAL_FACTS_NOTE, revocation: c.revocation, history: c.history,
     enrollment: j ? { status: j.status, txHash: j.result?.txHash ?? null, explorer: j.result?.txHash ? EXPLORER(j.result.txHash) : null, error: j.result?.error ?? null, proveMs: j.result?.proveMs ?? null } : null,
   };
 }
@@ -293,7 +323,9 @@ async function printable(e, verifyUrl) {
 ${e.supersedes ? `<p><b>Correction.</b> Supersedes entry hash <span class="small">${esc(e.supersedes)}</span></p>` : ''}${e.supersededBy ? `<p><b>Superseded</b> by a later correction (entry ${esc(e.supersededBy.slice(0, 8))}).</p>` : ''}
 <p><b>Instructor certification:</b> ${esc(p.statement)}</p>
 <div class="sig">${esc(p.signature ? p.signature.line : 'NOT SIGNED')}</div>
-${p.signature ? `<p class="small">Signed with a ${esc(p.signature.passkeyKind)} passkey, user verification ${p.signature.flags.uv ? 'performed' : 'NOT performed'}, at ${esc(p.signature.signedAt)}. Entry locked on signing.</p>` : ''}
+${p.signature ? `<p class="small">Signed at ${esc(p.signature.signedAt)}; entry locked on signing. Credential ${esc(p.signature.credential?.credentialId ?? '')} · UV=${p.signature.flags.uv ? 1 : 0} · BE=${p.signature.flags.backupEligible ? 1 : 0} · BS=${p.signature.flags.backedUp ? 1 : 0} (authenticator-reported; does not identify a physical device).</p>` : ''}
+<p><b>Verification (re-checked now from the stored entry and passkey assertion):</b> ${p.status === 'signed' || p.status === 'superseded' ? '✓ signature valid for this exact version' : esc(p.status)}${p.statusReason ? ` (${esc(p.statusReason)})` : ''}${p.standing?.standing && p.standing.standing !== 'good' ? ` · <b>standing: ${esc(p.standing.standing)}</b>` : ''}</p>
+${(p.standing?.notes ?? []).map((n) => `<p class="small">${esc(n)}</p>`).join('')}
 <p class="small">Entry hash (SHA-256, canonical v1): ${esc(e.entryHash)}<br>On-chain tamper evidence (supplemental only): ${p.chain?.txHash ? `Midnight Preview tx ${esc(p.chain.txHash)}` : esc(p.chain?.status ?? 'not submitted')}<br>Contract ${esc(CONTRACT)}<br>Verify: ${esc(verifyUrl)}</p>
 <p class="small">This readable entry is the record. The blockchain check only shows the entry has not changed since it was signed; the record does not depend on it.</p>
 <p class="noprint"><button onclick="print()">Print / Save as PDF</button> <a href="/">Back</a></p></body></html>`;
