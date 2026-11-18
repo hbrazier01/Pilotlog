@@ -5,7 +5,13 @@ its domain. This is a technical prototype, not a legal signature or endorsement.
 
 - URL: https://cfi-passkey-staging-staging.up.railway.app (RP ID = that host; the contract is compiled for it)
 - Railway: project `pilotlog-staging`, service `cfi-passkey-staging`, 0.25 vCPU / 0.5 GB, app sleeping on.
-  No database: data lives in memory and resets when the service restarts or sleeps.
+  State (synthetic CFIs, credentials, entries/versions, jobs, caps) is persisted as one JSONB row
+  (`cfi_passkey_staging_state`) in the staging project's Postgres via `DATABASE_URL` (a Railway reference variable,
+  staging only), so a sleep/wake or redeploy keeps it. Without `DATABASE_URL` (tests) it is memory-only.
+- **Use my existing passkey**: if the server ever loses a profile, the tester taps this instead of registering again.
+  The browser offers the discoverable passkey (empty `allowCredentials`); the server recovers the P-256 public key
+  candidates from the ES256 signature, keeps only one that verifies and is enrolled (and not revoked) in the on-chain
+  `cfiKeys` set for this school, and recreates the profile as enrolled. A 404 no longer clears the saved profile.
 - Proving and the relayer run on the box, not on Railway: `preview/worker.mjs` (needs the local proof server,
   ~3.2 GB RAM per worker). The header of the staging page shows whether the prover is online.
 

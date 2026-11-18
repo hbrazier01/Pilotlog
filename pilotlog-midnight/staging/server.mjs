@@ -8,7 +8,8 @@
 //     proof server and pays DUST from the throwaway Preview wallet. The wallet seed never leaves the box.
 //
 // Env (all staging-only): PILOTLOG_CFI_MIDNIGHT=1 (required), PORT, CFI_CONTRACT_ADDRESS, CFI_SCHOOL_ID,
-// CFI_WORKER_TOKEN (synthetic shared secret for the worker endpoints; never logged).
+// CFI_WORKER_TOKEN (synthetic shared secret for the worker endpoints; never logged), DATABASE_URL (staging Postgres:
+// the whole state is persisted as one JSONB row, see persist.mjs; without it state is memory-only), CFI_INDEXER_URL.
 // RP ID and origin come from the compiled contract (contract/managed/env.json); a mismatch with the
 // public URL is refused at boot.
 import http from 'node:http';
@@ -19,7 +20,9 @@ import { randomBytes, randomUUID, timingSafeEqual, createHash } from 'node:crypt
 import QRCode from 'qrcode';
 import { assertEnabled } from '../src/flag.mjs';
 import { CONTRACT_ENV } from '../src/env.mjs';
-import { spkiToPoint, assertionToCircuitArgs, parseAuthenticatorData, toCircuitPoint } from '../src/webauthn.mjs';
+import { spkiToPoint, assertionToCircuitArgs, parseAuthenticatorData, toCircuitPoint, pointToSpki } from '../src/webauthn.mjs';
+import { recoverAssertionKeys } from '../src/recover.mjs';
+import { openStore } from './persist.mjs';
 import {
   entryHash, studentCommit, cfiRef, keyIdOf, endorseDigest, attestHash, signatureBlockCommit, signatureBlockLine,
   normalizeSignatureBlock, canonicalEntryBytes, CERTIFICATION_STATEMENT_V1,
@@ -37,17 +40,32 @@ const EXPLORER = (tx) => `https://explorer.preview.midnight.network/transactions
 if (process.env.RAILWAY_PUBLIC_DOMAIN && process.env.RAILWAY_PUBLIC_DOMAIN !== RP_ID) {
   console.error(`RP ID ${RP_ID} (compiled) != public domain ${process.env.RAILWAY_PUBLIC_DOMAIN}; recompile for this environment`); process.exit(1);
 }
-const SERVER_SALT = randomBytes(32).toString('hex'); // per-boot salts for synthetic student / CFI pseudonyms
+let SERVER_SALT = randomBytes(32).toString('hex'); // salt for synthetic student / CFI pseudonyms (persisted with the state)
 const INDEX = readFileSync(new URL('./public/index.html', import.meta.url), 'utf8');
 
-// ---------- in-memory state (staging: synthetic, lost on restart by design) ----------
+// ---------- state (staging: synthetic). Persisted to the staging Postgres when DATABASE_URL is set ----------
 const regs = new Map();     // challenge(b64url) -> { cfiId, exp }
+const restores = new Map(); // challenge(b64url) -> { exp }  ("Use my existing passkey")
 const cfis = new Map();     // cfiId -> CFI record
 const entries = new Map();  // entryId -> entry record
 const nonces = new Map();   // entryId -> pending signing challenge
 const jobs = new Map();     // jobId -> job
 let workerSeen = 0;
 const limits = { enroll: { n: 0, max: 40 }, endorse: { n: 0, max: 120 }, day: new Date().toISOString().slice(0, 10) };
+const store = await openStore();
+const MAPS = { regs, restores, cfis, entries, nonces, jobs };
+const snapshot = () => ({ v: 1, serverSalt: SERVER_SALT, limits, ...Object.fromEntries(Object.entries(MAPS).map(([k, m]) => [k, [...m]])) });
+{
+  const saved = await store.load();
+  if (saved?.v === 1) {
+    SERVER_SALT = saved.serverSalt;
+    Object.assign(limits.enroll, saved.limits?.enroll ?? {}); Object.assign(limits.endorse, saved.limits?.endorse ?? {}); limits.day = saved.limits?.day ?? limits.day;
+    for (const [k, m] of Object.entries(MAPS)) for (const [id, v] of saved[k] ?? []) m.set(id, v);
+    console.log(`state restored from ${store.kind}: ${cfis.size} CFIs, ${entries.size} entries, ${jobs.size} jobs`);
+  }
+  store.track(snapshot, saved?.v === 1 ? saved : null);
+}
+const persistNote = store.kind === 'memory' ? ' (memory is cleared on restart)' : '';
 function budget(kind) {
   const d = new Date().toISOString().slice(0, 10);
   if (d !== limits.day) { limits.day = d; limits.enroll.n = 0; limits.endorse.n = 0; }
@@ -135,8 +153,35 @@ function workerAuth(req) {
   workerSeen = Date.now();
 }
 const need = (cond, status, msg) => { if (!cond) throw httpError(status, msg); };
-const getCfi = (id) => { const c = cfis.get(String(id ?? '')); need(c, 404, 'unknown CFI on this staging server (it restarts with empty memory: set up again)'); return c; };
+const getCfi = (id) => { const c = cfis.get(String(id ?? '')); need(c, 404, 'unknown CFI on this staging server; if you already have a passkey, use "Use my existing passkey"'); return c; };
 const getEntry = (id) => { const e = entries.get(String(id ?? '')); need(e, 404, 'unknown entry'); return e; };
+
+// ---------- on-chain lookup (Midnight Preview indexer, read-only, no wallet) ----------
+// Returns the cfiKeys record for keyId plus revocation markers, or null when the key is not enrolled.
+// Tests (never on Railway) can point CFI_CHAIN_FIXTURE at a JSON file { cfiKeys: { keyId: { cfiRef, schoolId } }, revoked: { keyId: seq } }.
+const INDEXER = process.env.CFI_INDEXER_URL ?? 'https://indexer.preview.midnight.network/api/v4/graphql';
+let ledgerMod = null;
+async function chainCfi(keyIdHex) {
+  if (process.env.CFI_CHAIN_FIXTURE && !process.env.RAILWAY_PUBLIC_DOMAIN) {
+    const f = JSON.parse(readFileSync(process.env.CFI_CHAIN_FIXTURE, 'utf8'));
+    const r = f.cfiKeys?.[keyIdHex]; if (!r) return null;
+    return { cfiRef: r.cfiRef, schoolId: r.schoolId, revokedAtSeq: f.revoked?.[keyIdHex] ?? null, schoolRevokedAtSeq: f.schoolRevoked?.[r.schoolId] ?? null };
+  }
+  need(/^[0-9a-f]{64}$/.test(CONTRACT), 503, 'staging contract address not configured');
+  const r = await fetch(INDEXER, { method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(15_000),
+    body: JSON.stringify({ query: 'query($a: HexEncoded!) { contractAction(address: $a) { state } }', variables: { a: CONTRACT } }) }).catch((e) => { throw httpError(503, `chain lookup failed: ${e.message}`); });
+  const j = await r.json().catch(() => null);
+  const hex = j?.data?.contractAction?.state;
+  need(r.ok && hex, 503, 'chain lookup failed (indexer); try again in a minute');
+  ledgerMod ??= await Promise.all([import('@midnight-ntwrk/compact-runtime'), import('../contract/managed/contract/index.js')]);
+  const [{ ContractState }, { ledger }] = ledgerMod;
+  const L = ledger(ContractState.deserialize(Buffer.from(hex, 'hex')).data);
+  const k = fromHex(keyIdHex, 32);
+  if (!L.cfiKeys.member(k)) return null;
+  const rec = L.cfiKeys.lookup(k), schoolId = toHex(rec.schoolId);
+  return { cfiRef: toHex(rec.cfiRef), schoolId, revokedAtSeq: L.revokedAtSeq.member(k) ? String(L.revokedAtSeq.lookup(k)) : null,
+    schoolRevokedAtSeq: L.schoolRevokedAtSeq.member(rec.schoolId) ? String(L.schoolRevokedAtSeq.lookup(rec.schoolId)) : null };
+}
 
 const routes = {
   'GET /healthz': () => ({ ok: true }),
@@ -145,7 +190,62 @@ const routes = {
     explorer: CONTRACT ? `https://explorer.preview.midnight.network/contracts/${CONTRACT}` : null,
     prover: { online: Date.now() - workerSeen < 30_000, lastSeenSecondsAgo: workerSeen ? Math.round((Date.now() - workerSeen) / 1000) : null },
     queue: [...jobs.values()].filter((j) => j.status === 'queued' || j.status === 'proving').length, synthetic: true,
+    persistence: store.status(),
   }),
+
+  // 1b. "Use my existing passkey": recover a CFI profile from a discoverable passkey that is already enrolled on-chain
+  // (e.g. after the staging server lost its memory). No re-registration, no new enrollment, no fees.
+  'POST /api/restore/options': async (req) => {
+    await body(req);
+    for (const [k, v] of restores) if (v.exp < Date.now()) restores.delete(k);
+    need(restores.size < 200, 429, 'too many pending restores; try again in a few minutes');
+    const challenge = b64url(randomBytes(32));
+    restores.set(challenge, { exp: Date.now() + 3 * 60_000 });
+    return { publicKey: { challenge, rpId: RP_ID, timeout: 120_000, userVerification: 'required', allowCredentials: [] } };
+  },
+  'POST /api/restore/finish': async (req) => {
+    const b = await body(req);
+    const cdBytes = fromB64url(String(b.clientDataJSON ?? '')), adBytes = fromB64url(String(b.authenticatorData ?? ''));
+    let cd; try { cd = JSON.parse(new TextDecoder().decode(cdBytes)); } catch { throw httpError(400, 'invalid clientDataJSON'); }
+    const pend = restores.get(cd.challenge); restores.delete(cd.challenge);
+    need(pend && pend.exp > Date.now(), 400, 'restore challenge unknown, used or expired; tap the button again');
+    need(cd.type === 'webauthn.get' && cd.origin === ORIGIN && cd.crossOrigin !== true, 400, 'clientDataJSON type/origin mismatch');
+    const ad = parseAuthenticatorData(adBytes, { rpId: RP_ID });
+    need(ad.rpIdOk, 400, 'rpIdHash mismatch');
+    need(ad.flags.up && ad.flags.uv, 400, 'user verification (Face ID / Touch ID / fingerprint / device PIN) is required');
+    let cands;
+    try { cands = recoverAssertionKeys({ authenticatorData: adBytes, clientDataJSON: cdBytes, signature: fromB64url(String(b.signature ?? '')) }); } catch (err) { throw httpError(400, `signature: ${err.message}`); }
+    const keyIds = cands.map((pt) => ({ pt, keyId: toHex(keyIdOf(pt)) }));
+    // Already known here (state survived): this is a sign-in, return the existing profile.
+    const known = [...cfis.values()].find((c) => keyIds.some((k) => k.keyId === c.keyId));
+    if (known) { need(String(b.credentialId) === known.credentialId, 400, 'unexpected credential'); known.history.push({ at: new Date().toISOString(), event: 'signed-in-with-existing-passkey' }); return publicCfi(known); }
+    const onChain = [];
+    for (const k of keyIds) { const rec = await chainCfi(k.keyId); if (rec) onChain.push({ ...k, rec }); }
+    need(onChain.length === 1, 404, 'this passkey is not enrolled on the staging contract (or not uniquely); set up a new passkey instead');
+    const [{ pt, keyId, rec }] = onChain;
+    need(!rec.revokedAtSeq, 403, `this passkey was revoked on-chain (at seq ${rec.revokedAtSeq}); it cannot be restored`);
+    need(!rec.schoolRevokedAtSeq, 403, 'this passkey\'s school was revoked on-chain; it cannot be restored');
+    need(!SCHOOL_ID || rec.schoolId === SCHOOL_ID, 403, 'this passkey is enrolled in a different school');
+    let block;
+    try { block = normalizeSignatureBlock({ cfiName: b.cfiName || 'Synthetic Instructor (restored)', certificateNumber: b.certificateNumber || '7654321', currencyKind: b.currencyKind ?? 'RE', currencyDate: b.currencyDate || new Date(Date.now() + 60 * 864e5).toISOString().slice(0, 10), signedDate: '1970-01-01' }); }
+    catch (err) { throw httpError(400, err.message); }
+    const faa = faaLookupStub(block);
+    if (faa.status !== 'match') throw httpError(422, `FAA Airmen Inquiry (stub): ${faa.status}. ${faa.note}`, { faa });
+    const cfiId = randomUUID(), now = new Date().toISOString();
+    const spki = b64url(pointToSpki(pt).export({ format: 'der', type: 'spki' }));
+    const job = { id: randomUUID(), type: 'enroll', payload: { schoolId: rec.schoolId, keyId, cfiRef: rec.cfiRef }, status: 'done', createdAt: Date.now(), attempts: 0, restored: true,
+      result: { txHash: b.enrollTxHash && /^[0-9a-f]{64}$/.test(b.enrollTxHash) ? b.enrollTxHash : null, txId: null, blockHeight: null, proveMs: null, error: null, note: 'read from the on-chain cfiKeys set at restore time' } };
+    jobs.set(job.id, job);
+    const cfi = {
+      credential: { ...assertionFacts({ credentialId: b.credentialId, authenticatorData: adBytes }), restoredFromAssertion: true },
+      revocation: null, history: [{ at: now, event: 'restored-from-existing-passkey', note: 'public key recovered from a passkey signature and matched to the on-chain enrollment' }],
+      cfiId, ...block, faa, credentialId: String(b.credentialId), spki, keyId, cfiRef: rec.cfiRef,
+      passkey: { backupEligible: ad.flags.be, backedUp: ad.flags.bs, kind: ad.flags.be ? 'synced (backup-eligible)' : 'device-bound', transports: [] },
+      userAgent: String(req.headers['user-agent'] ?? '').slice(0, 200), createdAt: now, restored: true, enrollJobId: job.id,
+    };
+    cfis.set(cfiId, cfi);
+    return publicCfi(cfi);
+  },
 
   // 1. CFI setup: FAA stub + currency date, then passkey registration (UV required, ES256, platform authenticator)
   'POST /api/register/options': async (req) => {
@@ -297,6 +397,15 @@ const routes = {
     return { ok: true };
   },
   'POST /api/worker/heartbeat': (req) => { workerAuth(req); return { ok: true }; },
+  // Operator-only e2e hook (worker token): forget ONE headless-test CFI to simulate the server losing its state.
+  'POST /api/worker/test-forget': async (req) => {
+    workerAuth(req);
+    const b = await body(req); const c = getCfi(b.cfiId);
+    need(/headless/i.test(c.cfiName), 403, 'only headless e2e test profiles can be forgotten');
+    for (const [id, e] of entries) if (e.cfiId === c.cfiId) entries.delete(id);
+    cfis.delete(c.cfiId);
+    return { ok: true };
+  },
 };
 
 function publicCfi(c) {
@@ -304,7 +413,7 @@ function publicCfi(c) {
   return {
     cfiId: c.cfiId, cfiName: c.cfiName, certificateNumber: c.certificateNumber, currencyKind: c.currencyKind, currencyDate: c.currencyDate,
     signingBlocked: today() > c.currencyDate || !!c.revocation, faa: c.faa, passkey: c.passkey, keyId: c.keyId, credentialId: c.credentialId,
-    credential: c.credential, credentialNote: CREDENTIAL_FACTS_NOTE, revocation: c.revocation, history: c.history,
+    credential: c.credential, credentialNote: CREDENTIAL_FACTS_NOTE, revocation: c.revocation, history: c.history, restored: !!c.restored,
     enrollment: j ? { status: j.status, txHash: j.result?.txHash ?? null, explorer: j.result?.txHash ? EXPLORER(j.result.txHash) : null, error: j.result?.error ?? null, proveMs: j.result?.proveMs ?? null } : null,
   };
 }
@@ -338,18 +447,19 @@ const server = http.createServer(async (req, res) => {
     const pm = url.pathname.match(/^\/(print|verify)\/([0-9a-f-]{36}|[0-9a-f]{64})$/);
     if (req.method === 'GET' && pm) {
       const e = pm[2].length === 64 ? [...entries.values()].find((x) => x.entryHash === pm[2]) : entries.get(pm[2]);
-      if (!e) { res.writeHead(404, { 'content-type': 'text/plain', ...SEC }); return res.end('Unknown entry on this staging server (memory is cleared on restart).'); }
+      if (!e) { res.writeHead(404, { 'content-type': 'text/plain', ...SEC }); return res.end(`Unknown entry on this staging server${persistNote}.`); }
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', ...SEC });
       return res.end(await printable(e, `${ORIGIN}/verify/${e.entryHash}`));
     }
     const h = routes[`${req.method} ${url.pathname}`];
     if (!h) return send(res, 404, { error: 'not found' }, SEC);
     if (req.method === 'POST' && !url.pathname.startsWith('/api/worker/') && req.headers.origin !== ORIGIN) return send(res, 403, { error: 'bad origin' }, SEC);
-    send(res, 200, await h(req, url), SEC);
+    try { send(res, 200, await h(req, url), SEC); } finally { if (req.method === 'POST') store.changed(); }
   } catch (err) {
     const status = err.status ?? 500;
     if (status === 500) console.error('error', req.method, url.pathname, err.message);
     send(res, status, { error: err.message, ...(err.extra ?? {}) }, SEC);
   }
 });
-server.listen(PORT, () => console.log(`cfi-passkey staging on :${PORT} rpId=${RP_ID} contract=${CONTRACT || '(unset)'} school=${SCHOOL_ID ? SCHOOL_ID.slice(0, 8) + '…' : '(unset)'}`));
+server.listen(PORT, () => console.log(`cfi-passkey staging on :${PORT} rpId=${RP_ID} contract=${CONTRACT || '(unset)'} school=${SCHOOL_ID ? SCHOOL_ID.slice(0, 8) + '…' : '(unset)'} state=${store.kind}`));
+for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, async () => { console.log(sig, '- flushing state'); server.close(); try { await store.close(); } catch (e) { console.error('final flush failed', e.message); } process.exit(0); });

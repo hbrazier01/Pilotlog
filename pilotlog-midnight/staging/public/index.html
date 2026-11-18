@@ -17,6 +17,13 @@ a{color:var(--b)}
 <h1>PilotLog · CFI passkey signing</h1>
 <div id="status" class="muted">Loading…</div>
 
+<section id="restore" class="card hidden">
+  <h2>Already set up a signing passkey here?</h2>
+  <p class="muted">Use the passkey you already created for this staging site. You'll be asked for Touch ID, Face ID, fingerprint or PIN; nothing is re-registered and no new enrollment is needed.</p>
+  <button id="btnRestore">Use my existing passkey</button>
+  <div id="restoreMsg"></div>
+</section>
+
 <section id="setup" class="card hidden">
   <h2>1 · Set up as a (synthetic) CFI</h2>
   <p class="muted">Your name and certificate number are checked against the FAA Airmen Inquiry in production. Here it is a <b>stub</b>: use a name containing “Synthetic”, “Test” or “Demo”. A number starting with 0 simulates “not found”.</p>
@@ -46,7 +53,7 @@ async function api(path, body) {
   if (!r.ok) throw Object.assign(new Error(j.error || r.statusText), { data: j, status: r.status });
   return j;
 }
-let CFG, ME, CURRENT, timer;
+let CFG, ME, CURRENT, timer, LOST = false;
 const STATEMENT = 'I certify that I have reviewed this logbook entry, that it accurately records the training I gave, and that I am signing it with my own passkey.';
 const standingTxt = (e) => !e.standing?.standing || e.standing.standing === 'good' ? (e.standing?.notes?.length ? `<div class="muted">${e.standing.notes.map(esc).join('<br>')}</div>` : '') : `<div><span class="pill bad">${esc(e.standing.standing)}</span> <span class="muted">${e.standing.notes.map(esc).join('<br>')}</span></div>`;
 const statusPill = (e) => ({ unsigned: '<span class="pill">unsigned · editable</span>', signed: '<span class="pill">🔒 Signed + Locked</span>', superseded: '<span class="pill">superseded by a newer version · old signature valid for this version only</span>', invalid: `<span class="pill bad">✗ invalid: ${esc(e.statusReason)}</span>` })[e.status] || esc(e.status);
@@ -73,11 +80,14 @@ async function boot() {
   setInterval(async () => { try { CFG = await api('/api/config'); renderStatus(); } catch { /* keep the last status */ } }, 10_000);
   if (!window.PublicKeyCredential) { $('status').insertAdjacentHTML('beforeend', '<p class="bad statusExtra">This browser does not support passkeys.</p>'); return; }
   const saved = JSON.parse(localStorage.getItem('cfiStaging') || 'null');
-  if (saved) { try { ME = await api('/api/cfi?id=' + encodeURIComponent(saved.cfiId)); } catch (e) { if (e.status === 404) { localStorage.removeItem('cfiStaging'); ME = null; $('status').insertAdjacentHTML('beforeend', '<p class="muted statusExtra">The staging server restarted and forgot your profile. Set up again.</p>'); } else throw e; } }
+  // A 404 no longer deletes the saved profile: offer "Use my existing passkey" instead (the passkey and its on-chain
+  // enrollment are still valid even if this staging server lost its copy of the profile).
+  if (saved) { try { ME = await api('/api/cfi?id=' + encodeURIComponent(saved.cfiId)); } catch (e) { if (e.status === 404) { ME = null; LOST = true; } else throw e; } }
   render();
 }
 function render() {
-  $('setup').classList.toggle('hidden', !!ME);
+  $('setup').classList.toggle('hidden', !!ME); $('restore').classList.toggle('hidden', !!ME);
+  if (!ME && LOST) $('restoreMsg').innerHTML = '<p class="muted">This staging server no longer has your profile on file. Your passkey is still valid: tap <b>Use my existing passkey</b> (don\'t set up a new one).</p>';
   $('me').classList.toggle('hidden', !ME); $('list').classList.toggle('hidden', !ME);
   if (!ME) { const d = new Date(Date.now() + 60 * 864e5); $('re').value = d.toISOString().slice(0, 10); return; }
   const en = ME.enrollment || {};
@@ -86,6 +96,7 @@ function render() {
     <tr><td>FAA check</td><td>${esc(ME.faa.status)} <span class="muted">(${esc(ME.faa.source)})</span></td></tr>
     <tr><td>RE end date</td><td>${esc(ME.currencyDate)} ${today() > ME.currencyDate ? '<span class="bad">· passed: signing blocked</span>' : ''}</td></tr>
     ${ME.revocation ? `<tr><td>Revoked</td><td class="bad">${esc(ME.revocation.reason)} at ${esc(ME.revocation.revokedAt)}${ME.revocation.suspectedFrom ? ` (suspected from ${esc(ME.revocation.suspectedFrom)})` : ''}${ME.revocation.note ? ` · ${esc(ME.revocation.note)}` : ''}. Signing blocked; earlier signatures kept.</td></tr>` : ''}
+    ${ME.restored ? '<tr><td>Profile</td><td>Restored from your existing passkey (matched to its on-chain enrollment)</td></tr>' : ''}
     <tr><td>School enrollment</td><td>${en.status === 'done' ? `<span class="ok">✓ Enrolled on Preview</span>${en.explorer ? ` · <a href="${esc(en.explorer)}" target="_blank" rel="noopener">tx</a>` : ''}` : chainTxt(en)}</td></tr></table>
     ${credTable(ME.credential, 'What the system can establish about this passkey (at registration)')}
     <p class="muted small">${esc(ME.credentialNote || '')}</p>
@@ -164,6 +175,18 @@ $('btnSetup').onclick = async () => {
     localStorage.setItem('cfiStaging', JSON.stringify({ cfiId: ME.cfiId }));
     render();
   } catch (err) { alert(err.name === 'NotAllowedError' ? 'Cancelled.' : err.message); } finally { btn.disabled = false; }
+};
+$('btnRestore').onclick = async () => {
+  const btn = $('btnRestore'), msg = $('restoreMsg'); btn.disabled = true; msg.innerHTML = '<p class="muted">Waiting for your passkey…</p>';
+  try {
+    const o = await api('/api/restore/options', {});
+    const p = o.publicKey;
+    const cred = await navigator.credentials.get({ publicKey: { challenge: unb64u(p.challenge), rpId: p.rpId, timeout: p.timeout, userVerification: 'required', allowCredentials: [] } });
+    const r = cred.response;
+    ME = await api('/api/restore/finish', { credentialId: b64u(cred.rawId), authenticatorData: b64u(r.authenticatorData), clientDataJSON: b64u(r.clientDataJSON), signature: b64u(r.signature), cfiName: $('name').value, certificateNumber: $('cert').value, currencyKind: 'RE', currencyDate: $('re').value });
+    localStorage.setItem('cfiStaging', JSON.stringify({ cfiId: ME.cfiId }));
+    LOST = false; msg.innerHTML = ''; render();
+  } catch (err) { msg.innerHTML = `<p class="bad">${esc(err.name === 'NotAllowedError' ? 'Cancelled or timed out.' : err.message)}</p>`; } finally { btn.disabled = false; }
 };
 $('btnReset').onclick = () => { localStorage.removeItem('cfiStaging'); ME = null; $('review').classList.add('hidden'); render(); };
 boot().catch(e => { $('status').innerHTML = '<span class="bad">' + esc(e.message) + '</span>'; });
