@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PilotLog · CFI passkey signing (STAGING)</title>
+<style>
+:root{--b:#0b5cad}*{box-sizing:border-box}body{font:16px/1.45 -apple-system,system-ui,sans-serif;margin:0;color:#111;background:#f6f7f9}
+main{max-width:640px;margin:0 auto;padding:16px}h1{font-size:20px;margin:8px 0}h2{font-size:17px;margin:0 0 8px}
+.banner{background:#fff3cd;border-radius:8px;padding:8px 10px;font-size:13px}.card{background:#fff;border-radius:12px;padding:14px;margin:12px 0;box-shadow:0 1px 3px #0001}
+label{display:block;font-size:13px;color:#444;margin-top:8px}input,select{width:100%;font-size:16px;padding:10px;border:1px solid #ccc;border-radius:8px}
+button{font-size:16px;padding:12px 14px;border-radius:10px;border:0;background:var(--b);color:#fff;width:100%;margin-top:10px}button.sec{background:#e8eef6;color:var(--b)}button:disabled{opacity:.5}
+table{width:100%;border-collapse:collapse;font-size:14px}td{border-bottom:1px solid #eee;padding:5px 2px;vertical-align:top}td:first-child{color:#666;width:40%}
+.sig{font-family:ui-monospace,Menlo,monospace;font-size:13px;background:#f3f3f3;padding:8px;border-radius:6px;word-break:break-word}
+.ok{color:#0a7a2f}.bad{color:#b00020}.muted{color:#666;font-size:13px}.pill{display:inline-block;font-size:12px;padding:2px 8px;border-radius:99px;background:#eef}.hidden{display:none}
+.cert{display:flex;gap:10px;align-items:flex-start;margin-top:10px;background:#f4f8ff;padding:10px;border-radius:8px}.cert input{width:auto;margin-top:4px;transform:scale(1.4)}
+a{color:var(--b)}
+.small{font-size:12px}.facts td{padding:2px 6px;font-size:13px}</style></head><body><main>
+<div class="banner"><b>Prototype — not an FAA endorsement.</b> This is a technical test of passkey signing, not a logbook endorsement and not a substitute for any required one.<br><b>STAGING · SYNTHETIC DATA ONLY.</b> Midnight Preview testnet. Do not enter real names, certificate numbers or flights.</div>
+<h1>PilotLog · CFI passkey signing</h1>
+<div id="status" class="muted">Loading…</div>
+
+<section id="restore" class="card hidden">
+  <h2>Already set up a signing passkey here?</h2>
+  <p class="muted">Use the passkey you already created for this staging site. You'll be asked for Touch ID, Face ID, fingerprint or PIN; nothing is re-registered and no new enrollment is needed.</p>
+  <button id="btnRestore">Use my existing passkey</button>
+  <div id="restoreMsg"></div>
+</section>
+
+<section id="setup" class="card hidden">
+  <h2>1 · Set up as a (synthetic) CFI</h2>
+  <p class="muted">Your name and certificate number are checked against the FAA Airmen Inquiry in production. Here it is a <b>stub</b>: use a name containing “Synthetic”, “Test” or “Demo”. A number starting with 0 simulates “not found”.</p>
+  <label>Name <input id="name" value="Synthetic Instructor" autocomplete="off"></label>
+  <label>Certificate number <input id="cert" value="7654321" inputmode="numeric" autocomplete="off"></label>
+  <label>Recent-experience (RE) end date <input id="re" type="date"></label>
+  <button id="btnSetup">Create my signing passkey</button>
+  <p class="muted">Your phone will ask for Face ID, Touch ID, fingerprint or your device PIN. No keys, wallets or fees are ever shown; PilotLog's server handles the proofs and network fees.</p>
+</section>
+
+<section id="me" class="card hidden"></section>
+
+<section id="review" class="card hidden"></section>
+
+<section id="list" class="card hidden"><h2>Your entries</h2><div id="entries"></div></section>
+
+<section class="card"><h2>Reset</h2><p class="muted">Forget this staging profile on this device (the passkey stays in your device's password manager; delete it there if you like).</p><button class="sec" id="btnReset">Forget me on this device</button></section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const b64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const unb64u = (s) => Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {});
+  const j = await r.json().catch(() => ({ error: r.statusText }));
+  if (!r.ok) throw Object.assign(new Error(j.error || r.statusText), { data: j, status: r.status });
+  return j;
+}
+let CFG, ME, CURRENT, timer, LOST = false;
+const STATEMENT = 'I certify that I have reviewed this logbook entry, that it accurately records the training I gave, and that I am signing it with my own passkey.';
+const standingTxt = (e) => !e.standing?.standing || e.standing.standing === 'good' ? (e.standing?.notes?.length ? `<div class="muted">${e.standing.notes.map(esc).join('<br>')}</div>` : '') : `<div><span class="pill bad">${esc(e.standing.standing)}</span> <span class="muted">${e.standing.notes.map(esc).join('<br>')}</span></div>`;
+const statusPill = (e) => ({ unsigned: '<span class="pill">unsigned · editable</span>', signed: '<span class="pill">🔒 Signed + Locked</span>', superseded: '<span class="pill">superseded by a newer version · old signature valid for this version only</span>', invalid: `<span class="pill bad">✗ invalid: ${esc(e.statusReason)}</span>` })[e.status] || esc(e.status);
+const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Denver' }).format(new Date());
+const yn = (b) => b ? '1 (yes)' : '0 (no)';
+const credTable = (c, title) => !c ? '' : `<p class="muted" style="margin:8px 0 2px"><b>${esc(title)}</b> — note these down</p><table class="facts">
+  <tr><td>Credential ID</td><td style="word-break:break-all">${esc(c.credentialId)}</td></tr>
+  <tr><td>User verified (UV)</td><td>${yn(c.uv)}</td></tr>
+  <tr><td>Backup-eligible (BE)</td><td>${yn(c.backupEligible)}</td></tr>
+  <tr><td>Backed up (BS)</td><td>${yn(c.backedUp)}</td></tr>
+  ${c.attestation ? `<tr><td>Attestation</td><td>${esc(c.attestation.format)}${c.attestation.statementPresent ? ' (statement present, not verified)' : ' (no statement; make/model not verified)'}</td></tr>` : ''}
+  ${c.attestation ? `<tr><td>AAGUID</td><td>${c.aaguidDisclosed ? esc(c.aaguid) + ' (reported, not verified)' : 'not disclosed'}</td></tr>` : ''}
+  <tr><td>Kind (as reported)</td><td>${esc(c.kindAsReported)}</td></tr></table>`;
+const fmtH = (t) => (t / 10).toFixed(1) + ' h';
+const chainTxt = (c) => !c ? '' : c.status === 'done' ? `<span class="ok">✓ recorded on Midnight Preview</span>${c.proveMs ? ` · proof ${(c.proveMs/1000).toFixed(1)} s` : ''}${c.explorer ? ` · <a href="${esc(c.explorer)}" target="_blank" rel="noopener">tx</a>` : ''}` : c.status === 'failed' ? `<span class="bad">✗ on-chain step failed: ${esc(c.error)}</span>` : `<span class="pill">${esc(c.status)}…</span> ${CFG?.prover?.online ? '' : '<span class="muted">(prover offline; it will run when the prover is back)</span>'}`;
+
+function renderStatus() {
+  const extra = $('status').querySelector('.statusExtra')?.outerHTML ?? '';
+  $('status').innerHTML = `<span class="statusLine">RP ID <b>${esc(CFG.rpId)}</b> · ${esc(CFG.network)} · prover ${CFG.prover.online ? '<span class="ok">online</span>' : '<span class="bad">offline</span>'}${CFG.queue ? ` · ${CFG.queue} job(s) queued` : ''}</span>` + extra;
+}
+async function boot() {
+  CFG = await api('/api/config');
+  renderStatus();
+  setInterval(async () => { try { CFG = await api('/api/config'); renderStatus(); } catch { /* keep the last status */ } }, 10_000);
+  if (!window.PublicKeyCredential) { $('status').insertAdjacentHTML('beforeend', '<p class="bad statusExtra">This browser does not support passkeys.</p>'); return; }
+  const saved = JSON.parse(localStorage.getItem('cfiStaging') || 'null');
+  // A 404 no longer deletes the saved profile: offer "Use my existing passkey" instead (the passkey and its on-chain
+  // enrollment are still valid even if this staging server lost its copy of the profile).
+  if (saved) { try { ME = await api('/api/cfi?id=' + encodeURIComponent(saved.cfiId)); } catch (e) { if (e.status === 404) { ME = null; LOST = true; } else throw e; } }
+  render();
+}
+function render() {
+  $('setup').classList.toggle('hidden', !!ME); $('restore').classList.toggle('hidden', !!ME);
+  if (!ME && LOST) $('restoreMsg').innerHTML = '<p class="muted">This staging server no longer has your profile on file. Your passkey is still valid: tap <b>Use my existing passkey</b> (don\'t set up a new one).</p>';
+  $('me').classList.toggle('hidden', !ME); $('list').classList.toggle('hidden', !ME);
+  if (!ME) { const d = new Date(Date.now() + 60 * 864e5); $('re').value = d.toISOString().slice(0, 10); return; }
+  const en = ME.enrollment || {};
+  $('me').innerHTML = `<h2>2 · Your signing passkey</h2>
+    <table><tr><td>CFI</td><td>${esc(ME.cfiName)} · ${esc(ME.certificateNumber)}CFI</td></tr>
+    <tr><td>FAA check</td><td>${esc(ME.faa.status)} <span class="muted">(${esc(ME.faa.source)})</span></td></tr>
+    <tr><td>RE end date</td><td>${esc(ME.currencyDate)} ${today() > ME.currencyDate ? '<span class="bad">· passed: signing blocked</span>' : ''}</td></tr>
+    ${ME.revocation ? `<tr><td>Revoked</td><td class="bad">${esc(ME.revocation.reason)} at ${esc(ME.revocation.revokedAt)}${ME.revocation.suspectedFrom ? ` (suspected from ${esc(ME.revocation.suspectedFrom)})` : ''}${ME.revocation.note ? ` · ${esc(ME.revocation.note)}` : ''}. Signing blocked; earlier signatures kept.</td></tr>` : ''}
+    ${ME.restored ? '<tr><td>Profile</td><td>Restored from your existing passkey (matched to its on-chain enrollment)</td></tr>' : ''}
+    <tr><td>School enrollment</td><td>${en.status === 'done' ? `<span class="ok">✓ Enrolled on Preview</span>${en.explorer ? ` · <a href="${esc(en.explorer)}" target="_blank" rel="noopener">tx</a>` : ''}` : chainTxt(en)}</td></tr></table>
+    ${credTable(ME.credential, 'What the system can establish about this passkey (at registration)')}
+    <p class="muted small">${esc(ME.credentialNote || '')}</p>
+    <button id="btnNew" ${en.status === 'done' && !ME.revocation ? '' : 'disabled'}>Review a new synthetic entry</button>
+    <details><summary class="muted">Test the RE-date block</summary><label>Set RE end date <input id="re2" type="date" value="${esc(ME.currencyDate)}"></label><button class="sec" id="btnRe">Update RE date</button></details>
+    <details><summary class="muted">Test revocation (you act as the school admin; staging records reason + time off-chain)</summary>
+      ${ME.revocation ? '<p class="muted">Already revoked.</p>' : `<label>Reason <select id="revReason"><option value="left-school">CFI left the school</option><option value="credential-compromised">Credential compromised (lost/stolen/account takeover)</option></select></label>
+      <label>Note (optional) <input id="revNote" maxlength="200" autocomplete="off"></label>
+      <button class="sec" id="btnRevoke">Revoke this passkey</button>`}
+      <p class="muted">To dispute one signature without revoking the CFI, use "dispute signature" on a signed entry.</p></details>`;
+  $('btnNew').onclick = () => newEntry();
+  $('btnRe').onclick = async () => { ME = await api('/api/cfi/currency', { cfiId: ME.cfiId, currencyDate: $('re2').value }); render(); };
+  if ($('btnRevoke')) $('btnRevoke').onclick = async () => { if (!confirm('Revoke this passkey? Signing will be blocked; existing signatures are kept.')) return; try { ME = await api('/api/cfi/revoke', { cfiId: ME.cfiId, reason: $('revReason').value, note: $('revNote').value }); render(); } catch (err) { alert(err.message); } };
+  loadEntries();
+}
+async function loadEntries() {
+  const list = await api('/api/entries?cfiId=' + encodeURIComponent(ME.cfiId));
+  $('entries').innerHTML = list.length ? list.map(e => `<div style="border-top:1px solid #eee;padding:8px 0">
+    <b>${esc(e.raw.date)}</b> ${esc(e.raw.aircraftIdent)} ${esc(e.raw.from)}→${esc(e.raw.to)} ${fmtH(e.raw.totalTenths)}
+    <span class="pill">v${e.version}</span> ${statusPill(e)}
+    <div class="muted">${e.signature ? esc(e.signature.line) + ` · UV=${e.signature.flags.uv ? 1 : 0} BE=${e.signature.flags.backupEligible ? 1 : 0} BS=${e.signature.flags.backedUp ? 1 : 0}` : ''}</div>
+    ${standingTxt(e)}
+    <div>${chainTxt(e.chain)}</div>
+    <div class="muted"><a href="/print/${esc(e.id)}" target="_blank">Print (PDF + QR)</a>
+    ${!e.locked ? ` · <a href="#" data-review="${esc(e.id)}">review &amp; sign</a>` : ''}${e.signature && !e.dispute ? ` · <a href="#" data-dispute="${esc(e.id)}">dispute signature</a>` : ''}${e.locked && !e.supersededBy ? ` · <a href="#" data-correct="${esc(e.id)}">edit (creates version ${e.version + 1}; needs a new signature)</a>` : ''}</div></div>`).join('') : '<p class="muted">None yet.</p>';
+  document.querySelectorAll('[data-review]').forEach(a => a.onclick = async (ev) => { ev.preventDefault(); showReview(await api('/api/entry?id=' + a.dataset.review)); });
+  document.querySelectorAll('[data-dispute]').forEach(a => a.onclick = async (ev) => { ev.preventDefault(); const note = prompt('Why is this signature disputed? (synthetic test; stored with a timestamp)'); if (note === null) return; try { await api('/api/entries/dispute', { cfiId: ME.cfiId, entryId: a.dataset.dispute, note }); loadEntries(); } catch (err) { alert(err.message); } });
+  document.querySelectorAll('[data-correct]').forEach(a => a.onclick = async (ev) => { ev.preventDefault(); showReview(await api('/api/entries', { cfiId: ME.cfiId, supersedes: a.dataset.correct })); loadEntries(); });
+  clearTimeout(timer);
+  if (list.some(e => e.chain && !['done', 'failed'].includes(e.chain.status)) || !['done', 'failed'].includes(ME.enrollment?.status)) timer = setTimeout(async () => { CFG = await api('/api/config'); ME = await api('/api/cfi?id=' + ME.cfiId); render(); }, 5000);
+}
+async function newEntry() { showReview(await api('/api/entries', { cfiId: ME.cfiId })); loadEntries(); }
+function showReview(e) {
+  CURRENT = e; const r = e.raw;
+  $('review').classList.remove('hidden');
+  $('review').innerHTML = `<h2>3 · Review and certify · version ${e.version}</h2>
+    ${e.supersedes ? `<p><span class="pill">edit → version ${e.version}</span> Version ${e.version - 1} (hash ${esc(e.supersedes.slice(0, 16))}…) is signed and locked; its signature stays valid for that version only. This new version needs its own signature.</p>` : ''}
+    <table><tr><td>Date</td><td>${esc(r.date)}</td></tr><tr><td>Student</td><td>${esc(e.student)}</td></tr>
+    <tr><td>Aircraft</td><td>${esc(r.aircraftIdent)} (${esc(r.aircraftType)})</td></tr><tr><td>Route</td><td>${esc([r.from, ...(r.route || []), r.to].join(' → '))}</td></tr>
+    <tr><td>Total / dual received</td><td>${fmtH(r.totalTenths)} / ${fmtH(r.dualReceivedTenths)}</td></tr><tr><td>Day landings</td><td>${esc(r.landingsDay)}</td></tr>
+    <tr><td>Maneuvers</td><td>${esc((r.maneuvers || []).join(', '))}</td></tr><tr><td>Remarks</td><td>${esc(r.remarks)}</td></tr></table>
+    <p class="muted">Signature block that will be applied (AC 61-65K format):</p><div class="sig">${esc(e.signatureBlockPreview)}</div>
+    <label class="cert"><input type="checkbox" id="certify"> <span>${esc(STATEMENT)}</span></label>
+    <button id="btnSign" disabled>Certify and sign with passkey</button><button class="sec" id="btnCancel">Cancel</button><div id="signMsg"></div>`;
+  $('certify').onchange = () => { $('btnSign').disabled = !$('certify').checked; };
+  $('btnCancel').onclick = () => { $('review').classList.add('hidden'); };
+  $('btnSign').onclick = () => sign(e);
+  $('review').scrollIntoView({ behavior: 'smooth' });
+}
+async function sign(e) {
+  const msg = $('signMsg'); $('btnSign').disabled = true; msg.innerHTML = '<p class="muted">Preparing a one-time challenge…</p>';
+  try {
+    const ch = await api('/api/entries/challenge', { cfiId: ME.cfiId, entryId: e.id, certify: $('certify').checked, statement: STATEMENT });
+    msg.innerHTML = `<p class="muted">Confirm with Face ID / Touch ID / fingerprint / PIN to sign:</p><div class="sig">${esc(ch.signatureBlock)}</div>`;
+    const pk = ch.publicKey;
+    const cred = await navigator.credentials.get({ publicKey: { challenge: unb64u(pk.challenge), rpId: pk.rpId, timeout: pk.timeout, userVerification: 'required', allowCredentials: pk.allowCredentials.map(c => ({ type: 'public-key', id: unb64u(c.id) })) } });
+    const res = cred.response;
+    const out = await api('/api/entries/sign', { cfiId: ME.cfiId, entryId: e.id, credentialId: b64u(cred.rawId), authenticatorData: b64u(res.authenticatorData), clientDataJSON: b64u(res.clientDataJSON), signature: b64u(res.signature) });
+    msg.innerHTML = `<p class="ok">✓ Signed and locked. Signature verified by PilotLog; the on-chain proof is being generated (≈30–90 s).</p><div class="sig">${esc(out.signature.line)}</div>${credTable(out.signature.credential, 'What this signature establishes about the passkey')}<p><a href="/print/${esc(out.id)}" target="_blank">Print (PDF + QR)</a></p>`;
+    loadEntries();
+  } catch (err) {
+    const retry = err.data?.action === 'retry';
+    msg.innerHTML = `<p class="bad">${esc(err.name === 'NotAllowedError' ? 'Cancelled or timed out. Nothing was signed.' : err.message)}</p>${retry ? '<p class="muted">Your browser added extra fields this time; tap Certify and sign again.</p>' : ''}`;
+    $('btnSign').disabled = !$('certify').checked;
+  }
+}
+$('btnSetup').onclick = async () => {
+  const btn = $('btnSetup'); btn.disabled = true;
+  try {
+    const o = await api('/api/register/options', { cfiName: $('name').value, certificateNumber: $('cert').value, currencyKind: 'RE', currencyDate: $('re').value });
+    const p = o.publicKey;
+    const cred = await navigator.credentials.create({ publicKey: { ...p, challenge: unb64u(p.challenge), user: { ...p.user, id: unb64u(p.user.id) } } });
+    const r = cred.response;
+    if (!r.getPublicKey) throw new Error('This browser cannot export the passkey public key (needs iOS 16+/Android Chrome 85+/Safari 16+).');
+    ME = await api('/api/register/finish', { cfiId: o.cfiId, credentialId: b64u(cred.rawId), clientDataJSON: b64u(r.clientDataJSON), authenticatorData: b64u(r.getAuthenticatorData()), publicKeySpki: b64u(r.getPublicKey()), publicKeyAlgorithm: r.getPublicKeyAlgorithm(), attestationObject: r.attestationObject ? b64u(r.attestationObject) : null, transports: r.getTransports ? r.getTransports() : [] });
+    localStorage.setItem('cfiStaging', JSON.stringify({ cfiId: ME.cfiId }));
+    render();
+  } catch (err) { alert(err.name === 'NotAllowedError' ? 'Cancelled.' : err.message); } finally { btn.disabled = false; }
+};
+$('btnRestore').onclick = async () => {
+  const btn = $('btnRestore'), msg = $('restoreMsg'); btn.disabled = true; msg.innerHTML = '<p class="muted">Waiting for your passkey…</p>';
+  try {
+    const o = await api('/api/restore/options', {});
+    const p = o.publicKey;
+    const cred = await navigator.credentials.get({ publicKey: { challenge: unb64u(p.challenge), rpId: p.rpId, timeout: p.timeout, userVerification: 'required', allowCredentials: [] } });
+    const r = cred.response;
+    ME = await api('/api/restore/finish', { credentialId: b64u(cred.rawId), authenticatorData: b64u(r.authenticatorData), clientDataJSON: b64u(r.clientDataJSON), signature: b64u(r.signature), cfiName: $('name').value, certificateNumber: $('cert').value, currencyKind: 'RE', currencyDate: $('re').value });
+    localStorage.setItem('cfiStaging', JSON.stringify({ cfiId: ME.cfiId }));
+    LOST = false; msg.innerHTML = ''; render();
+  } catch (err) { msg.innerHTML = `<p class="bad">${esc(err.name === 'NotAllowedError' ? 'Cancelled or timed out.' : err.message)}</p>`; } finally { btn.disabled = false; }
+};
+$('btnReset').onclick = () => { localStorage.removeItem('cfiStaging'); ME = null; $('review').classList.add('hidden'); render(); };
+boot().catch(e => { $('status').innerHTML = '<span class="bad">' + esc(e.message) + '</span>'; });
+</script></body></html>

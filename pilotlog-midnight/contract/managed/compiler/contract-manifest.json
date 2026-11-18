@@ -1,0 +1,219 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.36.0",
+  "compiler-commit": "b5d9e4dfc532fe47011c4f6296e254f4853eb469",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 20874,
+      "hash": "e37539291556861f1fcd795f03d9cc5504058ac10f63808ac53b3e4276a216b4"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 16511,
+      "hash": "6fe1191a466126d50525c7d5aaa2448a14ae4f5e61b437ae8269fe67f25b0cc9"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 304592,
+      "hash": "8db1ebd2f6e27a3506ca104ac57cf8ceb555ec111940bde31f00cd7fdcf44914"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 13616,
+      "hash": "f7bbb0f4c318921644a36076ade110d642564c023c6551857a80e2df41adda14"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "endorseEntry.bzkir": {
+      "type": "file",
+      "size": 53955,
+      "hash": "0e08b80dc9051fc662b673d4f2f1b77830f4b0009dc286583268c39050854c01"
+    },
+    "endorseEntry.zkir": {
+      "type": "file",
+      "size": 172725,
+      "hash": "19432c64f0433bab98356265406bf2a3e536610defff12433fbbb9d67c961032"
+    },
+    "rootOnboardSchool.bzkir": {
+      "type": "file",
+      "size": 4395,
+      "hash": "ec6e101ef7718b3974271c8d0091e2ea6c3445d0e6ba3bc70de86b1828215a80"
+    },
+    "rootOnboardSchool.zkir": {
+      "type": "file",
+      "size": 15885,
+      "hash": "4a516408fbcbea8573e28a9c385a5dcf8c2aa50cc189013753be96a4c1372454"
+    },
+    "rootRevokeSchool.bzkir": {
+      "type": "file",
+      "size": 3828,
+      "hash": "e2be3cd1603c09049497c08cc06499178116a28a8afe290976725103b05ee640"
+    },
+    "rootRevokeSchool.zkir": {
+      "type": "file",
+      "size": 14306,
+      "hash": "39cbbd888e77a753691174170a39c08de658428eeadc408f972a5d7e1b037519"
+    },
+    "rootSetKey.bzkir": {
+      "type": "file",
+      "size": 4579,
+      "hash": "4c2080ec190a691cdf18153cae0089d73ed65b9a402273fbeef015dce1edb8b9"
+    },
+    "rootSetKey.zkir": {
+      "type": "file",
+      "size": 16465,
+      "hash": "1d5754da6c7dcabe1e237b7729aeafa5b651c207894c81f94ce6068124c81228"
+    },
+    "rootSetSchoolAdmin.bzkir": {
+      "type": "file",
+      "size": 4825,
+      "hash": "efa2ef8251ff56c12c8ad7dff7f554b83facb50d616874e32820d2295c0a26aa"
+    },
+    "rootSetSchoolAdmin.zkir": {
+      "type": "file",
+      "size": 17086,
+      "hash": "efbb3c8736b1ca1eee61c28bf2f63114d148204021699b482406445c88e5b4bc"
+    },
+    "schoolEnrollCfi.bzkir": {
+      "type": "file",
+      "size": 53558,
+      "hash": "fb83b86a736cc1a1ac1068e73c47fab2c472bfcaf9ec97123afddde2656d738a"
+    },
+    "schoolEnrollCfi.zkir": {
+      "type": "file",
+      "size": 171689,
+      "hash": "bbe7b12e6604cb1be1914218bb8dfd41750080b9f96d0bef1b5ab568e1dcc6ca"
+    },
+    "schoolRevokeCfi.bzkir": {
+      "type": "file",
+      "size": 53875,
+      "hash": "330210a6863edffcb66bd7dafc3a717c07a1a41a426cc9c7b3c3382648c2d751"
+    },
+    "schoolRevokeCfi.zkir": {
+      "type": "file",
+      "size": 172876,
+      "hash": "449bd00a2161ac0d13b51ace13343addef9d2f04579dd1a0aa761c70d0b3e27f"
+    },
+    "schoolRotateAdmin.bzkir": {
+      "type": "file",
+      "size": 54113,
+      "hash": "25857807eefd23fcf47c35897ac033d0e94f7412a327bf06583c86331567af16"
+    },
+    "schoolRotateAdmin.zkir": {
+      "type": "file",
+      "size": 173139,
+      "hash": "9df48f787e110e7016fc7ba412e6690c1f3616c246958fa6d84d727e95160526"
+    },
+    "selfRevoke.bzkir": {
+      "type": "file",
+      "size": 52718,
+      "hash": "909bb94e20e10e5e2eb0c8dcc44f5b29f78484768ffbcf17f59161c2e3a04dca"
+    },
+    "selfRevoke.zkir": {
+      "type": "file",
+      "size": 168997,
+      "hash": "4ccbee3f8b0da173859c842f2617cf0eaf8e5d0e89181071cf7e6974c464ff5a"
+    }
+  },
+  "keys": {
+    "type": "directory",
+    "endorseEntry.prover": {
+      "type": "file",
+      "size": 234940649,
+      "hash": "7b4c1b7f23545d3ccb55c0d23d89b03acb6d47b1873abad9723245fd900ded92"
+    },
+    "endorseEntry.verifier": {
+      "type": "file",
+      "size": 2745,
+      "hash": "42b49e50c2ac12a632667736fedde8f5e8da3732aa2d2b9cea1e276f782941ab"
+    },
+    "rootOnboardSchool.prover": {
+      "type": "file",
+      "size": 234891087,
+      "hash": "b423d461fbf66347ab97e7ee267d8a1b175b476b22ad60bb7363bda52a2666d9"
+    },
+    "rootOnboardSchool.verifier": {
+      "type": "file",
+      "size": 2745,
+      "hash": "6591f44953710e5750705869b3e8775a531fc7bcc9f9cebb37a3eae25d2bf3c0"
+    },
+    "rootRevokeSchool.prover": {
+      "type": "file",
+      "size": 234890520,
+      "hash": "6d32616228c1c372906f1b74cfa8572989aeaa13dcd793ea5355fe0fda436cc8"
+    },
+    "rootRevokeSchool.verifier": {
+      "type": "file",
+      "size": 2745,
+      "hash": "237292cb4d557c286d0c76d5f953b8cbcfaf48b9a4f16bb7950721190e067b14"
+    },
+    "rootSetKey.prover": {
+      "type": "file",
+      "size": 234891271,
+      "hash": "f478f758d0368b0fbb10776c5840b1c6e31d964bdf4d44acb5ba3405dfe53b87"
+    },
+    "rootSetKey.verifier": {
+      "type": "file",
+      "size": 2745,
+      "hash": "b19646301d922d2e39533d019fd8f99e5f274ac22c5f3152531b3e988494a487"
+    },
+    "rootSetSchoolAdmin.prover": {
+      "type": "file",
+      "size": 234891517,
+      "hash": "7b1c0550092c0460876763de0d5153f8d31bd9e254babd299a8c2f5a7f2957dd"
+    },
+    "rootSetSchoolAdmin.verifier": {
+      "type": "file",
+      "size": 2745,
+      "hash": "599bc62b97edac5183dd37651231cf091990ff7c3e765d33c5f59e2c9b0d9c19"
+    },
+    "schoolEnrollCfi.prover": {
+      "type": "file",
+      "size": 234940252,
+      "hash": "c34275f99c3ead7bd74d9609123f100d303b98ee98e60aa9ae40d86b666d59f0"
+    },
+    "schoolEnrollCfi.verifier": {
+      "type": "file",
+      "size": 2745,
+      "hash": "8f73a627388c7f6e0b1de1d9e104aabee9c828996e8d2b9d165df44c52dd6282"
+    },
+    "schoolRevokeCfi.prover": {
+      "type": "file",
+      "size": 234940569,
+      "hash": "6fb529680d3b82925975a21d8fc1c365d6bddc951364a742693b59e94f932f92"
+    },
+    "schoolRevokeCfi.verifier": {
+      "type": "file",
+      "size": 2745,
+      "hash": "ab9f34af450036b4b2934e3c06ee29694584b36adad02d699524311a519946ab"
+    },
+    "schoolRotateAdmin.prover": {
+      "type": "file",
+      "size": 234940807,
+      "hash": "ecf72feffa5cea76595e5d782714457226ab54f5a2255589b972de0668fd076d"
+    },
+    "schoolRotateAdmin.verifier": {
+      "type": "file",
+      "size": 2745,
+      "hash": "37458533a8e1420946905a9cc3cdefe0caae4f81bc77cf0bb8f53f238c206f3e"
+    },
+    "selfRevoke.prover": {
+      "type": "file",
+      "size": 234939412,
+      "hash": "f78a8035fff9b3a9ffc095c270b88757a0119a4e3ef8606a451fe8afaa3d5aee"
+    },
+    "selfRevoke.verifier": {
+      "type": "file",
+      "size": 2745,
+      "hash": "ae4a720a1394a2dd0a28f90eea024d90d8c5ed7b002b67f61c2df2f5af751bd2"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+node_modules
+# ZK prover/verifier keys are ~235 MB per P-256 circuit: regenerate with `npm run compile`, never commit.
+contract/managed/keys/
+# Preview run state: wallet seeds, private-state DBs, results with local paths. Never commit.
+preview/node_modules
+preview/.state/
+preview/midnight-level-db/
+*.seed
+seed.hex
+*.key
+preview/.state-v2/
