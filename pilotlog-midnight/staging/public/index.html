@@ -63,12 +63,17 @@ const credTable = (c, title) => !c ? '' : `<p class="muted" style="margin:8px 0 
 const fmtH = (t) => (t / 10).toFixed(1) + ' h';
 const chainTxt = (c) => !c ? '' : c.status === 'done' ? `<span class="ok">✓ recorded on Midnight Preview</span>${c.proveMs ? ` · proof ${(c.proveMs/1000).toFixed(1)} s` : ''}${c.explorer ? ` · <a href="${esc(c.explorer)}" target="_blank" rel="noopener">tx</a>` : ''}` : c.status === 'failed' ? `<span class="bad">✗ on-chain step failed: ${esc(c.error)}</span>` : `<span class="pill">${esc(c.status)}…</span> ${CFG?.prover?.online ? '' : '<span class="muted">(prover offline; it will run when the prover is back)</span>'}`;
 
+function renderStatus() {
+  const extra = $('status').querySelector('.statusExtra')?.outerHTML ?? '';
+  $('status').innerHTML = `<span class="statusLine">RP ID <b>${esc(CFG.rpId)}</b> · ${esc(CFG.network)} · prover ${CFG.prover.online ? '<span class="ok">online</span>' : '<span class="bad">offline</span>'}${CFG.queue ? ` · ${CFG.queue} job(s) queued` : ''}</span>` + extra;
+}
 async function boot() {
   CFG = await api('/api/config');
-  $('status').innerHTML = `RP ID <b>${esc(CFG.rpId)}</b> · ${esc(CFG.network)} · prover ${CFG.prover.online ? '<span class="ok">online</span>' : '<span class="bad">offline</span>'}${CFG.queue ? ` · ${CFG.queue} job(s) queued` : ''}`;
-  if (!window.PublicKeyCredential) { $('status').innerHTML += '<p class="bad">This browser does not support passkeys.</p>'; return; }
+  renderStatus();
+  setInterval(async () => { try { CFG = await api('/api/config'); renderStatus(); } catch { /* keep the last status */ } }, 10_000);
+  if (!window.PublicKeyCredential) { $('status').insertAdjacentHTML('beforeend', '<p class="bad statusExtra">This browser does not support passkeys.</p>'); return; }
   const saved = JSON.parse(localStorage.getItem('cfiStaging') || 'null');
-  if (saved) { try { ME = await api('/api/cfi?id=' + encodeURIComponent(saved.cfiId)); } catch (e) { if (e.status === 404) { localStorage.removeItem('cfiStaging'); ME = null; $('status').innerHTML += '<p class="muted">The staging server restarted and forgot your profile. Set up again.</p>'; } else throw e; } }
+  if (saved) { try { ME = await api('/api/cfi?id=' + encodeURIComponent(saved.cfiId)); } catch (e) { if (e.status === 404) { localStorage.removeItem('cfiStaging'); ME = null; $('status').insertAdjacentHTML('beforeend', '<p class="muted statusExtra">The staging server restarted and forgot your profile. Set up again.</p>'); } else throw e; } }
   render();
 }
 function render() {
