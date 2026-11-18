@@ -13,7 +13,7 @@ while true; do
   while kill -0 $pid 2>/dev/null; do
     if [ -f "$CFI_WORKER_HEARTBEAT" ]; then
       stale=$(node -e 'const h=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const now=Date.now();console.log(now>Math.max(h.at+60000,h.busyUntil)?1:0)' "$CFI_WORKER_HEARTBEAT" 2>/dev/null || echo 0)
-      if [ "$stale" = "1" ]; then echo "$(date -u +%FT%TZ) WATCHDOG: worker $pid hung (no claim for 60 s); restarting"; kill $pid; sleep 3; kill -9 $pid 2>/dev/null; break; fi
+      if [ "$stale" = "1" ]; then echo "$(date -u +%FT%TZ) WATCHDOG: worker $pid hung (no claim for 60 s); restarting ($(ps -o %cpu=,rss= -p $pid | awk "{printf \"cpu=%s%% rss=%dMB\", \$1, \$2/1024}"))"; kill $pid; sleep 3; kill -9 $pid 2>/dev/null; break; fi
     fi
     sleep 10
   done

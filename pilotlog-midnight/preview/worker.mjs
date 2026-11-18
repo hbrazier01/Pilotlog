@@ -66,6 +66,23 @@ if (process.env.CFI_WORKER_PREFLIGHT !== '0') {
 }
 log('worker ready; contract', addr);
 
+const DUST_LAG = /DustTreesNotAtBlock|No Dust spend can be dated/;
+async function runJob(job) {
+  await recycleProver(log);
+  await within(M.wallet.waitForSyncedState(), 90_000, 'wallet sync');
+  let r;
+
+  if (job.type === 'enroll') {
+    const { schoolId, keyId, cfiRef: ref } = job.payload;
+    if (schoolId !== R.schoolA) throw new Error('only the staging demo school is served by this worker');
+    const d = schoolDigest(addrBytes, SCHOOL_OPS.enrollCfi, fromHex(schoolId, 32), fromHex(keyId, 32), fromHex(ref, 32));
+    const a = assertionToCircuitArgs({ publicKey: { cose: admin.cose }, ...(await admin.get(d)), digest: d });
+    r = await within(deployed.callTx.schoolEnrollCfi(fromHex(schoolId, 32), fromHex(keyId, 32), fromHex(ref, 32), ...wa(a)), 180_000, 'enroll tx');
+  } else if (job.type === 'endorse') {
+    r = await within(deployed.callTx.endorseEntry(...fromJson(job.payload.args)), 180_000, 'endorse tx');
+  } else throw new Error('unknown job type');
+  return r;
+}
 for (;;) {
   if (walletBroken) { log('wallet sync errors seen; exiting before the next claim'); process.exit(3); }
   let job;
@@ -73,18 +90,17 @@ for (;;) {
   if (!job) { await sleep(3_000); continue; }
   const t = Date.now(); M.timing.cur = {};
   try {
-    await recycleProver(log);
-    await within(M.wallet.waitForSyncedState(), 90_000, 'wallet sync');
+    // DustTreesNotAtBlock ("No Dust spend can be dated yet"): the wallet's Dust trees lag the chain tip right after
+    // a previous tx, so fee balancing can't date a DUST spend. Not the job's fault: give the dust sync time to catch
+    // up and retry once in-process (nothing was submitted). Bounded so a job finishes well inside the server's 10-min reclaim.
     let r;
-    if (job.type === 'enroll') {
-      const { schoolId, keyId, cfiRef: ref } = job.payload;
-      if (schoolId !== R.schoolA) throw new Error('only the staging demo school is served by this worker');
-      const d = schoolDigest(addrBytes, SCHOOL_OPS.enrollCfi, fromHex(schoolId, 32), fromHex(keyId, 32), fromHex(ref, 32));
-      const a = assertionToCircuitArgs({ publicKey: { cose: admin.cose }, ...(await admin.get(d)), digest: d });
-      r = await within(deployed.callTx.schoolEnrollCfi(fromHex(schoolId, 32), fromHex(keyId, 32), fromHex(ref, 32), ...wa(a)), 180_000, 'enroll tx');
-    } else if (job.type === 'endorse') {
-      r = await within(deployed.callTx.endorseEntry(...fromJson(job.payload.args)), 180_000, 'endorse tx');
-    } else throw new Error('unknown job type');
+    for (let attempt = 1; ; attempt++) {
+      try { r = await runJob(job); break; } catch (e) {
+        if (attempt >= 2 || !DUST_LAG.test(causeChain(e))) throw e;
+        log(job.type, job.id.slice(0, 8), 'dust trees behind the chain tip; waiting 20 s, then retrying once in-process');
+        beat(6 * 60_000); await sleep(20_000); walletBroken = false;
+      }
+    }
     const p = pub(r.public);
     log(job.type, job.id.slice(0, 8), 'ok', p.txHash, 'prove', M.timing.cur.proveMs, 'ms total', Date.now() - t, 'ms; DUST', await M.dust());
     await api('/api/worker/result', { id: job.id, ok: true, ...p, proveMs: M.timing.cur.proveMs });
